@@ -15,3 +15,5 @@ joinedFirstServer:true
 onboardAccessibility:false
 hideBundleTutorial:true
 skipMultiplayerWarning:true
+tutorialStep:none
+gamma:1.0
