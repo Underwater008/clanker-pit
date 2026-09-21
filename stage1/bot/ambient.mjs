@@ -8,6 +8,17 @@
 import './env.mjs'
 import mineflayer from 'mineflayer'
 import { jevChoose } from './llm.mjs'
+import { writeFileSync } from 'node:fs'
+
+// Live telemetry: one shared state file, rewritten every 2 s, served by the
+// bootstrap's python server on :8081 and read by the web HUD overlay.
+const STATE_PATH = process.env.STATE_PATH ?? '/workspace/arena/state.json'
+const STATE = {}
+setInterval(() => {
+  try {
+    writeFileSync(STATE_PATH, JSON.stringify({ updated: new Date().toISOString(), bots: STATE }))
+  } catch {}
+}, 2000)
 
 const HOST = process.env.MC_HOST ?? '127.0.0.1'
 const PORT = Number(process.env.MC_PORT ?? 25565)
@@ -108,6 +119,19 @@ function spawnActor(name) {
     } catch { return null }
   }
 
+  function reportState() {
+    STATE[name] = {
+      health: Math.round((bot.health ?? 0) * 10) / 10,
+      food: bot.food ?? 0,
+      inventory: bot.inventory.items().slice(0, 9).map((i) => ({ name: i.name, count: i.count })),
+      activity,
+      goal: identity.current_goal,
+      position: bot.entity
+        ? { x: Math.round(bot.entity.position.x), y: Math.round(bot.entity.position.y), z: Math.round(bot.entity.position.z) }
+        : null,
+    }
+  }
+
   // ---- activities ----
   async function doGatherWood() {
     const block = nearestLog()
@@ -160,6 +184,7 @@ function spawnActor(name) {
       await pickGoal().catch((e) => log(name, 'goal_error', { error: String(e).slice(0, 120) }))
       const until = Date.now() + GOAL_INTERVAL
       while (Date.now() < until && alive) {
+        reportState()
         const actor = ACTORS[activity] ?? doExplore
         await actor().catch(() => sleep(1000))
       }
@@ -177,6 +202,7 @@ function spawnActor(name) {
   bot.on('end', () => {
     alive = false
     stopWalking()
+    STATE[name] = { offline: true }
     log(name, 'end', { rejoinInMs: 5000 })
     setTimeout(() => spawnActor(name), 5000)
   })
