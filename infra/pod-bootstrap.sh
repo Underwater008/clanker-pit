@@ -28,7 +28,7 @@ nohup python3 -m http.server 8081 --directory /workspace > /dev/null 2>&1 &
 wlog "step: apt"
 apt-get update -qq
 apt-get install -y -qq openjdk-21-jre curl wget unzip tmux ffmpeg jq python3 ca-certificates \
-  xserver-xorg-core x11-xserver-utils x11-utils xdotool pciutils mesa-utils > /dev/null
+  xvfb xserver-xorg-core x11-xserver-utils x11-utils xdotool pciutils mesa-utils > /dev/null
 
 wlog "step: node 20"
 if ! command -v node >/dev/null; then
@@ -104,8 +104,11 @@ wlog "step: NVIDIA X driver module"
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
 echo "driver: $DRV"
 if [ ! -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ]; then
-  for BASE in "https://download.nvidia.com/XFree86/Linux-x86_64" "https://us.download.nvidia.com/tesla"; do
-    wget -q "$BASE/$DRV/NVIDIA-Linux-x86_64-$DRV.run" -O /tmp/nv.run && [ -s /tmp/nv.run ] && break
+  for BASE in "https://download.nvidia.com/XFree86/Linux-x86_64" "https://us.download.nvidia.com/XFree86/Linux-x86_64" "https://us.download.nvidia.com/tesla"; do
+    wget -q "$BASE/$DRV/NVIDIA-Linux-x86_64-$DRV.run" -O /tmp/nv.run || true
+    # a real runfile starts with #!/bin/sh — a 200-OK HTML error page does not
+    if [ -s /tmp/nv.run ] && head -c 2 /tmp/nv.run | grep -q '^#!'; then break; fi
+    rm -f /tmp/nv.run
   done
   if [ -s /tmp/nv.run ]; then
     sh /tmp/nv.run --extract-only -C /tmp/nvx > /dev/null 2>&1 \
