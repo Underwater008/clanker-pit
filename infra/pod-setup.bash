@@ -45,6 +45,7 @@ allow-flight=true
 enable-rcon=true
 rcon.port=25575
 rcon.password=clanker-dev
+max-tick-time=-1
 EOF
 # Flat-ish arena world, predictable for repeatable matches
 cat > server.properties.tmp <<'EOF'

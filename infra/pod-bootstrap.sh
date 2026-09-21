@@ -59,6 +59,7 @@ enable-rcon=true
 rcon.port=25575
 rcon.password=clanker-dev
 allow-flight=true
+max-tick-time=-1
 EOF
 
 wlog "step: mediamtx"

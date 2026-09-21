@@ -41,7 +41,9 @@ function spawnActor(name) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
   const stopWalking = () => {
-    for (const k of ['forward', 'back', 'left', 'right', 'jump', 'sprint']) bot.setControlState(k, false)
+    try {
+      for (const k of ['forward', 'back', 'left', 'right', 'jump', 'sprint']) bot.setControlState(k, false)
+    } catch { /* bot object half-destroyed during a reconnect storm — ignore */ }
   }
 
   // perception filter: own state + things within 24 blocks, nothing global
