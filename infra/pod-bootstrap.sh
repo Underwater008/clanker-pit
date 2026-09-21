@@ -22,8 +22,10 @@ MC_VERSION=1.21.1
 mkdir -p "$ARENA"/{server,bots,capture,cameras,stream,logs}
 export DEBIAN_FRONTEND=noninteractive
 
-# Log channel for SSH-less debugging: serves /workspace on :8081 (exposed at pod creation)
-nohup python3 -m http.server 8081 --directory /workspace > /dev/null 2>&1 &
+# Log channel for SSH-less debugging: serves /workspace on :8081 (exposed at pod creation).
+# RunPod's image runs nginx on 8081 — stop it (we don't use their web terminal) and take the port.
+systemctl stop nginx 2>/dev/null; systemctl disable nginx 2>/dev/null; pkill -9 nginx 2>/dev/null
+tmux new-session -d -s filesrv "python3 -m http.server 8081 --directory /workspace" 2>/dev/null || true
 
 wlog "step: apt"
 apt-get update -qq
