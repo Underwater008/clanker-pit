@@ -13,6 +13,9 @@ MC_VERSION=1.21.1
 mkdir -p "$ARENA"/{server,bots,capture,cameras,stream,logs}
 export DEBIAN_FRONTEND=noninteractive
 
+# Log channel for SSH-less debugging: serves /workspace on :8081 (exposed at pod creation)
+nohup python3 -m http.server 8081 --directory /workspace > /dev/null 2>&1 &
+
 echo "==> apt"
 apt-get update -qq
 apt-get install -y -qq openjdk-21-jre curl wget unzip tmux ffmpeg jq python3 ca-certificates \
@@ -92,12 +95,19 @@ echo "==> NVIDIA X driver module"
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
 echo "driver: $DRV"
 if [ ! -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ]; then
-  wget -q "https://download.nvidia.com/XFree86/Linux-x86_64/$DRV/NVIDIA-Linux-x86_64-$DRV.run" -O /tmp/nv.run \
-    && sh /tmp/nv.run --extract-only -C /tmp/nvx > /dev/null 2>&1 \
-    && mkdir -p /usr/lib/xorg/modules/drivers /usr/lib/xorg/modules/extensions \
-    && cp /tmp/nvx/nvidia_drv.so /usr/lib/xorg/modules/drivers/ \
-    && cp /tmp/nvx/libglxserver_nvidia.so.$DRV /usr/lib/xorg/modules/extensions/ \
-    && ln -sf libglxserver_nvidia.so.$DRV /usr/lib/xorg/modules/extensions/libglxserver_nvidia.so
+  for BASE in "https://download.nvidia.com/XFree86/Linux-x86_64" "https://us.download.nvidia.com/tesla"; do
+    wget -q "$BASE/$DRV/NVIDIA-Linux-x86_64-$DRV.run" -O /tmp/nv.run && [ -s /tmp/nv.run ] && break
+  done
+  if [ -s /tmp/nv.run ]; then
+    sh /tmp/nv.run --extract-only -C /tmp/nvx > /dev/null 2>&1 \
+      && mkdir -p /usr/lib/xorg/modules/drivers /usr/lib/xorg/modules/extensions \
+      && cp /tmp/nvx/nvidia_drv.so /usr/lib/xorg/modules/drivers/ \
+      && cp /tmp/nvx/libglxserver_nvidia.so.$DRV /usr/lib/xorg/modules/extensions/ \
+      && ln -sf libglxserver_nvidia.so.$DRV /usr/lib/xorg/modules/extensions/libglxserver_nvidia.so \
+      && echo "nvidia x module installed" || echo "extract/install FAILED"
+  else
+    echo "driver runfile NOT FOUND for $DRV — GPU Xorg unavailable, will fall back to Xvfb"
+  fi
 fi
 BUS_HEX=$(nvidia-smi -q | grep "Bus Id" | head -1 | grep -oE "[0-9A-F]{2}:00.0" | cut -d: -f1)
 BUS_DEC=$((16#$BUS_HEX))
@@ -141,12 +151,36 @@ echo "==> start stream services"
 tmux new-session -d -s mtx "cd $ARENA/capture && $ARENA/stream/mediamtx mediamtx.yml 2>&1 | tee $ARENA/logs/mtx.log"
 
 echo "==> start Xorg on GPU"
-nohup Xorg :10 -config /etc/X11/xorg-gpu.conf -noreset > "$ARENA/logs/xorg10.log" 2>&1 &
-for i in $(seq 1 30); do DISPLAY=:10 xdpyinfo -display :10 > /dev/null 2>&1 && break; sleep 2; done
-DISPLAY=:10 glxinfo -B | grep "OpenGL renderer" || echo "GPU XORG FAILED"
+GPU_OK=0
+if [ -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ]; then
+  nohup Xorg :10 -config /etc/X11/xorg-gpu.conf -noreset > "$ARENA/logs/xorg10.log" 2>&1 &
+  for i in $(seq 1 30); do DISPLAY=:10 xdpyinfo -display :10 > /dev/null 2>&1 && break; sleep 2; done
+  if DISPLAY=:10 glxinfo -B 2>/dev/null | grep -qi nvidia; then
+    GPU_OK=1
+    DISPLAY=:10 glxinfo -B | grep "OpenGL renderer"
+  else
+    echo "GPU XORG FAILED — see xorg10.log"
+    tail -8 "$ARENA/logs/xorg10.log"
+  fi
+fi
 
-echo "==> launch cameras + captures"
-bash "$ARENA/capture/gpu-restack.sh"
+if [ "$GPU_OK" = "1" ]; then
+  echo "==> launch cameras + captures on GPU Xorg"
+  bash "$ARENA/capture/gpu-restack.sh"
+else
+  echo "==> FALLBACK: cameras on Xvfb (llvmpipe)"
+  for d in 101 102 103 104 105; do Xvfb :$d -screen 0 1280x720x24 & done
+  sleep 2
+  launch() { tmux new-session -d -s "$4" "bash $ARENA/capture/run-client.sh $1 $2 2>&1 | tee $ARENA/logs/client-$1.log"; sleep 8; }
+  launch CamMira 101 "" mira
+  launch CamTally 102 "" tally
+  launch ClankerCam 103 "" arena
+  launch CamCinder 104 "" cinder
+  launch CamVex 105 "" vex
+  sleep 60
+  capf() { tmux new-session -d -s "cap$1" "bash $ARENA/capture/run-stream.sh $1 $2 2>&1 | tee -a $ARENA/logs/cap-$2.log"; }
+  capf 101 mira; capf 102 tally; capf 103 arena; capf 104 cinder; capf 105 vex
+fi
 
 echo "==> launch ambient cast + spectate loop"
 tmux new-session -d -s bots "cd $ARENA/bots && node ambient.mjs 2>&1 | tee -a $ARENA/logs/bots.log"
