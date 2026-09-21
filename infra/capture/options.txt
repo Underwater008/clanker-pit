@@ -12,6 +12,7 @@ onboardAccessibility:false
 overrideHeight:720
 overrideWidth:1280
 particles:1
+pauseOnLostFocus:false
 renderDistance:6
 simulationDistance:5
 skipMultiplayerWarning:true
