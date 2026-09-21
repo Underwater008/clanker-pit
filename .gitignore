@@ -2,3 +2,4 @@
 node_modules/
 infra/pod_ed25519*
 infra/pod.json
+.vercel/
