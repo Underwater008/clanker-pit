@@ -1,4 +1,5 @@
-# mediamtx config for the arena stream: RTMP in, HLS out on the pod's public port.
+# mediamtx config: RTMP in, LL-HLS out on the pod's public port.
+# One path per camera: arena (wide), plus one POV per contestant.
 rtmpAddress: :1935
 hlsAddress: :8080
 hlsAllowOrigin: "*"
@@ -7,4 +8,12 @@ hlsSegmentDuration: 1s
 hlsPartDuration: 200ms
 paths:
   arena:
+    source: publisher
+  cinder:
+    source: publisher
+  vex:
+    source: publisher
+  mira:
+    source: publisher
+  tally:
     source: publisher

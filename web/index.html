@@ -35,7 +35,7 @@
   /* ---------- top bar ---------- */
   header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 18px 28px;
+    padding: 18px 28px; gap: 16px; flex-wrap: wrap;
     border-bottom: 1px solid var(--panel-edge);
   }
   .wordmark {
@@ -44,28 +44,30 @@
     color: var(--bone); text-decoration: none;
   }
   .wordmark em { color: var(--ember); font-style: normal; }
-  .live-badge {
-    display: flex; align-items: center; gap: 8px;
-    font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em;
-    color: var(--ash);
-    border: 1px solid var(--panel-edge);
-    padding: 7px 14px; border-radius: 3px;
-    transition: color .3s, border-color .3s;
-  }
-  .live-badge .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: #4a4741;
-    transition: background .3s;
-  }
-  .live-badge.on { color: var(--ember); border-color: var(--ember-dim); }
-  .live-badge.on .dot {
-    background: var(--ember);
-    animation: pulse 1.6s ease-in-out infinite;
-  }
-  @keyframes pulse { 50% { opacity: 0.35; } }
 
-  /* ---------- stage ---------- */
-  main { max-width: 1180px; margin: 0 auto; padding: 34px 28px 60px; }
+  /* ---------- view mode switch ---------- */
+  .modes {
+    display: flex; gap: 4px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 5px; padding: 4px;
+  }
+  .modes button {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    color: var(--ash); background: transparent;
+    border: 1px solid transparent; border-radius: 3px;
+    padding: 7px 13px; cursor: pointer;
+    transition: color .2s, background .2s, border-color .2s;
+  }
+  .modes button:hover { color: var(--bone); }
+  .modes button.active {
+    color: var(--ember);
+    border-color: var(--ember-dim);
+    background: rgba(255,92,31,0.08);
+  }
+
+  /* ---------- stages ---------- */
+  main { max-width: 1180px; margin: 0 auto; padding: 26px 28px 50px; }
   .stage {
     position: relative;
     background: #000;
@@ -74,52 +76,75 @@
     overflow: hidden;
     box-shadow: 0 0 0 1px #000, 0 30px 80px -20px rgba(0,0,0,0.8), 0 0 120px -30px rgba(255,92,31,0.15);
   }
-  .stage::after { /* scanlines */
+  .stage::after {
     content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3;
     background: repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0 1px, transparent 1px 3px);
   }
   .aspect { position: relative; width: 100%; padding-top: 56.25%; }
   video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: #000; }
 
-  .overlay {
-    position: absolute; inset: 0; z-index: 4;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-    background: rgba(6,6,8,0.88);
-    font-family: var(--mono);
-    text-align: center; padding: 20px;
-    transition: opacity .4s;
-  }
-  .overlay.hidden { opacity: 0; pointer-events: none; }
-  .overlay .code { font-size: 13px; letter-spacing: 0.25em; color: var(--ember); }
-  .overlay .msg { font-size: 13px; color: var(--ash); letter-spacing: 0.08em; line-height: 1.7; }
-  .overlay button {
-    margin-top: 6px;
-    font-family: var(--mono); font-size: 12px; letter-spacing: 0.2em;
-    color: var(--bone); background: transparent;
-    border: 1px solid var(--ember-dim); border-radius: 3px;
-    padding: 10px 22px; cursor: pointer;
-    transition: background .2s, color .2s;
-  }
-  .overlay button:hover { background: var(--ember); color: #000; border-color: var(--ember); }
-
-  .stage-hud {
+  .hud {
     position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
     display: flex; justify-content: space-between; align-items: center;
-    padding: 10px 14px;
+    padding: 9px 13px;
     font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
     color: rgba(232,230,225,0.75);
     background: linear-gradient(transparent, rgba(0,0,0,0.72));
     pointer-events: none;
   }
-  .stage-hud .cam { color: rgba(232,230,225,0.45); }
+  .hud .sub { color: rgba(232,230,225,0.45); }
+  .hud .live-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #4a4741; margin-right: 6px; vertical-align: 0;
+  }
+  .hud.live .live-dot { background: var(--ember); animation: pulse 1.6s ease-in-out infinite; }
+  .hud.live { color: var(--ember); }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 4;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background: rgba(6,6,8,0.88);
+    font-family: var(--mono); text-align: center; padding: 18px;
+    transition: opacity .4s;
+  }
+  .overlay.hidden { opacity: 0; pointer-events: none; }
+  .overlay .code { font-size: 12px; letter-spacing: 0.25em; color: var(--ember); }
+  .overlay .msg { font-size: 12px; color: var(--ash); letter-spacing: 0.08em; line-height: 1.7; }
+  .overlay button {
+    margin-top: 4px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em;
+    color: var(--bone); background: transparent;
+    border: 1px solid var(--ember-dim); border-radius: 3px;
+    padding: 9px 20px; cursor: pointer;
+  }
+  .overlay button:hover { background: var(--ember); color: #000; border-color: var(--ember); }
+
+  /* ---------- grid mode ---------- */
+  .grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  .cell {
+    position: relative;
+    background: #000;
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .cell:hover { border-color: var(--ember-dim); }
+  .cell::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0 1px, transparent 1px 3px);
+  }
+  .cell .hud { padding: 7px 11px; font-size: 10px; }
+  .cell .overlay .msg { font-size: 11px; }
 
   /* ---------- under-stage strip ---------- */
-  .meta-row {
-    display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px;
-    margin-top: 22px;
-  }
+  .meta-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; margin-top: 22px; }
   @media (max-width: 860px) { .meta-row { grid-template-columns: 1fr; } }
-
   .panel {
     background: var(--panel);
     border: 1px solid var(--panel-edge);
@@ -132,12 +157,9 @@
     margin-bottom: 16px;
   }
   .panel h2 .tick { color: var(--ember); }
-
   .match-title { font-size: 20px; font-weight: 700; letter-spacing: 0.02em; margin-bottom: 8px; }
   .match-desc { font-size: 14px; color: var(--ash); line-height: 1.65; max-width: 52ch; }
-  .match-rules {
-    margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px;
-  }
+  .match-rules { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; }
   .rule-chip {
     font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
     color: var(--ash);
@@ -146,13 +168,15 @@
   }
   .rule-chip b { color: var(--bone); font-weight: 600; }
 
-  /* contestants */
   .cast { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .card {
     border: 1px solid var(--panel-edge); border-radius: 5px;
     padding: 13px 14px;
     background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
   }
+  .card:hover { border-color: var(--ember-dim); background: rgba(255,92,31,0.05); }
   .card .name {
     font-family: var(--mono); font-size: 14px; font-weight: 600;
     letter-spacing: 0.1em; margin-bottom: 4px;
@@ -161,8 +185,6 @@
   .card.alive .name::before {
     content: '●'; color: #58c472; font-size: 9px; margin-right: 7px; vertical-align: 1px;
   }
-  .card.tba { border-style: dashed; }
-  .card.tba .name, .card.tba .hook { color: #55534e; }
 
   footer {
     margin-top: 46px; padding-top: 20px;
@@ -170,41 +192,51 @@
     display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
     font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: #55534e;
   }
-  footer a { color: var(--ash); text-decoration: none; }
-  footer a:hover { color: var(--ember); }
-
-  @media (prefers-reduced-motion: reduce) {
-    .live-badge.on .dot { animation: none; }
-  }
+  @media (prefers-reduced-motion: reduce) { .hud.live .live-dot { animation: none; } }
 </style>
 </head>
 <body>
 
 <header>
   <a class="wordmark" href="/">CLANKER<em>PIT</em></a>
-  <div class="live-badge" id="liveBadge"><span class="dot"></span><span id="liveLabel">CONNECTING</span></div>
+  <nav class="modes" aria-label="View mode">
+    <button data-mode="arena" class="active">ARENA</button>
+    <button data-mode="grid">GRID</button>
+    <button data-mode="pov">POV</button>
+  </nav>
 </header>
 
 <main>
-  <section class="stage" aria-label="Live arena broadcast">
+  <!-- single-feed stage (arena + pov modes) -->
+  <section class="stage" id="singleStage" aria-label="Live feed">
     <div class="aspect">
-      <video id="video" playsinline autoplay muted></video>
-      <div class="overlay" id="overlay">
-        <div class="code" id="overlayCode">SIGNAL</div>
-        <div class="msg" id="overlayMsg">Tuning the arena feed…</div>
-        <button id="retryBtn" style="display:none">RECONNECT</button>
+      <video id="singleVideo" playsinline autoplay muted></video>
+      <div class="overlay" id="singleOverlay">
+        <div class="code" id="singleCode">SIGNAL</div>
+        <div class="msg" id="singleMsg">Tuning the arena feed…</div>
+        <button id="singleRetry" style="display:none">RECONNECT</button>
       </div>
-      <div class="stage-hud">
-        <span>ARENA&nbsp;01&nbsp;/&nbsp;FLATLANDS</span>
-        <span class="cam">CAM&nbsp;01&nbsp;·&nbsp;SPECTATOR&nbsp;FEED</span>
+      <div class="hud" id="singleHud">
+        <span><span class="live-dot"></span><span id="singleLabel">ARENA 01 / WIDE</span></span>
+        <span class="sub">CAM 01 · SPECTATOR FEED</span>
       </div>
     </div>
   </section>
 
+  <!-- grid mode -->
+  <section class="grid" id="gridStage" style="display:none" aria-label="All POV feeds">
+    <!-- cells are built by JS -->
+  </section>
+
+  <!-- pov selector -->
+  <div class="modes" id="povSelector" style="display:none; margin-top:14px; width:max-content" aria-label="Choose POV">
+    <!-- buttons built by JS -->
+  </div>
+
   <div class="meta-row">
     <section class="panel">
       <h2><span class="tick">▸</span>&nbsp;SEASON ZERO — EXHIBITION MATCH</h2>
-      <div class="match-title">Four machines enter the flatlands. One leaves.</div>
+      <div class="match-title">Four machines enter the wilds. One leaves.</div>
       <p class="match-desc">
         Autonomous characters with names, grudges, and memories loot, scheme, and brawl
         inside a real Minecraft server — no scripts, no respawns. Every match is
@@ -219,25 +251,8 @@
     </section>
 
     <section class="panel">
-      <h2><span class="tick">▸</span>&nbsp;CONTESTANTS</h2>
-      <div class="cast">
-        <div class="card alive">
-          <div class="name">CINDER</div>
-          <div class="hook">Counts every debt. Forgives nothing that cost her supplies.</div>
-        </div>
-        <div class="card alive">
-          <div class="name">VEX</div>
-          <div class="hook">Charming when fed, dangerous when hungry. Usually both.</div>
-        </div>
-        <div class="card alive">
-          <div class="name">MIRA</div>
-          <div class="hook">Maps everything. Trusts the map more than the people on it.</div>
-        </div>
-        <div class="card alive">
-          <div class="name">TALLY</div>
-          <div class="hook">Counts scores out loud. Plays to the crowd, whoever's in it.</div>
-        </div>
-      </div>
+      <h2><span class="tick">▸</span>&nbsp;CONTESTANTS — TAP FOR POV</h2>
+      <div class="cast" id="castCards"><!-- built by JS --></div>
     </section>
   </div>
 
@@ -250,88 +265,203 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>
 <script>
 (function () {
-  var STREAM_URL = 'https://v4kirw177698qh-8080.proxy.runpod.net/arena/index.m3u8';
-  var video = document.getElementById('video');
-  var overlay = document.getElementById('overlay');
-  var overlayCode = document.getElementById('overlayCode');
-  var overlayMsg = document.getElementById('overlayMsg');
-  var retryBtn = document.getElementById('retryBtn');
-  var badge = document.getElementById('liveBadge');
-  var liveLabel = document.getElementById('liveLabel');
-  var hls = null;
-  var failures = 0;
-  var MAX_FAILURES = 6;
+  var BASE = 'https://v4kirw177698qh-8080.proxy.runpod.net';
+  var FEEDS = {
+    arena: { label: 'ARENA 01 / WIDE', sub: 'CAM 01 · SPECTATOR FEED' },
+    cinder: { label: 'CINDER / POV', sub: 'SPECTATING CINDER' },
+    vex: { label: 'VEX / POV', sub: 'SPECTATING VEX' },
+    mira: { label: 'MIRA / POV', sub: 'SPECTATING MIRA' },
+    tally: { label: 'TALLY / POV', sub: 'SPECTATING TALLY' }
+  };
+  var BOTS = ['cinder', 'vex', 'mira', 'tally'];
+  var CAST = {
+    cinder: { name: 'CINDER', hook: 'Counts every debt. Forgives nothing that cost her supplies.' },
+    vex: { name: 'VEX', hook: 'Charming when fed, dangerous when hungry. Usually both.' },
+    mira: { name: 'MIRA', hook: 'Maps everything. Trusts the map more than the people on it.' },
+    tally: { name: 'TALLY', hook: 'Counts scores out loud. Plays to the crowd, whoever’s in it.' }
+  };
+  var url = function (feed) { return BASE + '/' + feed + '/index.m3u8'; };
 
-  function setLive(on) {
-    badge.classList.toggle('on', on);
-    liveLabel.textContent = on ? 'LIVE' : 'CONNECTING';
-  }
-  function showOverlay(code, msg, retry) {
-    overlayCode.textContent = code;
-    overlayMsg.textContent = msg;
-    retryBtn.style.display = retry ? 'block' : 'none';
-    overlay.classList.remove('hidden');
-  }
-  function hideOverlay() { overlay.classList.add('hidden'); }
+  var state = { mode: 'arena', pov: 'cinder' };
+  var live = { instances: [] };
 
-  function destroy() {
-    if (hls) { hls.destroy(); hls = null; }
-    video.removeAttribute('src');
-    video.load();
+  function killAll() {
+    live.instances.forEach(function (i) { i.destroy(); });
+    live.instances = [];
   }
 
-  function start() {
-    destroy();
-    failures = 0;
-    showOverlay('SIGNAL', 'Tuning the arena feed…', false);
-    setLive(false);
+  /* Attach one resilient HLS instance to a video element. */
+  function attach(video, overlayEls, hudEl, feed) {
+    var failures = 0;
+    var MAX = 6;
+    var inst = { hls: null, retryTimer: null };
+    function setLive(on) { hudEl.classList.toggle('live', on); }
+    function overlay(show, code, msg, retry) {
+      if (!show) { overlayEls.root.classList.add('hidden'); return; }
+      overlayEls.root.classList.remove('hidden');
+      overlayEls.code.textContent = code;
+      overlayEls.msg.textContent = msg;
+      overlayEls.retry.style.display = retry ? 'block' : 'none';
+    }
+    function destroy() {
+      if (inst.retryTimer) clearTimeout(inst.retryTimer);
+      if (inst.hls) inst.hls.destroy();
+      video.removeAttribute('src');
+      video.load();
+    }
+    function start() {
+      destroy();
+      failures = 0;
+      overlay(true, 'SIGNAL', 'Tuning the feed…', false);
+      setLive(false);
+      if (window.Hls && Hls.isSupported()) {
+        inst.hls = new Hls({
+          lowLatencyMode: true,
+          liveSyncDurationCount: 3,
+          liveMaxLatencyDurationCount: 10,
+          maxBufferLength: 8,
+          backBufferLength: 4
+        });
+        inst.hls.loadSource(url(feed));
+        inst.hls.attachMedia(video);
+        inst.hls.on(Hls.Events.MANIFEST_PARSED, function () {
+          overlay(false); setLive(true);
+          video.play().catch(function () {});
+        });
+        inst.hls.on(Hls.Events.ERROR, function (_, data) {
+          if (!data.fatal) return;
+          failures++;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && failures <= MAX) {
+            setLive(false);
+            overlay(true, 'SIGNAL LOST', 'Reacquiring… (' + failures + ')', false);
+            inst.retryTimer = setTimeout(function () { inst.hls.startLoad(); }, 1500);
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && failures <= MAX) {
+            inst.hls.recoverMediaError();
+          } else {
+            setLive(false);
+            overlay(true, 'OFF AIR', 'This camera is unreachable.', true);
+          }
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url(feed);
+        video.addEventListener('loadedmetadata', function () {
+          overlay(false); setLive(true);
+          video.play().catch(function () {});
+        }, { once: true });
+        video.addEventListener('error', function () {
+          setLive(false); overlay(true, 'OFF AIR', 'This camera is unreachable.', true);
+        }, { once: true });
+      } else {
+        overlay(true, 'UNSUPPORTED', 'This browser cannot play the feed.', false);
+      }
+    }
+    overlayEls.retry.addEventListener('click', start);
+    inst.destroy = destroy;
+    inst.start = start;
+    start();
+    return inst;
+  }
 
-    if (window.Hls && Hls.isSupported()) {
-      hls = new Hls({
-        lowLatencyMode: true,
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 10,
-        maxBufferLength: 8,
-        backBufferLength: 4
+  /* ---------- single stage (arena / pov) ---------- */
+  var singleVideo = document.getElementById('singleVideo');
+  var singleHud = document.getElementById('singleHud');
+  var singleLabel = document.getElementById('singleLabel');
+  var singleOverlay = {
+    root: document.getElementById('singleOverlay'),
+    code: document.getElementById('singleCode'),
+    msg: document.getElementById('singleMsg'),
+    retry: document.getElementById('singleRetry')
+  };
+  var singleSub = document.querySelector('#singleHud .sub');
+
+  function showSingle(feed) {
+    document.getElementById('gridStage').style.display = 'none';
+    document.getElementById('singleStage').style.display = 'block';
+    singleLabel.textContent = FEEDS[feed].label;
+    singleSub.textContent = FEEDS[feed].sub;
+    killAll();
+    live.instances.push(attach(singleVideo, singleOverlay, singleHud, feed));
+  }
+
+  /* ---------- grid mode ---------- */
+  var gridStage = document.getElementById('gridStage');
+  var gridBuilt = false;
+  function showGrid() {
+    document.getElementById('singleStage').style.display = 'none';
+    gridStage.style.display = 'grid';
+    killAll();
+    if (!gridBuilt) {
+      BOTS.forEach(function (feed) {
+        var cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.innerHTML =
+          '<div class="aspect">' +
+          '  <video playsinline autoplay muted></video>' +
+          '  <div class="overlay hidden"><div class="code">SIGNAL</div><div class="msg"></div><button style="display:none">RECONNECT</button></div>' +
+          '  <div class="hud"><span><span class="live-dot"></span>' + FEEDS[feed].label + '</span><span class="sub">TAP TO FOCUS</span></div>' +
+          '</div>';
+        cell.addEventListener('click', function () { setMode('pov', feed); });
+        gridStage.appendChild(cell);
+        var v = cell.querySelector('video');
+        var o = cell.querySelector('.overlay');
+        var h = cell.querySelector('.hud');
+        cell._attach = { video: v, overlay: { root: o, code: o.querySelector('.code'), msg: o.querySelector('.msg'), retry: o.querySelector('button') }, hud: h, feed: feed };
       });
-      hls.loadSource(STREAM_URL);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, function () {
-        hideOverlay(); setLive(true);
-        video.play().catch(function () {});
-      });
-      hls.on(Hls.Events.ERROR, function (_, data) {
-        if (!data.fatal) return;
-        failures++;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && failures <= MAX_FAILURES) {
-          setLive(false);
-          showOverlay('SIGNAL LOST', 'Reacquiring the arena feed… (attempt ' + failures + ')', false);
-          setTimeout(function () { hls.startLoad(); }, 1500);
-        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && failures <= MAX_FAILURES) {
-          hls.recoverMediaError();
-        } else {
-          setLive(false);
-          showOverlay('OFF AIR', 'The arena feed is unreachable. The pit crew has been notified.', true);
-        }
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari: native HLS
-      video.src = STREAM_URL;
-      video.addEventListener('loadedmetadata', function () {
-        hideOverlay(); setLive(true);
-        video.play().catch(function () {});
-      }, { once: true });
-      video.addEventListener('error', function () {
-        setLive(false);
-        showOverlay('OFF AIR', 'The arena feed is unreachable. The pit crew has been notified.', true);
-      }, { once: true });
-    } else {
-      showOverlay('UNSUPPORTED', 'This browser cannot play the arena feed. Try Safari or a recent Chrome/Firefox.', false);
+      gridBuilt = true;
+    }
+    Array.prototype.forEach.call(gridStage.children, function (cell) {
+      var a = cell._attach;
+      live.instances.push(attach(a.video, a.overlay, a.hud, a.feed));
+    });
+  }
+
+  /* ---------- pov selector + cast cards ---------- */
+  var povSelector = document.getElementById('povSelector');
+  BOTS.forEach(function (feed) {
+    var b = document.createElement('button');
+    b.textContent = FEEDS[feed].label.split(' ')[0];
+    b.dataset.feed = feed;
+    b.addEventListener('click', function () { setMode('pov', feed); });
+    povSelector.appendChild(b);
+  });
+
+  var castCards = document.getElementById('castCards');
+  BOTS.forEach(function (feed) {
+    var c = CAST[feed];
+    var card = document.createElement('div');
+    card.className = 'card alive';
+    card.innerHTML = '<div class="name">' + c.name + '</div><div class="hook">' + c.hook + '</div>';
+    card.addEventListener('click', function () { setMode('pov', feed); });
+    castCards.appendChild(card);
+  });
+
+  /* ---------- mode plumbing ---------- */
+  var modeButtons = document.querySelectorAll('.modes [data-mode]');
+  function setMode(mode, feed) {
+    state.mode = mode;
+    if (feed) state.pov = feed;
+    modeButtons.forEach(function (b) { b.classList.toggle('active', b.dataset.mode === mode); });
+    povSelector.style.display = mode === 'pov' ? 'flex' : 'none';
+    Array.prototype.forEach.call(povSelector.children, function (b) {
+      b.classList.toggle('active', mode === 'pov' && b.dataset.feed === state.pov);
+    });
+    if (mode === 'arena') showSingle('arena');
+    else if (mode === 'grid') showGrid();
+    else showSingle(state.pov);
+    if (history.replaceState) {
+      var q = mode === 'pov' ? '?v=' + state.pov : mode === 'grid' ? '?v=grid' : '';
+      history.replaceState(null, '', q);
     }
   }
+  modeButtons.forEach(function (b) {
+    b.addEventListener('click', function () { setMode(b.dataset.mode); });
+  });
 
-  retryBtn.addEventListener('click', start);
-  start();
+  /* deep link: ?v=grid|cinder|vex|mira|tally */
+  var initial = (location.search.match(/v=([a-z]+)/) || [])[1];
+  if (initial === 'grid') setMode('grid');
+  else if (BOTS.indexOf(initial) !== -1) setMode('pov', initial);
+  else setMode('arena');
 })();
 </script>
 </body>
