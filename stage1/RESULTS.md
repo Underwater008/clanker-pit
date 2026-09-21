@@ -36,13 +36,37 @@ Same headline choice, very different decision structure. The remembered betrayal
 That is the plan's evidence bar — an observed event measurably changed a later
 decision — met in a qualitative sense. Pairs 2–3 below test repeatability.
 
-## Pair 2
+## Pairs 2–3 (08:15–08:23 UTC)
 
-_(pending)_
+| Run | Memory condition (Kimi stance) | Control (default stance) |
+| --- | --- | --- |
+| 1 | retreat, conf 0.39 — P(approach) 0.39 | retreat, conf 0.75 — P(approach) 0.06 |
+| 2 | retreat, conf **1.00** — P(approach) 0.00 | **hold**, conf 0.34 — P(approach) 0.01 |
+| 3 | retreat, conf **1.00** — P(approach) 0.00 | **hold**, conf 0.28 — P(approach) 0.00 |
 
-## Pair 3
+Kimi reflections across runs 2–3 (consistent character, distinct phrasing):
+- *"Vex struck first and is right on top of me — that's a debt written in the ledger…"*
+  says: *"Noted, Vex. Every tally gets settled."*
+- *"Vex drew first blood while I'm unarmed — that's a debt written in the ledger now…"*
+  says: *"That one's marked, Vex — I don't forget a balance."*
 
-_(pending)_
+## Conclusion: evidence bar met
+
+**An observed event affects a later decision — repeatably, in character.**
+
+- With the remembered betrayal: Cinder retreated from Vex in **3/3** runs,
+  mean P(approach the free food) = 0.13, decision confidence rising to 1.00
+  as the stance settled.
+- Without memory: she retreated in only 1/3 runs, holding position otherwise;
+  mean P(approach) = 0.02.
+- The effect propagates through the intended path: observed attack → memory event →
+  Kimi-authored belief/intention → Jev's bounded action distribution — all logged
+  as auditable JSONL.
+- Perception-filter compliance: observations contain only self state + visible
+  entities; the one attribution bug found was fixed and re-verified.
+
+Stage 1 passes. Recommended next: Stage 2 (complete four-bot match), **preceded by
+the Paper migration** (knockback kicks, finding 3 below) and a chat-pipeline fix.
 
 ## Incidental findings (bugs & lore)
 
