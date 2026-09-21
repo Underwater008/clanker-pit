@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
-# Captures one Xvfb display and pushes RTMP to mediamtx (served as HLS).
-# Usage: run-stream.sh <display-number> <stream-path>
+# Captures a display (or a fixed region of one) and pushes RTMP to mediamtx.
+# Usage: run-stream.sh <display> <stream-path> [region_x region_y]
+# Restart loop: a dead ffmpeg must never take a feed down silently.
 set -euo pipefail
 DISP=${1:?display required}
 PATH_NAME=${2:?stream path required}
+REG_X=${3:-}
+REG_Y=${4:-}
+
 export DISPLAY=":$DISP"
-# Restart loop: a dead ffmpeg must never take a feed down silently.
+GRAB=":$DISP.0"
+if [ -n "$REG_X" ] && [ -n "$REG_Y" ]; then
+  GRAB=":$DISP.0+$REG_X,$REG_Y"
+fi
+
 while true; do
-  echo "[run-stream] starting capture :$DISP -> $PATH_NAME $(date -u +%FT%TZ)"
+  echo "[run-stream] starting capture $GRAB -> $PATH_NAME $(date -u +%FT%TZ)"
   ffmpeg -hide_banner -loglevel warning \
-    -f x11grab -video_size 1280x720 -framerate 30 -i ":$DISP.0" \
+    -f x11grab -video_size 1280x720 -framerate 30 -i "$GRAB" \
     -vf format=yuv420p -c:v libx264 -preset veryfast -tune zerolatency \
     -b:v 2500k -maxrate 3000k -bufsize 5000k -g 60 \
     -an -f flv "rtmp://127.0.0.1:1935/$PATH_NAME" || true
