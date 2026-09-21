@@ -8,6 +8,15 @@ set -u
 exec > >(tee -a /workspace/bootstrap.log) 2>&1
 echo "=== clankerpit bootstrap $(date -u +%FT%TZ) ==="
 
+# Phone-home progress channel: POSTs one-liners to $WATCHDOG_URL (a webhook.site URL)
+# so we can watch an SSH-less bootstrap from outside. Optional; silent if unset.
+wlog() {
+  echo "[wlog] $1"
+  [ -n "${WATCHDOG_URL:-}" ] && curl -s -m 10 -X POST -H "Content-Type: text/plain" --data "$1" "$WATCHDOG_URL" > /dev/null 2>&1 || true
+}
+trap 'wlog "BOOTSTRAP EXIT code=$? at $(date -u +%FT%TZ)"; curl -s -m 15 -X POST -H "Content-Type: text/plain" --data-binary @/workspace/bootstrap.log "$WATCHDOG_URL/full-log" > /dev/null 2>&1 || true' EXIT
+wlog "bootstrap alive: $(hostname) driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)"
+
 ARENA=/workspace/arena
 MC_VERSION=1.21.1
 mkdir -p "$ARENA"/{server,bots,capture,cameras,stream,logs}
@@ -16,19 +25,19 @@ export DEBIAN_FRONTEND=noninteractive
 # Log channel for SSH-less debugging: serves /workspace on :8081 (exposed at pod creation)
 nohup python3 -m http.server 8081 --directory /workspace > /dev/null 2>&1 &
 
-echo "==> apt"
+wlog "step: apt"
 apt-get update -qq
 apt-get install -y -qq openjdk-21-jre curl wget unzip tmux ffmpeg jq python3 ca-certificates \
   xserver-xorg-core x11-xserver-utils x11-utils xdotool pciutils mesa-utils > /dev/null
 
-echo "==> node 20"
+wlog "step: node 20"
 if ! command -v node >/dev/null; then
   curl -fsSL https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-x64.tar.xz -o /tmp/node.tar.xz
   tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
 fi
 node -v
 
-echo "==> minecraft server $MC_VERSION"
+wlog "step: minecraft server $MC_VERSION"
 cd "$ARENA/server"
 if [ ! -f server.jar ]; then
   MANIFEST=$(curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json)
@@ -52,7 +61,7 @@ rcon.password=clanker-dev
 allow-flight=true
 EOF
 
-echo "==> mediamtx"
+wlog "step: mediamtx"
 cd "$ARENA/stream"
 if [ ! -x mediamtx ]; then
   curl -fsSL https://github.com/bluenviron/mediamtx/releases/download/v1.9.3/mediamtx_v1.9.3_linux_amd64.tar.gz -o /tmp/mtx.tar.gz
@@ -73,7 +82,7 @@ paths:
   tally: {source: publisher}
 EOF
 
-echo "==> fetch capture + bot code from github"
+wlog "step: fetch capture + bot code from github"
 RAW=https://raw.githubusercontent.com/Underwater008/clanker-pit/main
 for f in run-client.sh run-stream.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
   curl -fsSL "$RAW/infra/capture/$f" -o "$ARENA/capture/$f"
@@ -88,10 +97,10 @@ RUNPOD_API_KEY=${RUNPOD_API_KEY:-}
 TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
 EOF
 
-echo "==> client download (jar+libs+assets)"
+wlog "step: client download (jar+libs+assets)"
 python3 "$ARENA/capture/client_setup.py" 2>&1 | tail -3
 
-echo "==> NVIDIA X driver module"
+wlog "step: NVIDIA X driver module"
 DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
 echo "driver: $DRV"
 if [ ! -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ]; then
@@ -134,10 +143,10 @@ Section "Screen"
 EndSection
 EOF
 
-echo "==> bot deps"
+wlog "step: bot deps"
 cd "$ARENA/bots" && npm install --omit=dev > /dev/null 2>&1
 
-echo "==> start minecraft server"
+wlog "step: start minecraft server"
 tmux new-session -d -s mc "cd $ARENA/server && java -Xms2G -Xmx4G -jar server.jar nogui 2>&1 | tee $ARENA/logs/mc.log"
 for i in $(seq 1 90); do grep -q "Done (" "$ARENA/logs/mc.log" 2>/dev/null && break; sleep 5; done
 grep -q "Done (" "$ARENA/logs/mc.log" && echo "server up" || { echo "SERVER FAILED"; tail -10 "$ARENA/logs/mc.log"; }
@@ -147,10 +156,10 @@ mc_cmd "gamerule doDaylightCycle false"
 mc_cmd "time set noon"
 mc_cmd "weather clear 999999"
 
-echo "==> start stream services"
+wlog "step: start stream services"
 tmux new-session -d -s mtx "cd $ARENA/capture && $ARENA/stream/mediamtx mediamtx.yml 2>&1 | tee $ARENA/logs/mtx.log"
 
-echo "==> start Xorg on GPU"
+wlog "step: start Xorg on GPU"
 GPU_OK=0
 if [ -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ]; then
   nohup Xorg :10 -config /etc/X11/xorg-gpu.conf -noreset > "$ARENA/logs/xorg10.log" 2>&1 &
@@ -165,10 +174,10 @@ if [ -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ]; then
 fi
 
 if [ "$GPU_OK" = "1" ]; then
-  echo "==> launch cameras + captures on GPU Xorg"
+  wlog "step: launch cameras + captures on GPU Xorg"
   bash "$ARENA/capture/gpu-restack.sh"
 else
-  echo "==> FALLBACK: cameras on Xvfb (llvmpipe)"
+  wlog "step: FALLBACK: cameras on Xvfb (llvmpipe)"
   for d in 101 102 103 104 105; do Xvfb :$d -screen 0 1280x720x24 & done
   sleep 2
   launch() { tmux new-session -d -s "$4" "bash $ARENA/capture/run-client.sh $1 $2 2>&1 | tee $ARENA/logs/client-$1.log"; sleep 8; }
@@ -182,11 +191,11 @@ else
   capf 101 mira; capf 102 tally; capf 103 arena; capf 104 cinder; capf 105 vex
 fi
 
-echo "==> launch ambient cast + spectate loop"
+wlog "step: launch ambient cast + spectate loop"
 tmux new-session -d -s bots "cd $ARENA/bots && node ambient.mjs 2>&1 | tee -a $ARENA/logs/bots.log"
 tmux new-session -d -s spec "cd $ARENA/bots && node spectate-loop.mjs 2>&1 | tee -a $ARENA/logs/spec.log"
 
-echo "==> HLS check"
+wlog "step: HLS check"
 sleep 15
 for p in arena cinder vex mira tally; do printf "%s: " $p; curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/$p/index.m3u8; done
 echo "=== bootstrap done $(date -u +%FT%TZ) ==="
