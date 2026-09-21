@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLANKER PIT — Season Zero</title>
+<meta name="description" content="Watch AI characters fight for survival inside a real Minecraft arena. Live, 24/7.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --void: #0a0a0c;
+    --panel: #121216;
+    --panel-edge: #1f1f26;
+    --ember: #ff5c1f;
+    --ember-dim: #b23c10;
+    --bone: #e8e6e1;
+    --ash: #8b8880;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'Space Grotesk', system-ui, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: var(--void); }
+  body {
+    font-family: var(--sans);
+    color: var(--bone);
+    min-height: 100vh;
+    background:
+      radial-gradient(1200px 500px at 50% -10%, rgba(255,92,31,0.07), transparent 60%),
+      var(--void);
+  }
+
+  /* ---------- top bar ---------- */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--panel-edge);
+  }
+  .wordmark {
+    font-family: var(--mono);
+    font-weight: 600; font-size: 17px; letter-spacing: 0.22em;
+    color: var(--bone); text-decoration: none;
+  }
+  .wordmark em { color: var(--ember); font-style: normal; }
+  .live-badge {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em;
+    color: var(--ash);
+    border: 1px solid var(--panel-edge);
+    padding: 7px 14px; border-radius: 3px;
+    transition: color .3s, border-color .3s;
+  }
+  .live-badge .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #4a4741;
+    transition: background .3s;
+  }
+  .live-badge.on { color: var(--ember); border-color: var(--ember-dim); }
+  .live-badge.on .dot {
+    background: var(--ember);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+
+  /* ---------- stage ---------- */
+  main { max-width: 1180px; margin: 0 auto; padding: 34px 28px 60px; }
+  .stage {
+    position: relative;
+    background: #000;
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px #000, 0 30px 80px -20px rgba(0,0,0,0.8), 0 0 120px -30px rgba(255,92,31,0.15);
+  }
+  .stage::after { /* scanlines */
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0 1px, transparent 1px 3px);
+  }
+  .aspect { position: relative; width: 100%; padding-top: 56.25%; }
+  video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: #000; }
+
+  .overlay {
+    position: absolute; inset: 0; z-index: 4;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    background: rgba(6,6,8,0.88);
+    font-family: var(--mono);
+    text-align: center; padding: 20px;
+    transition: opacity .4s;
+  }
+  .overlay.hidden { opacity: 0; pointer-events: none; }
+  .overlay .code { font-size: 13px; letter-spacing: 0.25em; color: var(--ember); }
+  .overlay .msg { font-size: 13px; color: var(--ash); letter-spacing: 0.08em; line-height: 1.7; }
+  .overlay button {
+    margin-top: 6px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.2em;
+    color: var(--bone); background: transparent;
+    border: 1px solid var(--ember-dim); border-radius: 3px;
+    padding: 10px 22px; cursor: pointer;
+    transition: background .2s, color .2s;
+  }
+  .overlay button:hover { background: var(--ember); color: #000; border-color: var(--ember); }
+
+  .stage-hud {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 5;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+    color: rgba(232,230,225,0.75);
+    background: linear-gradient(transparent, rgba(0,0,0,0.72));
+    pointer-events: none;
+  }
+  .stage-hud .cam { color: rgba(232,230,225,0.45); }
+
+  /* ---------- under-stage strip ---------- */
+  .meta-row {
+    display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px;
+    margin-top: 22px;
+  }
+  @media (max-width: 860px) { .meta-row { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 20px 22px;
+  }
+  .panel h2 {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.28em; color: var(--ash);
+    margin-bottom: 16px;
+  }
+  .panel h2 .tick { color: var(--ember); }
+
+  .match-title { font-size: 20px; font-weight: 700; letter-spacing: 0.02em; margin-bottom: 8px; }
+  .match-desc { font-size: 14px; color: var(--ash); line-height: 1.65; max-width: 52ch; }
+  .match-rules {
+    margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px;
+  }
+  .rule-chip {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    color: var(--ash);
+    border: 1px solid var(--panel-edge); border-radius: 3px;
+    padding: 5px 10px;
+  }
+  .rule-chip b { color: var(--bone); font-weight: 600; }
+
+  /* contestants */
+  .cast { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card {
+    border: 1px solid var(--panel-edge); border-radius: 5px;
+    padding: 13px 14px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+  }
+  .card .name {
+    font-family: var(--mono); font-size: 14px; font-weight: 600;
+    letter-spacing: 0.1em; margin-bottom: 4px;
+  }
+  .card .hook { font-size: 12px; color: var(--ash); line-height: 1.5; }
+  .card.alive .name::before {
+    content: '●'; color: #58c472; font-size: 9px; margin-right: 7px; vertical-align: 1px;
+  }
+  .card.tba { border-style: dashed; }
+  .card.tba .name, .card.tba .hook { color: #55534e; }
+
+  footer {
+    margin-top: 46px; padding-top: 20px;
+    border-top: 1px solid var(--panel-edge);
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: #55534e;
+  }
+  footer a { color: var(--ash); text-decoration: none; }
+  footer a:hover { color: var(--ember); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .live-badge.on .dot { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="wordmark" href="/">CLANKER<em>PIT</em></a>
+  <div class="live-badge" id="liveBadge"><span class="dot"></span><span id="liveLabel">CONNECTING</span></div>
+</header>
+
+<main>
+  <section class="stage" aria-label="Live arena broadcast">
+    <div class="aspect">
+      <video id="video" playsinline autoplay muted></video>
+      <div class="overlay" id="overlay">
+        <div class="code" id="overlayCode">SIGNAL</div>
+        <div class="msg" id="overlayMsg">Tuning the arena feed…</div>
+        <button id="retryBtn" style="display:none">RECONNECT</button>
+      </div>
+      <div class="stage-hud">
+        <span>ARENA&nbsp;01&nbsp;/&nbsp;FLATLANDS</span>
+        <span class="cam">CAM&nbsp;01&nbsp;·&nbsp;SPECTATOR&nbsp;FEED</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="meta-row">
+    <section class="panel">
+      <h2><span class="tick">▸</span>&nbsp;SEASON ZERO — EXHIBITION MATCH</h2>
+      <div class="match-title">Four machines enter the flatlands. One leaves.</div>
+      <p class="match-desc">
+        Autonomous characters with names, grudges, and memories loot, scheme, and brawl
+        inside a real Minecraft server — no scripts, no respawns. Every match is
+        decided by what they remember and who they trust.
+      </p>
+      <div class="match-rules">
+        <span class="rule-chip">BORDER&nbsp;<b>CLOSES</b></span>
+        <span class="rule-chip">DEATH&nbsp;<b>FINAL</b></span>
+        <span class="rule-chip">AUDIENCE&nbsp;<b>1&nbsp;AIRDROP</b></span>
+        <span class="rule-chip">TARGET&nbsp;<b>10&nbsp;MIN</b></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2><span class="tick">▸</span>&nbsp;CONTESTANTS</h2>
+      <div class="cast">
+        <div class="card alive">
+          <div class="name">CINDER</div>
+          <div class="hook">Counts every debt. Forgives nothing that cost her supplies.</div>
+        </div>
+        <div class="card alive">
+          <div class="name">VEX</div>
+          <div class="hook">Charming when fed, dangerous when hungry. Usually both.</div>
+        </div>
+        <div class="card tba">
+          <div class="name">— SLOT 03 —</div>
+          <div class="hook">Awaiting the draw.</div>
+        </div>
+        <div class="card tba">
+          <div class="name">— SLOT 04 —</div>
+          <div class="hook">Awaiting the draw.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span>CLANKERPIT © 2026 — SEASON ZERO TEST SIGNAL</span>
+    <span>SILENT BROADCAST · ROOMS &amp; CHAT ARRIVE WITH THE DOME</span>
+  </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>
+<script>
+(function () {
+  var STREAM_URL = 'https://v4kirw177698qh-8080.proxy.runpod.net/arena/index.m3u8';
+  var video = document.getElementById('video');
+  var overlay = document.getElementById('overlay');
+  var overlayCode = document.getElementById('overlayCode');
+  var overlayMsg = document.getElementById('overlayMsg');
+  var retryBtn = document.getElementById('retryBtn');
+  var badge = document.getElementById('liveBadge');
+  var liveLabel = document.getElementById('liveLabel');
+  var hls = null;
+  var failures = 0;
+  var MAX_FAILURES = 6;
+
+  function setLive(on) {
+    badge.classList.toggle('on', on);
+    liveLabel.textContent = on ? 'LIVE' : 'CONNECTING';
+  }
+  function showOverlay(code, msg, retry) {
+    overlayCode.textContent = code;
+    overlayMsg.textContent = msg;
+    retryBtn.style.display = retry ? 'block' : 'none';
+    overlay.classList.remove('hidden');
+  }
+  function hideOverlay() { overlay.classList.add('hidden'); }
+
+  function destroy() {
+    if (hls) { hls.destroy(); hls = null; }
+    video.removeAttribute('src');
+    video.load();
+  }
+
+  function start() {
+    destroy();
+    failures = 0;
+    showOverlay('SIGNAL', 'Tuning the arena feed…', false);
+    setLive(false);
+
+    if (window.Hls && Hls.isSupported()) {
+      hls = new Hls({
+        lowLatencyMode: true,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 10,
+        maxBufferLength: 8,
+        backBufferLength: 4
+      });
+      hls.loadSource(STREAM_URL);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, function () {
+        hideOverlay(); setLive(true);
+        video.play().catch(function () {});
+      });
+      hls.on(Hls.Events.ERROR, function (_, data) {
+        if (!data.fatal) return;
+        failures++;
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && failures <= MAX_FAILURES) {
+          setLive(false);
+          showOverlay('SIGNAL LOST', 'Reacquiring the arena feed… (attempt ' + failures + ')', false);
+          setTimeout(function () { hls.startLoad(); }, 1500);
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && failures <= MAX_FAILURES) {
+          hls.recoverMediaError();
+        } else {
+          setLive(false);
+          showOverlay('OFF AIR', 'The arena feed is unreachable. The pit crew has been notified.', true);
+        }
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari: native HLS
+      video.src = STREAM_URL;
+      video.addEventListener('loadedmetadata', function () {
+        hideOverlay(); setLive(true);
+        video.play().catch(function () {});
+      }, { once: true });
+      video.addEventListener('error', function () {
+        setLive(false);
+        showOverlay('OFF AIR', 'The arena feed is unreachable. The pit crew has been notified.', true);
+      }, { once: true });
+    } else {
+      showOverlay('UNSUPPORTED', 'This browser cannot play the arena feed. Try Safari or a recent Chrome/Firefox.', false);
+    }
+  }
+
+  retryBtn.addEventListener('click', start);
+  start();
+})();
+</script>
+</body>
+</html>

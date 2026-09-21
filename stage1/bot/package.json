@@ -1,0 +1,12 @@
+{
+  "name": "clankerpit-stage1",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Stage 1: character experiment — Cinder (Kimi+Jev) vs scripted Vex",
+  "type": "module",
+  "dependencies": {
+    "mineflayer": "^4.20.1",
+    "mineflayer-pathfinder": "^2.4.5",
+    "rcon-client": "^4.2.5"
+  }
+}

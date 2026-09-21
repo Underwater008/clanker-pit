@@ -1,0 +1,10 @@
+# mediamtx config for the arena stream: RTMP in, HLS out on the pod's public port.
+rtmpAddress: :1935
+hlsAddress: :8080
+hlsAllowOrigin: "*"
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+paths:
+  arena:
+    source: publisher

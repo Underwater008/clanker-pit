@@ -1,0 +1,17 @@
+graphicsMode:0
+renderDistance:8
+simulationDistance:8
+ao:0
+biomeBlendRadius:0
+particles:1
+fullscreen:false
+enableVsync:false
+maxFps:60
+overrideWidth:1280
+overrideHeight:720
+soundCategory_master:0.0
+soundCategory_music:0.0
+joinedFirstServer:true
+onboardAccessibility:false
+hideBundleTutorial:true
+skipMultiplayerWarning:true

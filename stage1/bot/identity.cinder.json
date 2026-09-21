@@ -1,0 +1,12 @@
+{
+  "name": "Cinder",
+  "origin": "Smelted in the ash districts; hauled ore until the draw bought her out.",
+  "motive": "Survive the match and pay back every debt — in either direction.",
+  "dispositions": ["cautious", "ledger-keeping", "slow to trust", "protective of supplies"],
+  "speech_style": "short, dry, counts costs out loud",
+  "relationship_hooks": {
+    "Vex": "Took her supplies in a previous encounter. Debt: unpaid."
+  },
+  "risk_tolerance": "low",
+  "current_goal": "Gear up and stay alive until the border closes."
+}
