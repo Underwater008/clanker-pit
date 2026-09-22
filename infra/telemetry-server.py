@@ -10,6 +10,7 @@ The gateway itself binds loopback only; this server is the public gatekeeper.
 """
 import json
 import os
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import URLError
@@ -20,6 +21,23 @@ GUEST_BODY_LIMIT = 8 * 1024
 GUEST_TIMEOUT = 10
 GUEST_GET = {'/guest/status'}
 GUEST_POST = {'/guest/join', '/guest/leave', '/guest/input'}
+# The queue is the headline interactive feature: at most 2 joins per visitor
+# IP per 10 minutes, enforced here — the only place the real client address
+# is visible (everything arrives at the loopback gateway from this proxy).
+JOIN_WINDOW_SECONDS = 600
+JOIN_MAX_PER_IP = 2
+_join_times = {}
+
+
+def _join_throttled(ip):
+    now = time.monotonic()
+    times = [t for t in _join_times.get(ip, []) if now - t < JOIN_WINDOW_SECONDS]
+    if len(times) >= JOIN_MAX_PER_IP:
+        _join_times[ip] = times
+        return True
+    times.append(now)
+    _join_times[ip] = times
+    return False
 
 
 def guest_upstream():
@@ -111,6 +129,10 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self.send_error(400)
             return
+        # Negative lengths must never reach rfile.read() (an unbounded read).
+        if length < 0:
+            self.send_error(400)
+            return
         if length > GUEST_BODY_LIMIT:
             # Drain a bounded amount so well-behaved clients can finish
             # sending and read the 413 instead of hitting a connection reset.
@@ -119,6 +141,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(413)
             return
         body = self.rfile.read(length) if length else b''
+        if path == '/guest/join' and _join_throttled(self.client_address[0] if self.client_address else 'unknown'):
+            payload = json.dumps(
+                {'error': 'Slow down - the queue is for everyone'}
+            ).encode()
+            self.send_response(429)
+            self.send_header('Content-Type', 'application/json')
+            self._cors()
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         self._proxy_guest('POST', body)
 
 

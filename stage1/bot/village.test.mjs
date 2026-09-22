@@ -27,7 +27,7 @@ import {
 const flag = new Vec3(100, 64, -200)
 const key = (p) => `${p.x},${p.y},${p.z}`
 
-test('wall ring has no duplicates, is two blocks high, and leaves a south gate gap', () => {
+test('wall ring stands on the ground, has no duplicates, and leaves a gate gap', () => {
   const wall = wallBlueprint(flag)
   const keys = wall.map(key)
   assert.equal(new Set(keys).size, wall.length)
@@ -40,11 +40,17 @@ test('wall ring has no duplicates, is two blocks high, and leaves a south gate g
   for (const p of wall)
     if (p.z === flag.z + WALL_RADIUS)
       assert.ok(Math.abs(p.x - flag.x) > GATE_HALF_WIDTH, `gate blocked at ${p}`)
-  // Every column is exactly WALL_HEIGHT tall.
+  // Every column is exactly WALL_HEIGHT tall, standing ABOVE the ground
+  // layer (the grass floor itself must never count as wall).
   const byColumn = {}
-  for (const p of wall)
+  const heights = new Set()
+  for (const p of wall) {
     byColumn[`${p.x},${p.z}`] = (byColumn[`${p.x},${p.z}`] ?? 0) + 1
+    heights.add(p.y - flag.y)
+  }
   assert.ok(Object.values(byColumn).every((n) => n === WALL_HEIGHT))
+  assert.ok(!heights.has(0), 'wall must not replace the ground layer')
+  assert.deepEqual([...heights].sort((a, b) => a - b), [1, 2])
 })
 
 test('front gate is two pillars and a lintel over the open passage', () => {
@@ -54,24 +60,28 @@ test('front gate is two pillars and a lintel over the open passage', () => {
   const pillarX = GATE_HALF_WIDTH + 1
   // 2 pillars x 3 high + 5 lintel blocks
   assert.equal(gate.length, 2 * (WALL_HEIGHT + 1) + 2 * pillarX + 1)
-  // The passage itself (x in [-1,1], z=+R, y<=WALL_HEIGHT) is not blocked.
+  // The passage (x in [-1,1], z=+R, above the ground) is not blocked.
   for (let x = -GATE_HALF_WIDTH; x <= GATE_HALF_WIDTH; x++)
-    for (let h = 0; h < WALL_HEIGHT; h++)
+    for (let h = 1; h <= WALL_HEIGHT; h++)
       assert.ok(!keys.includes(key(flag.offset(x, h, WALL_RADIUS))))
+  // The gate also never replaces the ground layer.
+  assert.ok(gate.every((p) => p.y > flag.y))
 })
 
-test('torch spots sit on the wall top and the gate pillars, without duplicates', () => {
+test('torch spots sit on the wall top and the gate lintel, without duplicates', () => {
   const spots = torchSpots(flag)
   const keys = spots.map(key)
   assert.equal(new Set(keys).size, spots.length)
   assert.ok(spots.length >= 8, `expected a lit perimeter, got ${spots.length}`)
+  const wall = new Set(wallBlueprint(flag).map(key))
+  const gate = new Set(gateBlueprint(flag).map(key))
   for (const p of spots) {
-    const onWallTop = p.y === flag.y + WALL_HEIGHT
-    const onPillar =
-      p.y === flag.y + WALL_HEIGHT + 1 &&
-      p.z === flag.z + WALL_RADIUS &&
-      Math.abs(p.x - flag.x) === GATE_HALF_WIDTH + 1
-    assert.ok(onWallTop || onPillar, `torch at ${p} rests on nothing`)
+    const onWallTop =
+      p.y === flag.y + WALL_HEIGHT + 1 && wall.has(key(p.offset(0, -1, 0)))
+    const onLintel =
+      p.y === flag.y + WALL_HEIGHT + 3 && gate.has(key(p.offset(0, -1, 0)))
+    assert.ok(onWallTop || onLintel, `torch at ${p} rests on nothing`)
+    assert.ok(!wall.has(key(p)) && !gate.has(key(p)), `torch collides with a block at ${p}`)
   }
 })
 
@@ -101,21 +111,25 @@ test('every home doorway faces the Server', () => {
     const home = homeBlueprint(lot, flagAtOrigin)
     assert.equal(home.length, 23, `lot ${i} blueprint size`)
     const keys = new Set(home.map(key))
-    // The 3x3 ring at ground level minus the doorway blocks.
+    assert.ok(
+      home.every((p) => p.y > lot.y),
+      'homes must stand above the ground layer',
+    )
+    // The 3x3 ring at floor level minus the doorway blocks.
     const ring = []
     for (let x = -1; x <= 1; x++)
       for (let z = -1; z <= 1; z++) {
         if (Math.abs(x) !== 1 && Math.abs(z) !== 1) continue
         ring.push([x, z])
       }
-    const open = ring.filter(([x, z]) => !keys.has(key(lot.offset(x, 0, z))))
+    const open = ring.filter(([x, z]) => !keys.has(key(lot.offset(x, 1, z))))
     assert.equal(open.length, 1, `lot ${i} has ${open.length} doorways`)
     const [ox, oz] = open[0]
     const towardFlag = flagAtOrigin.minus(lot)
     const dot = ox * towardFlag.x + oz * towardFlag.z
     assert.ok(dot > 0, `lot ${i} door faces away from the Server`)
     // The doorway is two blocks tall.
-    assert.ok(!keys.has(key(lot.offset(ox, 1, oz))), `lot ${i} door is blocked above`)
+    assert.ok(!keys.has(key(lot.offset(ox, 2, oz))), `lot ${i} door is blocked above`)
   }
 })
 

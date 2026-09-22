@@ -56,7 +56,8 @@ export function rotateXZ(x, z, r) {
 }
 
 /** Wall ring: a square of radius WALL_RADIUS around the flag, two blocks
- * high, with a gate gap in the south (positive Z) wall. */
+ * high, standing ON the ground (flag.y is the grass floor, so construction
+ * starts one block above it), with a gate gap in the south (+Z) wall. */
 export function wallBlueprint(flag) {
   const positions = []
   const R = WALL_RADIUS
@@ -65,7 +66,7 @@ export function wallBlueprint(flag) {
       const onRing = Math.abs(x) === R || Math.abs(z) === R
       if (!onRing) continue
       if (z === R && Math.abs(x) <= GATE_HALF_WIDTH) continue // gate gap
-      for (let h = 0; h < WALL_HEIGHT; h++)
+      for (let h = 1; h <= WALL_HEIGHT; h++)
         positions.push(plus(flag, x, h, z))
     }
   return positions
@@ -78,10 +79,10 @@ export function gateBlueprint(flag) {
   const R = WALL_RADIUS
   const pillarX = GATE_HALF_WIDTH + 1
   for (const x of [-pillarX, pillarX])
-    for (let h = 0; h < WALL_HEIGHT + 1; h++)
+    for (let h = 1; h <= WALL_HEIGHT + 1; h++)
       positions.push(plus(flag, x, h, R))
   for (let x = -pillarX; x <= pillarX; x++)
-    positions.push(plus(flag, x, WALL_HEIGHT + 1, R))
+    positions.push(plus(flag, x, WALL_HEIGHT + 2, R))
   return positions
 }
 
@@ -89,15 +90,17 @@ export function gateBlueprint(flag) {
 export function torchSpots(flag) {
   const spots = []
   const R = WALL_RADIUS
+  const top = WALL_HEIGHT + 1 // one above the wall's highest block
   for (let x = -R; x <= R; x += 4) {
     if (Math.abs(x) <= GATE_HALF_WIDTH + 1) continue
-    spots.push(plus(flag, x, WALL_HEIGHT, R), plus(flag, x, WALL_HEIGHT, -R))
+    spots.push(plus(flag, x, top, R), plus(flag, x, top, -R))
   }
   for (let z = -R + 4; z <= R - 4; z += 4)
-    spots.push(plus(flag, -R, WALL_HEIGHT, z), plus(flag, R, WALL_HEIGHT, z))
+    spots.push(plus(flag, -R, top, z), plus(flag, R, top, z))
+  // Above the lintel, clear of its blocks.
   spots.push(
-    plus(flag, -(GATE_HALF_WIDTH + 1), WALL_HEIGHT + 1, R),
-    plus(flag, GATE_HALF_WIDTH + 1, WALL_HEIGHT + 1, R),
+    plus(flag, -(GATE_HALF_WIDTH + 1), WALL_HEIGHT + 3, R),
+    plus(flag, GATE_HALF_WIDTH + 1, WALL_HEIGHT + 3, R),
   )
   return spots
 }
@@ -154,7 +157,8 @@ export function homeBlueprint(lot, flag) {
   }
   return shell.map(([x, y, z]) => {
     const [rx, rz] = rotateXZ(x, z, best)
-    return center.offset(rx, y, rz)
+    // Homes stand ON the ground: one block above the lot's floor level.
+    return center.offset(rx, y + 1, rz)
   })
 }
 
@@ -332,14 +336,19 @@ export function createVillageState({
       save()
       return name
     },
-    /** The Server boots a villager when the coolant target is reached. */
+    /** The Server boots a villager when the coolant target is reached; the
+     * population growth and the coolant reset persist in one atomic write so
+     * a crash between the two can never double-boot. */
     bootVillager() {
       if (state.waterFed < state.waterTarget) return null
-      const name = this.nextVillager()
-      if (name) {
-        state.waterFed = 0
-        save()
-      }
+      if (state.population.length >= MAX_POPULATION) return null
+      const used = new Set([...state.population, ...state.bootedVillagers])
+      const name = VILLAGER_POOL.find((n) => !used.has(n))
+      if (!name) return null
+      state.bootedVillagers.push(name)
+      state.population.push(name)
+      state.waterFed = 0
+      save()
       return name
     },
     setRoles(roles) {

@@ -133,6 +133,31 @@ async function withRcon(fn) {
   }
   return null
 }
+/** Single attempt, no automatic retry: for commands where a blind retry
+ * could double-execute (like the boom summon). */
+async function withRconOnce(fn) {
+  try {
+    if (!rcon) {
+      rcon = await Rcon.connect({
+        host: MC_HOST,
+        port: RCON_PORT,
+        password: RCON_PASSWORD,
+        timeout: 5000,
+      })
+      rcon.on('error', () => {
+        rcon = null
+      })
+      rcon.on('end', () => {
+        rcon = null
+      })
+    }
+    return await fn(rcon)
+  } catch (e) {
+    rcon = null
+    log('rcon_error', { error: String(e).slice(0, 160), once: true })
+    return null
+  }
+}
 
 /* ---------- the guest bot --------------------------------------------------- */
 const queue = new GuestQueue({
@@ -194,9 +219,10 @@ async function wearCreeperHead(bot) {
   }
 }
 
-function teardownBot(reason) {
-  const bot = guestBot
-  guestBot = null
+function teardownBot(bot, reason) {
+  // Bound to the originating bot: a delayed cleanup from a finished turn
+  // must never tear down the NEXT guest.
+  if (guestBot === bot) guestBot = null
   if (!bot) return
   try {
     bot.quit('Turn over')
@@ -253,7 +279,7 @@ function spawnGuest(entry) {
     if (ended) return
     ended = true
     endTurn(reason)
-    setTimeout(() => teardownBot(reason), reason === 'died' ? 3000 : 0)
+    setTimeout(() => teardownBot(bot, reason), reason === 'died' ? 3000 : 0)
   }
   bot.once('spawn', async () => {
     queue.markSpawned(botName)
@@ -314,16 +340,42 @@ async function boom(entry) {
   }
   log('guest_boom', { nickname: entry.nickname, position })
   // Audience mechanic, match-controller side: a real creeper explosion at the
-  // guest's feet. The guest dies with it — one creeper, one boom.
-  await withRcon((client) =>
-    client.send(
-      `execute at ${bot.username} run summon minecraft:creeper ~ ~ ~ {NoAI:1b,ignited:1b,Fuse:15s,ExplosionRadius:3b}`,
-    ),
-  )
+  // guest's feet. The guest dies with it — one creeper, one boom. Single
+  // attempt per try (a blind retry could double-summon) and the explosion is
+  // verified from the bot's own entity list before it counts.
+  let verified = false
+  for (let attempt = 0; attempt < 2 && !verified; attempt++) {
+    const sent = await withRconOnce((client) =>
+      client.send(
+        `execute at ${bot.username} run summon minecraft:creeper ~ ~ ~ {NoAI:1b,ignited:1b,Fuse:15s,ExplosionRadius:3b}`,
+      ),
+    )
+    if (sent !== null) {
+      for (let i = 0; i < 8 && !creeperNear(bot); i++) await sleep(200)
+      verified = creeperNear(bot)
+    }
+    if (!verified) log('boom_unverified', { nickname: entry.nickname, attempt })
+  }
+  if (!verified) {
+    // No verified explosion: unlatch so the guest can try again.
+    boomLatched = false
+    return { ok: false, error: 'the fuse fizzled — try again' }
+  }
   emitEvent('boom', { nickname: entry.nickname, position })
   endTurn('boom', { chat: false }) // the controller writes the boom story line
-  setTimeout(() => teardownBot('boom'), BOOM_GRACE_MS)
+  setTimeout(() => teardownBot(bot, 'boom'), BOOM_GRACE_MS)
   return { ok: true, exploded: true }
+}
+
+function creeperNear(bot) {
+  return (
+    Boolean(bot?.entity) &&
+    Object.values(bot.entities).some(
+      (e) =>
+        e.name === 'creeper' &&
+        e.position.distanceTo(bot.entity.position) < 5,
+    )
+  )
 }
 
 function applyInput(entry, input) {
@@ -363,23 +415,6 @@ function applyInput(entry, input) {
 }
 
 /* ---------- HTTP ----------------------------------------------------------- */
-// Anti-monopolization: at most 2 joins per origin IP per 10 minutes. The
-// queue is the headline interactive feature; one viewer with a pile of
-// aliases must not lock it out for everyone else.
-const joinTimesByIp = new Map()
-const JOIN_WINDOW_MS = 10 * 60_000
-const JOIN_MAX_PER_IP = 2
-function allowJoinFrom(ip) {
-  const now = Date.now()
-  const times = (joinTimesByIp.get(ip) ?? []).filter(
-    (t) => now - t < JOIN_WINDOW_MS,
-  )
-  if (times.length >= JOIN_MAX_PER_IP) return false
-  times.push(now)
-  joinTimesByIp.set(ip, times)
-  return true
-}
-
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -437,12 +472,12 @@ const server = createServer(async (req, res) => {
       const body = parseJsonBody(await readBody(req))
       if (!body) return send(res, 400, { error: 'invalid JSON body' })
       if (path === '/join') {
-        const ip = req.socket?.remoteAddress ?? 'unknown'
-        if (!allowJoinFrom(ip))
-          return send(res, 429, { error: 'Slow down — the queue is for everyone' })
+        // Per-IP throttling happens at the public boundary
+        // (telemetry-server.py) — behind the proxy every request arrives
+        // from this host, so throttling here would throttle everyone.
         const result = queue.join(body.nickname)
         if (result.error) return send(res, 400, { error: result.error })
-        log('guest_join', { nickname: result.nickname, position: result.position, ip })
+        log('guest_join', { nickname: result.nickname, position: result.position })
         writeGuestState()
         return send(res, 200, result)
       }
@@ -497,13 +532,24 @@ setInterval(() => {
     if (reason === 'idle')
       emitChat('gate', `${entry.nickname}'s creeper wandered off.`)
     else emitChat('gate', `${entry.nickname}'s turn ran out.`)
-    teardownBot('timeout')
+    teardownBot(guestBot, 'timeout')
   }
   writeGuestState()
 }, 500)
+// The Server drinks its coolant (labeled match-controller mechanic): a poured
+// bucket sits visibly in the basin until this drains it, which is what makes
+// every feed genuinely consume the bot's water.
+setInterval(() => {
+  if (!anatomy) return
+  void withRcon((client) =>
+    client.send(
+      `execute if block ${anatomy.basinHole.x} ${anatomy.basinHole.y} ${anatomy.basinHole.z} water run setblock ${anatomy.basinHole.x} ${anatomy.basinHole.y} ${anatomy.basinHole.z} air`,
+    ),
+  )
+}, 20000)
 
 function stop() {
-  teardownBot('shutdown')
+  teardownBot(guestBot, 'shutdown')
   mirror.close()
   server.close()
   rcon?.end().catch(() => {})

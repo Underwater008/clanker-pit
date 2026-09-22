@@ -256,7 +256,11 @@
   }
 
   function bot(name) {
-    return telemetry && telemetry.bots ? telemetry.bots[name] : null;
+    if (!telemetry || !telemetry.bots || !name) return null;
+    var bots = telemetry.bots;
+    // Feed ids are lowercase, telemetry keys are clanker display names
+    // ("Cinder"); accept both, plus the exact key.
+    return bots[name] || bots[name.charAt(0).toUpperCase() + name.slice(1)] || bots[name.toLowerCase()] || null;
   }
   function population() {
     var v = telemetry && telemetry.village;
@@ -747,10 +751,14 @@
     if (!wantSend || now - guest.lastSend < 80) return;
     guest.lastSend = now;
     guest.dirty = false;
+    // Normalize yaw before sending: the gateway bounds it at ±8π and the
+    // browser accumulates without limit while dragging.
+    var yaw = guest.yaw;
+    if (yaw !== null) yaw = ((yaw % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
     guestPost('/guest/input', {
       token: guest.token,
       keys: snapshotKeys(),
-      look: { yaw: guest.yaw === null ? undefined : guest.yaw, pitch: guest.pitch }
+      look: { yaw: yaw === null ? undefined : yaw, pitch: guest.pitch }
     }).catch(function () {});
   }, 40);
 
@@ -797,6 +805,7 @@
   }
 
   // ---------- polling ----------
+  var lastGuestStatusAt = 0;
   function fetchJson(url, timeoutMs) {
     var opts = { cache: 'no-store' };
     if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout)
@@ -810,6 +819,17 @@
     fetchJson(API_BASE + '/arena/state.json')
       .catch(function () { return fetchJson(STATE_FALLBACK); })
       .then(function (data) {
+        // The arena snapshot can be older than the last /guest/status read;
+        // never let a stale snapshot erase an active turn's credentials.
+        if (
+          data &&
+          data.guest !== undefined &&
+          telemetry &&
+          telemetry.guest &&
+          Date.now() - lastGuestStatusAt < 3000
+        ) {
+          data.guest = telemetry.guest;
+        }
         telemetry = data;
         renderVillageBar();
         renderChat();
@@ -826,6 +846,7 @@
     if (!guest.token && state.mode !== 'play') return;
     guestStatus().then(function (s) {
       if (!s) return;
+      lastGuestStatusAt = Date.now();
       if (telemetry && telemetry.guest && telemetry.guest.queueLength !== undefined) {
         telemetry.guest.queuePreview = s.queuePreview || telemetry.guest.queuePreview;
         telemetry.guest.queueLength = s.queueLength;

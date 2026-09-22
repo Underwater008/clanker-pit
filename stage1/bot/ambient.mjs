@@ -217,7 +217,6 @@ function chat(kind, from, text) {
 }
 
 /* ---------- guest gateway state merge ------------------------------------- */
-let lastGuestId = 0
 let guestPublic = null
 function mergeGuestState() {
   if (!villageEnabled) return
@@ -228,15 +227,14 @@ function mergeGuestState() {
     guestPublic = null
     return
   }
+  // Dedup relies on the persisted village.sawGuestEvent() guard alone: chat
+  // and events share one id sequence, so a numeric in-memory cursor would
+  // let a later chat id suppress an earlier, unprocessed boom event.
   for (const message of guest.chat ?? [])
-    if (message.id > lastGuestId && village.sawGuestEvent(`chat:${message.id}`)) {
-      lastGuestId = Math.max(lastGuestId, message.id)
+    if (village.sawGuestEvent(`chat:${message.id}`))
       chat('guest', message.from, message.text)
-    }
   for (const event of guest.events ?? []) {
-    if (event.id <= lastGuestId || !village.sawGuestEvent(`event:${event.id}`))
-      continue
-    lastGuestId = Math.max(lastGuestId, event.id)
+    if (!village.sawGuestEvent(`event:${event.id}`)) continue
     if (event.type === 'boom' && villageEnabled) {
       const flag = village.flag()
       // Horizontal distance only: creeper booms happen at ground level, and
@@ -584,7 +582,8 @@ function actor(name, index) {
       state.plan = { ...r, source: planner.name }
       save()
       memory.event('plan', { goal: r.goal, intention: r.intention })
-      log(name, 'planner_plan', r)
+      // Route through actorLog so brain.think telemetry is populated.
+      actorLog('planner_plan', r)
       if (r.says) say(r.says)
     } catch (e) {
       log(name, 'planner_error', { error: String(e) })

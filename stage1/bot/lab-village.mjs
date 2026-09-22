@@ -111,7 +111,7 @@ try {
     return result
   }
 
-  // ---- coolant loop: scoop at the spring, pour into the basin, drink it.
+  // ---- coolant loop: scoop at the spring, pour into the basin (consumed).
   await act('scoop_water')
   assert.ok(
     bot.inventory.items().some((i) => i.name === 'water_bucket'),
@@ -119,13 +119,41 @@ try {
   )
   const fed = await act('feed_server')
   assert.equal(fed.fedCoolant, true, 'feed_server must report a server-confirmed feed')
-  await assertBlock(anatomy.basinHole, 'air', 'the Server drank the coolant')
+  // The pour leaves the water in the basin: the Server "drinks" it on its
+  // own schedule (the guest gateway drains it via RCON). The lab simulates
+  // the drink, then feeds again from a fresh scoop.
+  await assertBlock(anatomy.basinHole, 'water', 'the poured coolant waits in the basin')
   assert.ok(
     bot.inventory.items().some((i) => i.name === 'bucket'),
-    'the bucket must be empty again after the Server drinks',
+    'the bucket must be empty after the pour — real consumption',
   )
-  // A second feed right away must still work (drain-first path).
+  assert.ok(
+    !bot.inventory.items().some((i) => i.name === 'water_bucket'),
+    'no free refills: the water stayed in the basin',
+  )
+  await rconOk(
+    `setblock ${anatomy.basinHole.x} ${anatomy.basinHole.y} ${anatomy.basinHole.z} air`,
+  )
+  await sleep(600)
+  await assertBlock(anatomy.basinHole, 'air', 'the Server drank the coolant')
+  // A feed while the Server is still drinking must be refused (verify the
+  // guard), then succeed after a fresh scoop once the basin is drained.
+  await rconOk(
+    `setblock ${anatomy.basinHole.x} ${anatomy.basinHole.y} ${anatomy.basinHole.z} water`,
+  )
+  await sleep(400)
   await act('scoop_water')
+  let refused = false
+  try {
+    await skills.execute('feed_server')
+  } catch (e) {
+    refused = /still drinking/.test(String(e))
+  }
+  assert.ok(refused, 'feeding while the Server is still drinking must be refused')
+  await rconOk(
+    `setblock ${anatomy.basinHole.x} ${anatomy.basinHole.y} ${anatomy.basinHole.z} air`,
+  )
+  await sleep(400)
   const fed2 = await act('feed_server')
   assert.equal(fed2.fedCoolant, true, 'second feed cycle must also verify')
 
@@ -146,12 +174,17 @@ try {
   const missingGate = gate.filter((p) => !bot.blockAt(p)?.boundingBox)
   assert.equal(missingWall.length, 0, `wall incomplete: ${missingWall.slice(0, 3)}`)
   assert.equal(missingGate.length, 0, `gate incomplete: ${missingGate.slice(0, 3)}`)
-  await assertBlock(wall[5], wall[5].name === 'air' ? 'air' : bot.blockAt(wall[5]).name, 'wall spot')
-  // The gate passage stays open at ground level.
-  for (let x = -1; x <= 1; x++) {
-    const passage = bot.blockAt(FLAG.offset(x, 0, 8))
-    assert.ok(!passage || passage.boundingBox === 'empty', 'gate passage must stay open')
-  }
+  // The wall stands ON the ground — never replacing it.
+  assert.ok(
+    wall.every((p) => p.y > FLAG.y),
+    'wall blocks must sit above the ground layer',
+  )
+  // The gate passage stays open above the ground.
+  for (let x = -1; x <= 1; x++)
+    for (let h = 1; h <= 2; h++) {
+      const passage = bot.blockAt(FLAG.offset(x, h, 8))
+      assert.ok(!passage || passage.boundingBox === 'empty', 'gate passage must stay open')
+    }
   await rconOk('give VillageLab minecraft:oak_planks 64')
   await sleep(1200)
   for (let i = 0; i < 16; i++) {

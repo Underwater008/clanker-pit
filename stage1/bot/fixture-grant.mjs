@@ -1,12 +1,14 @@
-// Labeled round fixture: hand Cinder two starter water buckets once the cast
-// is online, so the coolant loop can start before the village's iron industry
-// is real. flag-setup.mjs places the chest and monument before the bots exist;
-// this companion runs AFTER the controller starts (pod-bootstrap schedules it)
-// and waits for Cinder to join. Idempotent: the grant is recorded in
-// village.json's roundSetup and never repeats.
+// Labeled round fixture: hand the first clanker two starter water buckets
+// once the cast is online, so the coolant loop can start before the village's
+// iron industry is real. flag-setup.mjs places the chest and monument before
+// the bots exist; this companion runs AFTER the controller starts (pod-
+// bootstrap schedules it) and waits for the first listed clanker to join.
+// Idempotent: the grant is recorded in its own marker file — never in
+// village.json, which the running controller owns and rewrites.
 //
 //   node fixture-grant.mjs        (waits up to 5 minutes for the cast)
 import './env.mjs'
+import { existsSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Rcon } from 'rcon-client'
@@ -17,28 +19,29 @@ const HOST = process.env.MC_HOST ?? '127.0.0.1'
 const RCON_PORT = Number(process.env.RCON_PORT ?? 25575)
 const RCON_PASSWORD = process.env.RCON_PASSWORD ?? 'clanker-dev'
 const WAIT_MS = Number(process.env.FIXTURE_GRANT_WAIT_MS ?? 300000)
+const MARKER = join(DATA_DIR, 'fixture-grant.json')
 const log = (event, data = {}) =>
   console.log(JSON.stringify({ t: new Date().toISOString(), event, ...data }))
 
-const village = createVillageState({
-  path: join(DATA_DIR, 'village.json'),
-  // This tool owns only its marker; the running controller owns everything
-  // else, and merge-on-save keeps both writers honest.
-  ownedKeys: ['roundSetup'],
-})
+const village = createVillageState({ path: join(DATA_DIR, 'village.json') })
 if (!village.exists) {
   log('grant_skipped', { reason: 'no village fixture' })
   process.exit(0)
 }
-if (village.raw.roundSetup?.grantedAt) {
-  log('grant_skipped', {
-    reason: 'starter buckets already granted',
-    grantedAt: village.raw.roundSetup.grantedAt,
-  })
-  process.exit(0)
+try {
+  const marker = JSON.parse(readFileSync(MARKER, 'utf8'))
+  if (marker.grantedAt) {
+    log('grant_skipped', {
+      reason: 'starter buckets already granted',
+      grantedAt: marker.grantedAt,
+    })
+    process.exit(0)
+  }
+} catch {
+  // No marker yet: proceed.
 }
-// Hand the starter buckets to the first listed clanker (the industrious one),
-// not a hardcoded name.
+// Hand the starter buckets to the first listed clanker (the industrious
+// one), not a hardcoded name.
 const RECIPIENT =
   (process.env.BOT_NAMES ?? 'Cinder,Vex,Mira,Tally').split(',')[0]?.trim() ||
   village.raw.population?.[0] ||
@@ -73,13 +76,13 @@ try {
         await rcon.send(
           `say [Round setup] ${RECIPIENT} was handed two starter buckets (round fixture, labeled).`,
         )
-        village.adopt({
-          roundSetup: {
-            ...(village.raw.roundSetup ?? {}),
+        writeFileSync(
+          MARKER,
+          JSON.stringify({
             grantedAt: new Date().toISOString(),
             grantedTo: RECIPIENT,
-          },
-        })
+          }),
+        )
         log('grant_done')
         process.exit(0)
       }

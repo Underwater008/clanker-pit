@@ -13,6 +13,12 @@ import {
   isBuildMaterial,
 } from './village.mjs'
 
+// One furnace operation at a time across the whole cast (they share this
+// process and often share the same furnace): two clankers interleaving
+// put/take on one furnace window would mix their iron. Also, opening a
+// furnace has no internal timeout, so it must be raced with a deadline.
+let furnaceChain = Promise.resolve()
+
 const { pathfinder, Movements, goals } = pathfinderPkg
 export const GOALS = {
   build_shelter:
@@ -450,24 +456,28 @@ export function installSurvival(bot, state, log, opts = {}) {
   const oreNearby = () => nearbyBlock((b) => ironOreNames.has(b.name), 16)
   const furnaceNearby = () => nearbyBlock((b) => b.name === 'furnace', 16)
   async function smeltIron() {
-    const furnaceBlock = furnaceNearby()
-    if (!furnaceBlock) throw new Error('No furnace nearby')
-    const raw = bot.inventory.items().find((i) => i.name === 'raw_iron')
-    if (!raw) throw new Error('No raw iron to smelt')
-    const fuel =
-      bot.inventory.items().find((i) => i.name === 'coal') ??
-      bot.inventory.items().find((i) => isPlank(i.name)) ??
-      bot.inventory.items().find((i) => isLog(i.name))
-    if (!fuel) throw new Error('No fuel (coal or planks) for the furnace')
-    await reach(furnaceBlock)
-    const furnace = await bot.openFurnace(furnaceBlock)
+    const run = async () => {
+      const furnaceBlock = furnaceNearby()
+      if (!furnaceBlock) throw new Error('No furnace nearby')
+      // Re-find everything inside the serialized section: another clanker's
+      // smelt may have run while this one waited for the chain.
+      const raw = bot.inventory.items().find((i) => i.name === 'raw_iron')
+      if (!raw) throw new Error('No raw iron to smelt')
+      const fuel =
+        bot.inventory.items().find((i) => i.name === 'coal') ??
+        bot.inventory.items().find((i) => isPlank(i.name)) ??
+        bot.inventory.items().find((i) => isLog(i.name))
+      if (!fuel) throw new Error('No fuel (coal or planks) for the furnace')
+      await reach(furnaceBlock)
+      // bot.openFurnace can hang if the window never opens (destroyed block,
+      // server hiccup) — bound it like every other action.
+      const furnace = await bounded(() => bot.openFurnace(furnaceBlock), 10000)
     try {
-      const count = Math.min(raw.count, fuel.name === 'coal' ? 4 : 2)
-      // Never request more fuel than the bot actually owns.
-      const fuelCount = Math.min(
-        fuel.name === 'coal' ? 1 : Math.ceil((count * 3) / 1.5),
-        fuel.count,
-      )
+      // One coal smelts 8 items; a plank or log smelts 1.5. Never batch more
+      // than the fuel on hand can finish.
+      const fuelYield = fuel.name === 'coal' ? 8 * fuel.count : Math.floor(1.5 * fuel.count)
+      const count = Math.min(raw.count, fuel.name === 'coal' ? 4 : 2, fuelYield)
+      const fuelCount = fuel.name === 'coal' ? Math.ceil(count / 8) : Math.ceil(count / 1.5)
       await furnace.putFuel(
         bot.registry.itemsByName[fuel.name].id,
         null,
@@ -486,17 +496,25 @@ export function installSurvival(bot, state, log, opts = {}) {
         throw new Error(`Furnace produced ${out?.count ?? 0}/${count} ingots`)
       await furnace.takeOutput()
     } catch (error) {
-      // Best effort: pull the ore and fuel back out so nothing is stranded
-      // inside the furnace when the chain fails mid-smelt.
+      // Best effort: pull the ore, fuel and any partial output back out so
+      // nothing is stranded inside the furnace when the chain fails.
+      await furnace.takeOutput().catch(() => {})
       await furnace.takeInput().catch(() => {})
       await furnace.takeFuel().catch(() => {})
       throw error
     } finally {
       await furnace.close().catch(() => {})
     }
-    const gained = countItems(bot.inventory.items(), 'iron_ingot')
-    if (gained < 1) throw new Error('Smelting did not yield iron ingots')
-    return { smelted: gained }
+      const gained = countItems(bot.inventory.items(), 'iron_ingot')
+      if (gained < 1) throw new Error('Smelting did not yield iron ingots')
+      return { smelted: gained }
+    }
+    const runNow = furnaceChain.then(run, run)
+    furnaceChain = runNow.then(
+      () => {},
+      () => {},
+    )
+    return runNow
   }
   /** Fill an empty bucket at a known water source (the coolant spring). */
   async function scoopWater() {
@@ -512,6 +530,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     await walk(
       new goals.GoalNear(water.position.x, water.position.y, water.position.z, 2),
     )
+    // _placeBlockWithOptions needs the solid Block under the water, not a Vec3.
     const floor = bot.blockAt(water.position.offset(0, -1, 0))
     if (!solid(floor)) throw new Error('Spring has no solid bed')
     const bucket = bot.inventory.items().find((i) => i.name === 'bucket')
@@ -530,43 +549,36 @@ export function installSurvival(bot, state, log, opts = {}) {
   }
   /**
    * Feed the Server one bucket of coolant. The pour is server-confirmed by
-   * the water block appearing in the basin; the drink is confirmed by the
-   * water disappearing. Only a verified pour counts as a feed. The whole
-   * pour-and-drink cycle runs through the shared basin lock so two
-   * clankers can never interleave their pours and double-credit one bucket.
+   * the water block appearing in the basin. The Server drinks on its own
+   * schedule (the guest gateway drains the basin via RCON — a match-
+   * controller mechanic, labeled): until it does, the basin stays full and
+   * further feeds wait. The water is genuinely consumed — the bot walks back
+   * to the spring for every bucket. The whole cycle runs through the shared
+   * basin lock so pours can never interleave between clankers.
    */
   async function feedServer() {
     const cycle = async () => {
       const { basinFloor, basinHole } = layout.anatomy
-      await walk(
-        new goals.GoalNear(basinFloor.x, basinFloor.y, basinFloor.z, 2),
-      )
-      const basinBlock = () => bot.blockAt(basinHole)
-      async function pour(held) {
-        await bot.equip(held, 'hand')
-        await bot._placeBlockWithOptions(basinFloor, new Vec3(0, 1, 0), {
-          forceLook: true,
-          swingArm: 'right',
-        })
-      }
-      // The Server drinks slowly; drain any leftover from a previous feed.
-      if (basinBlock()?.name === 'water') {
-        const empty = bot.inventory.items().find((i) => i.name === 'bucket')
-        if (!empty) throw new Error('Basin is full and no bucket to drain it')
-        await pour(empty)
-        await sleep(300)
-      }
+      await walk(new goals.GoalNear(basinFloor.x, basinFloor.y, basinFloor.z, 2))
+      // _placeBlockWithOptions needs the Block object, not a bare Vec3.
+      const floorBlock = bot.blockAt(basinFloor)
+      if (!solid(floorBlock)) throw new Error('Server basin floor is missing')
+      if (bot.blockAt(basinHole)?.name === 'water')
+        throw new Error('The Server is still drinking the last bucket')
       const full = bot.inventory.items().find((i) => i.name === 'water_bucket')
       if (!full) throw new Error('No water bucket to feed the Server')
-      await pour(full)
-      if (basinBlock()?.name !== 'water')
+      await bot.equip(full, 'hand')
+      // Vanilla bucket use: clicking the floor's top face places the water
+      // in the basin hole; the type change acknowledges the pour.
+      await bot._placeBlockWithOptions(floorBlock, new Vec3(0, 1, 0), {
+        forceLook: true,
+        swingArm: 'right',
+      })
+      if (bot.blockAt(basinHole)?.name !== 'water')
         throw new Error('Server basin did not accept the coolant')
-      await sleep(1500) // let the stream see the water in the basin
-      const empty = bot.inventory.items().find((i) => i.name === 'bucket')
-      if (!empty) throw new Error('Bucket did not empty into the basin')
-      await pour(empty)
-      if (basinBlock()?.name === 'water')
-        throw new Error('Server did not drink the coolant')
+      // The bucket must now be empty — real consumption, verified.
+      if (!bot.inventory.items().some((i) => i.name === 'bucket'))
+        throw new Error('Bucket did not empty into the basin')
       return { fedCoolant: true }
     }
     if (villageCtx?.withBasin) return villageCtx.withBasin(cycle)
@@ -879,6 +891,14 @@ export function installSurvival(bot, state, log, opts = {}) {
           'Craft torches from coal and sticks to light the village.',
         )
       const hasBucket = n('bucket') > 0 || n('water_bucket') > 0
+      // Wooden (and golden) pickaxes break iron ore without dropping raw
+      // iron; require a stone-tier pickaxe.
+      const ironPick = n(
+        (name) =>
+          name.endsWith('_pickaxe') &&
+          !name.startsWith('wooden_') &&
+          !name.startsWith('golden_'),
+      )
       if (!hasBucket && !V.atCapacity) {
         if (n('iron_ingot') >= 3 && obs.resources.workbench)
           vadd(
@@ -887,10 +907,10 @@ export function installSurvival(bot, state, log, opts = {}) {
           )
         if (n('raw_iron') >= 1 && furnaceNearby())
           vadd('smelt_iron', 'Smelt raw iron in the furnace toward a bucket.')
-        if (n(isPick) && oreNearby() && n('raw_iron') + n('iron_ingot') < 6)
+        if (ironPick && oreNearby() && n('raw_iron') + n('iron_ingot') < 6)
           vadd(
             'mine_iron_ore',
-            'Mine one iron ore with your pickaxe; raw iron smelts into buckets.',
+            'Mine one iron ore with your stone pickaxe; raw iron smelts into buckets.',
           )
       }
       if (!V.atCapacity) {
@@ -1119,10 +1139,10 @@ export function installSurvival(bot, state, log, opts = {}) {
         if (!torch) throw new Error('Torch disappeared')
         const spot = layout.torches.find(
           (p) =>
-            !['torch', 'wall_torch'].includes(bot.blockAt(p)?.name) &&
+            bot.blockAt(p)?.name === 'air' &&
             solid(bot.blockAt(p.offset(0, -1, 0))),
         )
-        if (!spot) throw new Error('No open torch spot on solid wall')
+        if (!spot) throw new Error('No open torch spot on the wall')
         return place(spot, torch)
       }
       if (action === 'mine_iron_ore') {

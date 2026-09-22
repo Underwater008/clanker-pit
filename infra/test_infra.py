@@ -69,6 +69,7 @@ class TelemetryTests(unittest.TestCase):
         StubGateway.requests.clear()
         StubGateway.next_payload = {}
         StubGateway.next_status = 200
+        telemetry._join_times.clear()
         threading.Thread(target=self.upstream.serve_forever, daemon=True).start()
         self.addCleanup(self.upstream.server_close)
         self.addCleanup(self.upstream.shutdown)
@@ -137,6 +138,31 @@ class TelemetryTests(unittest.TestCase):
             self.assertEqual(error.code, 413)
             error.close()
         self.assertEqual(StubGateway.requests, [])
+
+    def test_negative_content_length_is_rejected(self):
+        req = urllib.request.Request(self.base + '/guest/input', method='POST',
+                                     headers={'Content-Length': '-5'}, data=b'')
+        with self.assertRaises(HTTPError) as error:
+            urlopen(req)
+        self.assertEqual(error.exception.code, 400)
+        error.exception.close()
+        self.assertEqual(StubGateway.requests, [])
+
+    def test_join_throttling_happens_here_not_at_the_gateway(self):
+        # Behind this proxy the gateway only ever sees 127.0.0.1, so the
+        # per-IP limit is enforced at this public boundary.
+        StubGateway.next_payload = {'ok': True, 'token': 't'}
+        headers = {'Content-Type': 'text/plain', 'Content-Length': '2'}
+        for expected in [200, 200, 429, 429]:
+            req = urllib.request.Request(self.base + '/guest/join', method='POST',
+                                         data=b'{}', headers=headers)
+            with self.subTest(expected=expected):
+                try:
+                    with urlopen(req) as response:
+                        self.assertEqual(response.status, expected)
+                except HTTPError as error:
+                    self.assertEqual(error.code, expected)
+                    error.close()
 
     def test_preflight_options_are_allowed_for_guest_paths(self):
         req = urllib.request.Request(self.base + '/guest/input', method='OPTIONS')
