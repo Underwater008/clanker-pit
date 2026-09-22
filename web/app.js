@@ -342,13 +342,26 @@
   function sourceLabel(source) {
     return { jev: 'JEV MODEL', fallback: 'FALLBACK POLICY', safety_reflex: 'SAFETY REFLEX', test_policy: 'SCRIPTED TEST' }[source] || (source ? String(source).toUpperCase() : 'SOURCE UNAVAILABLE');
   }
-  function resultText(result) {
+  function rawResultText(result) {
     if (result === undefined || result === null) return '';
     return typeof result === 'string' ? result : JSON.stringify(result);
   }
+  function partialResult(result) {
+    return Boolean(result && (result.defeated === false || result.returned === false));
+  }
+  function resultText(result, action) {
+    if (result && result.hunted && result.defeated === false)
+      return 'Attacked ' + String(result.hunted).replace(/_/g, ' ') + '; still alive';
+    if (result && result.returned === false) {
+      var destination = action === 'return_to_camp' ? 'camp' : 'post';
+      return 'Moving toward ' + destination + (typeof result.remaining === 'number' && isFinite(result.remaining) ? ' (' + Math.max(0, Math.round(result.remaining)) + ' blocks remaining)' : '');
+    }
+    return rawResultText(result);
+  }
   function outcomeText(outcome) {
     var status = outcome.ok === false || outcome.status === 'failed' ? 'failed' : 'completed';
-    return (outcome.action || 'action') + ' ' + status + (outcome.error ? ': ' + outcome.error : resultText(outcome.result) ? ': ' + resultText(outcome.result) : '');
+    if (status !== 'failed' && partialResult(outcome.result)) return resultText(outcome.result, outcome.action);
+    return (outcome.action || 'action') + ' ' + status + (outcome.error ? ': ' + outcome.error : resultText(outcome.result, outcome.action) ? ': ' + resultText(outcome.result, outcome.action) : '');
   }
   function renderCurrent(b) {
     var brain = b.brain || {};
@@ -374,12 +387,22 @@
     $('providerStatus').textContent = providerBits.join(' · ');
     $('providerStatus').classList.toggle('error', Boolean((brain.planner && brain.planner.error) || (brain.decision && brain.decision.error)));
     var results = $('actionResults');
+    var expanded = Array.prototype.map.call(results.querySelectorAll('details[open]'), function (d) { return d.dataset.resultKey; });
     clear(results);
     recent.slice().reverse().forEach(function (r) {
       var row = el('div', 'action-result' + (r.ok === false ? ' failed' : ''));
-      row.appendChild(el('b', null, (r.action || '').replace(/_/g, ' ') + (r.ok === false ? ' · FAILED' : ' · COMPLETED')));
+      row.appendChild(el('b', null, (r.action || '').replace(/_/g, ' ') + (r.ok === false ? ' · FAILED' : partialResult(r.result) ? ' · ATTEMPT FINISHED' : ' · COMPLETED')));
       if (r.source) row.appendChild(el('span', 'badge', sourceLabel(r.source)));
-      row.appendChild(el('p', null, r.error || resultText(r.result) || 'No result detail recorded.'));
+      var summary = resultText(r.result, r.action);
+      row.appendChild(el('p', null, r.error || summary || 'No result detail recorded.'));
+      if (partialResult(r.result)) {
+        var raw = el('details', 'result-raw');
+        raw.dataset.resultKey = (r.at || '') + ':' + r.action;
+        raw.open = expanded.indexOf(raw.dataset.resultKey) !== -1;
+        raw.appendChild(el('summary', null, 'Recorded result'));
+        raw.appendChild(el('pre', null, rawResultText(r.result)));
+        row.appendChild(raw);
+      }
       row.appendChild(el('div', 'jev-meta', timeAgo(r.at) + (typeof r.durationMs === 'number' ? ' · ' + (r.durationMs / 1000).toFixed(1) + 's' : '')));
       results.appendChild(row);
     });

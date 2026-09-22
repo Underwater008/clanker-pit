@@ -118,7 +118,9 @@ The website's stream and telemetry URLs must target the same current pod.
 - The camera account `ClankerCam` is a spectator-mode, invisible client joined via
   `--quickPlayMultiplayer 127.0.0.1:25565` (the legacy `--server/--port` args no longer auto-join).
 - Capture config: 1280x720 @ 30fps, NVENC when available (otherwise x264 with
-  bounded threads), ~2.5 Mbps, LL-HLS (2 s keyframes, 200 ms target parts).
+  bounded threads), ~2.5 Mbps, LL-HLS (fixed 2 s keyframes, 200 ms target parts).
+  Output is resampled to a constant frame rate and adaptive scene-cut keyframes
+  are disabled so missed grabs or scene changes do not shift HLS boundaries.
 - `capture/` holds: `client_setup.py` (vanilla 1.21.1 client downloader), `run-client.sh`,
   `run-stream.sh`, `options.txt` (fast graphics, no HUD-affecting mods), `mediamtx.yml`.
 - `spectate-loop.mjs` controls the wide camera. Contestant views follow their
@@ -204,6 +206,14 @@ FOCUS is the website default: the native POV, current plan, action outcome,
 provider status and labeled decisions appear together. `?v=arena` explicitly
 selects the wide camera. Public telemetry's `buildSha` identifies loaded
 controller source; a fresh snapshot alone does not prove movement or progress.
+
+The village round started on 2026-09-22 uses `round-village-20260922`, with its
+Server at (-152, 63, -168). The previous world remains in `server/` and the clean
+pre-switch archive is `backups/pre-village-20260922T180203Z/previous-round.tar.gz`.
+That directory also holds the prior clanker state and a SHA-256 manifest;
+`latest-round-backup.json` records the restore inputs. The archive was verified
+before switching worlds. Runtime `release.json` records hashes of installed
+source files. Keep these backups when updating code or restarting the controller.
 
 `lab-placement.mjs` is another isolated-server regression: the bot must place
 the complete 23-block shelter from an uneven approach, with every block checked

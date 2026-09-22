@@ -14,7 +14,7 @@ FFPROBE = shutil.which('ffprobe')
 
 @unittest.skipUnless(FFMPEG and FFPROBE, 'FFmpeg tools required for timing integration')
 class CaptureTimingTests(unittest.TestCase):
-    def test_missed_grabs_still_produce_regular_output_timestamps(self):
+    def test_missed_grabs_and_scene_changes_keep_regular_frames_and_gops(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)
             args_path = tmp / 'capture-args.json'
@@ -56,6 +56,26 @@ class CaptureTimingTests(unittest.TestCase):
             intervals = [round((b - a) * 1000) for a, b in zip(stamps, stamps[1:])]
             self.assertGreaterEqual(len(stamps), 58)
             self.assertTrue(all(delta in (33, 34) for delta in intervals), intervals)
+            # Abrupt scene cuts used to reset the GOP between regular 2s
+            # boundaries and stretch an HLS segment up to 3s. Use the real
+            # launcher's CPU encoder settings (including its GOP policy).
+            encoder = []
+            for option in ['-c:v', '-preset', '-tune', '-threads', '-sc_threshold', '-g']:
+                if option in args:
+                    encoder.extend([option, args[args.index(option) + 1]])
+            scenes = tmp / 'scenes.flv'
+            subprocess.run([FFMPEG, '-hide_banner', '-loglevel', 'error',
+                            '-f', 'lavfi', '-i',
+                            "color=black:size=160x90:rate=30,drawbox=color=white:t=fill:enable='between(t,2.8,6.1)'",
+                            *timing, *encoder, '-t', '8', '-an', '-f', 'flv', str(scenes)],
+                           capture_output=True, text=True, check=True, timeout=10)
+            probe = subprocess.run([FFPROBE, '-v', 'error', '-select_streams', 'v:0',
+                                    '-show_entries', 'packet=pts_time,flags', '-of', 'json', str(scenes)],
+                                   capture_output=True, text=True, check=True, timeout=5)
+            keys = [float(p['pts_time']) for p in json.loads(probe.stdout)['packets']
+                    if 'K' in p.get('flags', '')]
+            self.assertEqual(keys, [0.0, 2.0, 4.0, 6.0])
+
 
 
 if __name__ == '__main__':

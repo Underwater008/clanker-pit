@@ -69,3 +69,22 @@ test('Jev missing credentials fail locally and explicitly', async (t) => {
   assert.match(result.error, /Jev has no API key/)
   assert.equal(calls, 0)
 })
+
+test('council leaves room for reasoning and reports token exhaustion explicitly', async (t) => {
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    const sent = JSON.parse(options.body)
+    calls++
+    const truncated = calls === 2 || sent.max_tokens < 1800
+    return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{
+      finish_reason: truncated ? 'length' : 'stop',
+      message: { content: truncated ? '' : '{"role":"builder","says":"I will raise the wall."}', reasoning_content: 'Choose a useful role.' },
+    }] }) }
+  })
+  const args = { identity: { ...identity, origin: 'Village' }, villageSummary: {}, currentRoles: {}, othersSoFar: [], situation: {} }
+  assert.equal((await planner().discuss(args)).role, 'builder')
+  const failed = await planner().discuss(args)
+  assert.match(failed.error, /1800-token limit/)
+  assert.equal(failed.role, undefined)
+  assert.equal(calls, 2, 'A truncated reply must not silently trigger another paid call')
+})

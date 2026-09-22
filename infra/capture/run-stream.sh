@@ -19,15 +19,17 @@ fi
 
 # Containers can see many host CPUs but have only a few cores of quota. Keep
 # software thread pools bounded, and offload encoding when NVENC actually works.
-ENCODER_ARGS=(-c:v libx264 -preset veryfast -tune zerolatency -threads 2)
+ENCODER_ARGS=(-c:v libx264 -preset veryfast -tune zerolatency -threads 2 -sc_threshold 0)
 if ffmpeg -hide_banner -loglevel error -f lavfi -i color=size=1280x720:rate=30 \
     -frames:v 1 -c:v h264_nvenc -preset p4 -tune ll -f null - >/dev/null 2>&1; then
-  ENCODER_ARGS=(-c:v h264_nvenc -preset p4 -tune ll -bf 0)
+  ENCODER_ARGS=(-c:v h264_nvenc -preset p4 -tune ll -bf 0 -no-scenecut 1)
 fi
 echo "[run-stream] encoder ${ENCODER_ARGS[*]}"
 
 # x11grab can miss capture deadlines under CPU pressure. Resample onto a
 # fixed output clock so those gaps do not change LL-HLS part durations on iOS.
+# Disable adaptive scene-cut keyframes as well: resetting a GOP just before
+# HLS's minimum segment boundary can stretch a 2s segment toward 3s.
 # -vsync cfr also supports the pod's FFmpeg 4.4 (which lacks -fps_mode).
 while true; do
   echo "[run-stream] starting capture $GRAB -> $PATH_NAME $(date -u +%FT%TZ)"

@@ -109,6 +109,8 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
       signal,
     )
     if (!r.ok) return { error: r.error }
+    if (r.json.choices?.[0]?.finish_reason === 'length')
+      return { error: `${label} response reached its ${maxTokens}-token limit before completion` }
     const message = r.json.choices?.[0]?.message ?? {}
     let content = message.content ?? ''
     let thinking =
@@ -205,8 +207,8 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
             }),
           },
         ],
-        900,
-        30000,
+        1800,
+        60000,
         signal,
       )
       if (r.error) return { error: r.error, obsRevision }
@@ -251,8 +253,10 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
             }),
           },
         ],
-        400,
-        30000,
+        // Reasoning providers spend this budget on both thought and the reply.
+        // The old 400-token cap regularly ended before the council JSON began.
+        1800,
+        60000,
         signal,
       )
       if (r.error) return { error: r.error }
