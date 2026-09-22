@@ -25,12 +25,12 @@ GDIR=/workspace/arena/cameras/$NAME
 mkdir -p "$GDIR"
 cp -n /workspace/arena/capture/options.txt "$GDIR/options.txt" 2>/dev/null || true
 if [ "$NAME" = ViewGuest ]; then
-  # Only the human guest camera hides Minecraft's survival HUD. The website
-  # supplies the turn timer, BOOM control, and aiming mark.
+  # Start from a known visible-HUD state. The guest camera supervisor sends
+  # F1 after the world joins; the file option alone was ignored on the pod.
   if grep -q '^hideGui:' "$GDIR/options.txt"; then
-    sed -i 's/^hideGui:.*/hideGui:true/' "$GDIR/options.txt"
+    sed -i 's/^hideGui:.*/hideGui:false/' "$GDIR/options.txt"
   else
-    printf 'hideGui:true\n' >> "$GDIR/options.txt"
+    printf 'hideGui:false\n' >> "$GDIR/options.txt"
   fi
 fi
 

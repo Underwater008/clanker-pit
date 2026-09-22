@@ -865,6 +865,7 @@
       return;
     }
     if (turn) {
+      if (!guest.wasActive) window.scrollTo({ top: 0, behavior: 'smooth' });
       guest.wasActive = true;
       showSingle('guest', 'PIPER CAM / YOUR TURN', cameraReady ? 'CREEPER FEED' : 'CAMERA STARTING');
       $('turnTimer').textContent = g && g.active ? fmtClock(g.active.remainingMs) : '0:00';
