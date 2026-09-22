@@ -26,6 +26,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { Rcon } from 'rcon-client'
 import { createNativeMirror } from './native-mirror.mjs'
 import { GuestQueue, restoreGuestHistory } from './guest-queue.mjs'
+import { guestCameraStatus } from './guest-camera.mjs'
 import { confirmGuestExplosion } from './guest-boom.mjs'
 import { readVillageFixture, serverAnatomy, VILLAGER_POOL } from './village.mjs'
 
@@ -38,6 +39,7 @@ const RCON_PASSWORD = process.env.RCON_PASSWORD ?? 'clanker-dev'
 const MIRROR_PORT =
   Number(process.env.MIRROR_PORT_BASE ?? 25580) + Number(process.env.MIRROR_INDEX ?? 4)
 const GUEST_STATE = join(DATA_DIR, 'guest.json')
+const MIRROR_STATE = join(DATA_DIR, 'mirror-Guest.json')
 const BOOM_GRACE_MS = 2500
 const BODY_LIMIT = 4096
 
@@ -87,11 +89,7 @@ function emitEvent(type, data) {
 function writeGuestState() {
   const snapshot = {
     seq: eventSeq,
-    public: {
-      ...queue.status(),
-      feed: 'guest',
-      gateReady: Boolean(anatomy),
-    },
+    public: publicStatus(),
     chat: guestChat,
     events: guestEvents,
   }
@@ -101,6 +99,21 @@ function writeGuestState() {
     renameSync(tmp, GUEST_STATE)
   } catch (e) {
     log('guest_state_error', { error: String(e) })
+  }
+}
+
+function publicStatus() {
+  let mirrorState = null
+  try { mirrorState = JSON.parse(readFileSync(MIRROR_STATE, 'utf8')) } catch {}
+  return {
+    ...queue.status(),
+    feed: 'guest',
+    gateReady: Boolean(anatomy),
+    camera: guestCameraStatus({
+      active: Boolean(queue.active),
+      attachedAt: guestBot ? guestMirrorAttachedAt : null,
+      mirror: mirrorState,
+    }),
   }
 }
 
@@ -178,10 +191,11 @@ const queue = new GuestQueue({
 const mirror = createNativeMirror({
   port: MIRROR_PORT,
   name: 'Guest',
-  statePath: join(DATA_DIR, 'mirror-Guest.json'),
+  statePath: MIRROR_STATE,
   log: (event, data) => log(event, { component: 'guest_mirror', ...data }),
 })
 let guestBot = null
+let guestMirrorAttachedAt = null
 let boomLatched = false
 const usedBotNames = new Set()
 
@@ -273,6 +287,7 @@ function spawnGuest(entry) {
   })
   // Attach before login/configuration packets and the first spawn event.
   // Attaching inside spawn misses both the initial cache and ready transition.
+  guestMirrorAttachedAt = Date.now()
   mirror.attach(bot)
   guestBot = bot
   let ended = false
@@ -460,7 +475,7 @@ const server = createServer(async (req, res) => {
       return
     }
     if (req.method === 'GET' && path === '/status') {
-      send(res, 200, { ok: true, ...queue.status(), feed: 'guest' })
+      send(res, 200, { ok: true, ...publicStatus() })
       return
     }
     if (req.method === 'POST' && (path === '/join' || path === '/leave' || path === '/input')) {

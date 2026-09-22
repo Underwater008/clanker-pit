@@ -63,7 +63,9 @@
     var failures = 0, MAX = 6, disposed = false, watchProgress = false;
     var lastTime = -1, lastProgress = Date.now();
     var inst = { hls: null, retryTimer: null };
-    function setLive(on) { if (hudEl) hudEl.classList.toggle('live', on); }
+    function setLive(on) {
+      if (hudEl) hudEl.classList.toggle('live', Boolean(on && (feed !== 'guest' || guest.cameraReady())));
+    }
     function overlay(show, code, msg, retry) {
       overlayEls.root.classList.toggle('hidden', !show);
       if (!show) return;
@@ -282,6 +284,7 @@
       $('turnHud').hidden = true;
       $('touchPad').hidden = true;
       $('clickCatch').hidden = true;
+      $('guestCameraOverlay').hidden = true;
     }
     if (mode === 'arena') showSingle('arena', 'ARENA 01 / WIDE', 'CAM 01 · SPECTATOR FEED');
     else if (mode === 'grid') showGrid();
@@ -652,6 +655,14 @@
     turnLive: function () {
       var g = telemetry && telemetry.guest;
       return Boolean(g && g.active && guest.nickname && g.active.nickname === guest.nickname);
+    },
+    cameraReady: function () {
+      var camera = telemetry && telemetry.guest && telemetry.guest.camera;
+      // Older gateways omit camera status; keep their established controls.
+      return !camera || camera.ready === true;
+    },
+    canControl: function () {
+      return state.mode === 'play' && guest.turnLive() && guest.cameraReady();
     }
   };
 
@@ -724,20 +735,29 @@
     var available = guestAvailable();
     $('playUnavailable').hidden = available;
     var turn = available && guest.turnLive();
+    var cameraReady = guest.cameraReady();
+    var controlsReady = turn && cameraReady;
     var showJoin = $('playJoin'), showQueued = $('playQueued'), showDone = $('playDone');
     showJoin.hidden = true; showQueued.hidden = true; showDone.hidden = true;
     $('turnHud').hidden = !turn;
-    $('touchPad').hidden = !(turn && guest.touch);
-    $('clickCatch').hidden = !(turn && !guest.touch && document.pointerLockElement !== singleVideo);
+    $('touchPad').hidden = !(controlsReady && guest.touch);
+    $('clickCatch').hidden = !(controlsReady && !guest.touch && document.pointerLockElement !== singleVideo);
+    $('guestCameraOverlay').hidden = !turn || cameraReady;
     $('playHelp').hidden = !turn;
-    $('boomBtn').disabled = guest.boomed;
+    $('boomBtn').disabled = guest.boomed || !cameraReady;
+    $('boomBtn').hidden = !cameraReady;
+    if (turn && !cameraReady) {
+      Object.keys(guest.keys).forEach(function (key) { guest.keys[key] = false; });
+      singleHud.classList.remove('live');
+      if (document.pointerLockElement === singleVideo && document.exitPointerLock) document.exitPointerLock();
+    }
     if (!available) {
       showSingle('arena', 'ARENA / WATCH', 'GUEST PLAY UNAVAILABLE');
       return;
     }
     if (turn) {
       guest.wasActive = true;
-      showSingle('guest', 'PIPER CAM / YOUR TURN', 'CREEPER FEED');
+      showSingle('guest', 'PIPER CAM / YOUR TURN', cameraReady ? 'CREEPER FEED' : 'CAMERA STARTING');
       $('turnTimer').textContent = g && g.active ? fmtClock(g.active.remainingMs) : '0:00';
       return;
     }
@@ -786,7 +806,7 @@
     Space: 'jump'
   };
   window.addEventListener('keydown', function (e) {
-    if (!guest.turnLive()) return;
+    if (!guest.canControl()) return;
     var key = KEYMAP[e.code];
     if (key) {
       if (e.code === 'Space' || e.code.indexOf('Arrow') === 0) e.preventDefault();
@@ -805,13 +825,14 @@
   });
 
   $('clickCatch').addEventListener('click', function () {
+    if (!guest.canControl()) return;
     if (singleVideo.requestPointerLock) singleVideo.requestPointerLock();
   });
   document.addEventListener('pointerlockchange', function () {
-    $('clickCatch').hidden = !(guest.turnLive() && !guest.touch && document.pointerLockElement !== singleVideo);
+    $('clickCatch').hidden = !(guest.canControl() && !guest.touch && document.pointerLockElement !== singleVideo);
   });
   document.addEventListener('mousemove', function (e) {
-    if (document.pointerLockElement !== singleVideo) return;
+    if (!guest.canControl() || document.pointerLockElement !== singleVideo) return;
     if (e.movementX || e.movementY) {
       guest.yaw = (guest.yaw === null ? 0 : guest.yaw) - e.movementX * LOOK_SENS;
       guest.pitch = clampPitch(guest.pitch - e.movementY * LOOK_SENS);
@@ -825,7 +846,7 @@
   var stickId = null, lookId = null, lastLook = null;
   if (guest.touch) {
     $('singleStage').addEventListener('touchstart', function (e) {
-      if (!guest.turnLive()) return;
+      if (!guest.canControl()) return;
       for (var i = 0; i < e.changedTouches.length; i++) {
         var t = e.changedTouches[i];
         var target = e.target;
@@ -836,6 +857,7 @@
       }
     }, { passive: true });
     $('singleStage').addEventListener('touchmove', function (e) {
+      if (!guest.canControl()) return;
       for (var i = 0; i < e.changedTouches.length; i++) {
         var t = e.changedTouches[i];
         if (t.identifier === lookId && lastLook) {
@@ -880,6 +902,7 @@
     $('boomBtnTouch').addEventListener('touchstart', function (e) { e.preventDefault(); sendBoom(); }, { passive: false });
   }
   function setKey(key, value) {
+    if (value && !guest.canControl()) return;
     if (guest.keys[key] === value) return;
     guest.keys[key] = value;
     guest.dirty = true;
@@ -887,7 +910,7 @@
   function clampAbs(v) { return Math.max(-1, Math.min(1, v)); }
 
   function sendBoom() {
-    if (!guest.turnLive() || guest.boomed || !guest.token) return;
+    if (!guest.canControl() || guest.boomed || !guest.token) return;
     guest.boomed = true;
     $('boomBtn').disabled = true;
     $('boomBtn').textContent = '…';
@@ -924,7 +947,7 @@
     guestPost('/guest/input', {
       token: guest.token,
       keys: snapshotKeys(),
-      look: { yaw: yaw === null ? undefined : yaw, pitch: guest.pitch }
+      look: guest.cameraReady() ? { yaw: yaw === null ? undefined : yaw, pitch: guest.pitch } : undefined
     }).catch(function () {});
   }, 40);
 
@@ -1026,6 +1049,7 @@
         telemetry.guest.queueLength = s.queueLength;
         telemetry.guest.active = s.active;
         telemetry.guest.nextTurnInMs = s.nextTurnInMs;
+        telemetry.guest.camera = s.camera;
       } else if (telemetry) {
         telemetry.guest = s;
       }
