@@ -27,7 +27,7 @@ export const COUNCIL_INTERVAL = Math.max(
 export const ROLES = ['guard', 'builder', 'smith', 'coolant', 'farmer']
 export const ROLE_LABELS = {
   guard: 'Guard — patrol the wall, intercept creepers and hostile players near the Server',
-  builder: 'Builder — raise the wall, gate, and homes; repair blast damage',
+  builder: 'Builder — raise and reinforce the wall, enlarge homes on safe lots, and repair blast damage',
   smith: 'Smith — keep tools, weapons, torches, and buckets in supply',
   coolant: 'Coolant Engineer — fetch water and feed the Server so it can boot villagers',
   farmer: 'Farmer — keep everyone fed; hunt, gather, and replant',
@@ -68,6 +68,30 @@ export function wallBlueprint(flag) {
       if (z === R && Math.abs(x) <= GATE_HALF_WIDTH) continue // gate gap
       for (let h = 1; h <= WALL_HEIGHT; h++)
         positions.push(plus(flag, x, h, z))
+    }
+  return positions
+}
+
+/** One finite inner reinforcement layer on the graded village floor. Dense
+ * homes already occupy part of that strip, so they take precedence; their
+ * walls act as the support there. Never block the south passage or expand
+ * onto ungraded ground outside the original perimeter. */
+export function wallReinforcementBlueprint(flag) {
+  const positions = []
+  const R = WALL_RADIUS - 1
+  const f = v(flag)
+  const reserved = new Set([
+    ...HOME_LOTS.flatMap((_, i) => homeBlueprint(homeLot(flag, i), flag)),
+    ...HOME_LOTS.flatMap((_, i) => homeExtensionBlueprint(flag, i)),
+    ...Object.values(serverAnatomy(flag)).flat().filter((p) => p instanceof Vec3),
+  ].map((p) => `${p.x},${p.y},${p.z}`))
+  for (let x = -R; x <= R; x++)
+    for (let z = -R; z <= R; z++) {
+      if (Math.abs(x) !== R && Math.abs(z) !== R) continue
+      if (z === R && Math.abs(x) <= GATE_HALF_WIDTH) continue
+      for (let h = 1; h <= WALL_HEIGHT; h++)
+        if (!reserved.has(`${f.x + x},${f.y + h},${f.z + z}`))
+          positions.push(plus(flag, x, h, z))
     }
   return positions
 }
@@ -144,23 +168,65 @@ export function homeBlueprint(lot, flag) {
   ])
     shell.push([x, 2, z])
   const center = v(lot)
-  const dx = v(flag).x - center.x
-  const dz = v(flag).z - center.z
-  let best = 0,
-    bestDot = -Infinity
-  for (let r = 0; r < 4; r++) {
-    const [ox, oz] = rotateXZ(0, -1, r) // where the rotated doorway faces
-    const dot = ox * dx + oz * dz
-    if (dot > bestDot) {
-      bestDot = dot
-      best = r
-    }
-  }
+  const best = homeRotation(center, flag)
   return shell.map(([x, y, z]) => {
     const [rx, rz] = rotateXZ(x, z, best)
     // Homes stand ON the ground: one block above the lot's floor level.
     return center.offset(rx, y + 1, rz)
   })
+}
+
+function homeRotation(center, flag) {
+  const dx = v(flag).x - center.x
+  const dz = v(flag).z - center.z
+  let best = 0, bestDot = -Infinity
+  for (let r = 0; r < 4; r++) {
+    const [ox, oz] = rotateXZ(0, -1, r)
+    const dot = ox * dx + oz * dz
+    if (dot > bestDot) { bestDot = dot; best = r }
+  }
+  return best
+}
+
+/** Add one or two blocks of depth in front of the existing doorway. The old
+ * doorway stays open and the new outer wall has its own two-block entrance.
+ * Dense lots may not have a safe extension: leave those homes untouched.
+ * Earlier lots get first claim on space, making the layout deterministic. */
+export function homeExtensionBlueprint(flag, index) {
+  if (!Number.isInteger(index) || index < 0 || index >= HOME_LOTS.length) return []
+  const key = (p) => `${p.x},${p.y},${p.z}`
+  const anatomy = serverAnatomy(flag)
+  const reserved = new Set([
+    ...wallBlueprint(flag), ...gateBlueprint(flag),
+    ...Object.values(anatomy).flat().filter((p) => p instanceof Vec3),
+    ...HOME_LOTS.flatMap((_, i) => homeBlueprint(homeLot(flag, i), flag)),
+  ].map(key))
+  for (let i = 0; i <= index; i++) {
+    const lot = homeLot(flag, i)
+    const rotation = homeRotation(lot, flag)
+    let selected = []
+    for (const depth of [2, 1]) {
+      const extension = []
+      for (let z = -2; z >= -(depth + 1); z--) {
+        for (const x of [-1, 1])
+          for (const y of [1, 2]) {
+            const [rx, rz] = rotateXZ(x, z, rotation)
+            extension.push(lot.offset(rx, y, rz))
+          }
+        for (const x of [-1, 0, 1]) {
+          const [rx, rz] = rotateXZ(x, z, rotation)
+          extension.push(lot.offset(rx, 3, rz))
+        }
+      }
+      if (extension.every((p) => !reserved.has(key(p)))) {
+        selected = extension
+        break
+      }
+    }
+    if (i === index) return selected
+    for (const p of selected) reserved.add(key(p))
+  }
+  return []
 }
 
 /** The Server monument core (top lantern) and coolant basin positions. */
@@ -235,7 +301,9 @@ export function createVillageState({
     population: [], // all clanker names, founding cast + booted villagers
     bootedVillagers: [],
     homes: {}, // name -> {done,total,complete}
+    homeUpgrades: {}, // name -> progress of the finite room extension
     wall: null, // {done,total,complete} refreshed from world observations
+    wallUpgrade: null, // progress of the finite inner reinforcement layer
     gate: null,
     roles: {}, // name -> role
     lastBoomAt: 0,
@@ -310,7 +378,9 @@ export function createVillageState({
       population: [...state.population],
       bootedVillagers: [...state.bootedVillagers],
       homes: state.homes,
+      homeUpgrades: state.homeUpgrades,
       wall: state.wall,
+      wallUpgrade: state.wallUpgrade,
       gate: state.gate,
       roles: { ...state.roles },
       atCapacity: state.population.length >= MAX_POPULATION,
@@ -364,9 +434,14 @@ export function createVillageState({
       state.homes[name] = progress
       save()
     },
-    setStructures({ wall, gate } = {}) {
+    setHomeUpgrade(name, progress) {
+      state.homeUpgrades[name] = progress
+      save()
+    },
+    setStructures({ wall, gate, wallUpgrade } = {}) {
       if (wall) state.wall = wall
       if (gate) state.gate = gate
+      if (wallUpgrade) state.wallUpgrade = wallUpgrade
       save()
     },
     sawGuestEvent(id) {

@@ -30,6 +30,7 @@ import {
   EXPLOSION_RADIUS,
   WALL_RADIUS,
   wallBlueprint,
+  wallReinforcementBlueprint,
   gateBlueprint,
   blueprintProgress,
 } from './village.mjs'
@@ -167,7 +168,8 @@ const villageFile = join(DATA_DIR, 'village.json')
 // own keys (roundSetup) while this process runs, so saves merge disk-fresh
 // values for everything this process does not own.
 const VILLAGE_OWNED_KEYS = [
-  'waterFed', 'population', 'bootedVillagers', 'homes', 'wall', 'gate',
+  'waterFed', 'population', 'bootedVillagers', 'homes', 'homeUpgrades',
+  'wall', 'wallUpgrade', 'gate',
   'roles', 'processedGuestEvents', 'lastBoomAt', 'lastFedBy',
 ]
 const village = createVillageState({
@@ -178,7 +180,7 @@ const villageEnabled = SCENARIO === 'village' && village.exists
 const scenarioGoals = Object.fromEntries(Object.entries(GOALS).filter(([goal]) =>
   villageEnabled
     ? !['build_shelter', 'improve_camp'].includes(goal)
-    : !['protect_server', 'build_village', 'stockpile_defense'].includes(goal),
+    : !['protect_server', 'build_village', 'improve_village', 'stockpile_defense'].includes(goal),
 ))
 if (SCENARIO === 'village' && !village.exists)
   log('director', 'village_fixture_missing', { path: villageFile })
@@ -300,6 +302,7 @@ function refreshVillageStructures() {
   const flag = village.flag()
   village.setStructures({
     wall: blueprintProgress(wallBlueprint(flag), blockAt),
+    wallUpgrade: blueprintProgress(wallReinforcementBlueprint(flag), blockAt),
     gate: blueprintProgress(gateBlueprint(flag), blockAt),
   })
 }
@@ -964,12 +967,25 @@ function onActionOutcome(name, action, result) {
         chat('system', 'home', `${name} finished their own home.`)
     }
   }
+  if (action === 'expand_home' && result?.placed > 0) {
+    const obs = handles.get(name)?.observation()
+    if (obs?.village?.my_home_upgrade) {
+      village.setHomeUpgrade(name, obs.village.my_home_upgrade)
+      if (obs.village.my_home_upgrade.complete)
+        chat('system', 'home', `${name} enlarged their home.`)
+    }
+  }
   if ((action === 'build_wall' || action === 'build_gate') && result?.placed > 0) {
     const obs = handles.get(name)?.observation()
     if (action === 'build_wall' && obs?.village?.wall?.complete)
       chat('system', 'village', 'The perimeter wall is complete.')
     if (action === 'build_gate' && obs?.village?.gate?.complete)
       chat('system', 'village', 'The front gate stands. The south road is held.')
+  }
+  if (action === 'reinforce_wall' && result?.placed > 0) {
+    const obs = handles.get(name)?.observation()
+    if (obs?.village?.wall_upgrade?.complete)
+      chat('system', 'village', 'The perimeter wall is reinforced around the homes. The gate road remains open.')
   }
 }
 

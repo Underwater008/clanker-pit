@@ -269,6 +269,14 @@ own routed LLM and says one line in-game; assignment is deterministic policy
 that honors unique proposals (logged `council_assign` with
 `source: proposal|policy`).
 
+After the first wall and homes are complete, builders can reinforce safe parts
+of the wall inward on the graded village floor and extend homes one or two
+blocks toward their original doorway. These are fixed, collision-checked
+blueprints, not open-ended expansion: dense lots without a safe footprint stay
+as built. World-confirmed upgrade progress appears in `wallUpgrade` and
+`homeUpgrades` telemetry; neither action resets the original village or its
+saved state.
+
 ### Per-clanker LLMs
 
 `CLANKER_MODELS=Cinder=deepseek,Vex=openrouter` routes any OpenAI-compatible

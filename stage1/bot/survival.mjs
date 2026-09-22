@@ -4,9 +4,11 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { craftConfirmed, craftableRecipe } from './crafting.mjs'
 import {
   wallBlueprint,
+  wallReinforcementBlueprint,
   gateBlueprint,
   torchSpots,
   homeBlueprint,
+  homeExtensionBlueprint,
   homeLot,
   HOME_LOTS,
   serverAnatomy,
@@ -38,7 +40,9 @@ export const GOALS = {
   protect_server:
     'Keep the Server alive: feed it coolant, guard it from creepers and hostile players, and repair blast damage.',
   build_village:
-    'Raise the perimeter wall, the front gate, torches, and your own home around the Server.',
+    'Raise the wall, gate, torches, and your own home around the Server.',
+  improve_village:
+    'Once the essentials stand, reinforce the wall on safe inner ground and enlarge your home where its lot permits. Use the finished structures and repair damage; do not expand beyond the planned footprint.',
   stockpile_defense:
     'Prepare stone swords, torches, raw iron and buckets so the village can defend itself.',
 }
@@ -306,19 +310,23 @@ export function installSurvival(bot, state, log, opts = {}) {
         flag: villageCtx.flag,
         anatomy: serverAnatomy(villageCtx.flag),
         wall: wallBlueprint(villageCtx.flag),
+        wallUpgrade: wallReinforcementBlueprint(villageCtx.flag),
         gate: gateBlueprint(villageCtx.flag),
         torches: torchSpots(villageCtx.flag),
         patrol: patrolNodes(villageCtx.flag),
         home: homeBlueprint(homeLot(villageCtx.flag, villageCtx.lotIndex), villageCtx.flag),
+        homeUpgrade: homeExtensionBlueprint(villageCtx.flag, villageCtx.lotIndex),
       }
     : null
   const villageConstruction = new Set(layout
     ? [
         ...layout.wall,
+        ...layout.wallUpgrade,
         ...layout.gate,
         ...HOME_LOTS.flatMap((_, index) => homeBlueprint(
           homeLot(villageCtx.flag, index), villageCtx.flag,
         )),
+        ...HOME_LOTS.flatMap((_, index) => homeExtensionBlueprint(villageCtx.flag, index)),
       ].map((p) => p.toString())
     : [])
   let protectedShelter = null, protectedHistoryLength = -1
@@ -1146,7 +1154,9 @@ export function installSurvival(bot, state, log, opts = {}) {
                   bot.entity.position.distanceTo(villageCtx.flag),
                 ),
                 my_home: progress(layout.home),
+                my_home_upgrade: layout.homeUpgrade.length ? progress(layout.homeUpgrade) : null,
                 wall: progress(layout.wall),
+                wall_upgrade: progress(layout.wallUpgrade),
                 gate: progress(layout.gate),
                 torches_lit: layout.torches.filter(
                   (p) => bot.blockAt(p)?.name === 'torch',
@@ -1283,6 +1293,14 @@ export function installSurvival(bot, state, log, opts = {}) {
         )
       if (nearVillage && materials >= 2 && !V.my_home?.complete)
         vadd('build_home', 'Place two blocks of your own house on your lot.')
+      if (nearVillage && materials >= 2 && V.wall?.complete && V.gate?.complete &&
+          !V.wall_upgrade?.complete)
+        vadd('reinforce_wall',
+          'Thicken safe parts of the finished perimeter wall inward while keeping homes and the gate road open.')
+      if (nearVillage && materials >= 2 && V.my_home?.complete &&
+          V.my_home_upgrade && !V.my_home_upgrade.complete)
+        vadd('expand_home',
+          'Enlarge your finished home with a connected room and a new entrance; stop at the planned footprint.')
       if (
         nearVillage && n('torch') > 0 &&
         V.torches_lit < (V.torches_total ?? 0)
@@ -1343,12 +1361,12 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (!nearVillage)
         vadd('return_to_post', 'Head back toward the Server and the village.')
       const preferred = {
-        guard: ['patrol', 'attack_threat', 'build_gate', 'build_wall', 'place_torch', 'return_to_post'],
-        builder: ['build_wall', 'build_gate', 'build_home', 'place_torch', 'return_to_post'],
+        guard: ['patrol', 'attack_threat', 'build_gate', 'build_wall', 'reinforce_wall', 'place_torch', 'return_to_post'],
+        builder: ['build_wall', 'build_gate', 'build_home', 'reinforce_wall', 'expand_home', 'place_torch', 'return_to_post'],
         smith: ['craft_stone_sword', 'craft_torch', 'craft_bucket', 'smelt_iron', 'mine_iron_ore', 'return_to_post'],
         coolant: ['scoop_water', 'feed_server', 'craft_bucket', 'mine_iron_ore', 'smelt_iron', 'return_to_post'],
         farmer: ['hunt_food', 'plant_tree', 'return_to_post'],
-      }[state.role ?? ''] ?? ['build_wall', 'build_home', 'feed_server', 'scoop_water']
+      }[state.role ?? ''] ?? ['build_wall', 'build_home', 'reinforce_wall', 'expand_home', 'feed_server', 'scoop_water']
       const ordered = {}
       const toolPrerequisites = !n(isPick) || !obs.resources.workbench || state.plan.goal === 'equip_tools'
       if (toolPrerequisites) {
@@ -1587,6 +1605,10 @@ export function installSurvival(bot, state, log, opts = {}) {
         const result = await buildFrom(layout.wall)
         return { ...result, structure: 'wall' }
       }
+      if (action === 'reinforce_wall') {
+        const result = await buildFrom(layout.wallUpgrade)
+        return { ...result, structure: 'wall_upgrade' }
+      }
       if (action === 'build_gate') {
         const result = await buildFrom(layout.gate)
         return { ...result, structure: 'gate' }
@@ -1594,6 +1616,10 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (action === 'build_home') {
         const result = await buildFrom(layout.home)
         return { ...result, structure: 'home' }
+      }
+      if (action === 'expand_home') {
+        const result = await buildFrom(layout.homeUpgrade)
+        return { ...result, structure: 'home_upgrade' }
       }
       if (action === 'place_torch') {
         const torch = items.find((i) => i.name === 'torch')
@@ -1630,7 +1656,8 @@ export function installSurvival(bot, state, log, opts = {}) {
         'craft_stone_axe', 'craft_furnace', 'place_furnace', 'hunt_food',
         'plant_tree', 'collect_drops', 'return_to_camp', 'explore', 'escape_upward',
         ...(villageCtx
-          ? ['build_wall', 'build_gate', 'build_home', 'place_torch',
+          ? ['build_wall', 'build_gate', 'build_home', 'reinforce_wall',
+              'expand_home', 'place_torch',
               'craft_stone_sword', 'craft_torch', 'craft_bucket', 'mine_iron_ore',
               'smelt_iron', 'scoop_water', 'feed_server', 'patrol',
               'return_to_post', 'attack_threat']

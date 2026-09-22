@@ -6,10 +6,12 @@ import { join } from 'node:path'
 import { Vec3 } from 'vec3'
 import {
   wallBlueprint,
+  wallReinforcementBlueprint,
   gateBlueprint,
   torchSpots,
   homeLot,
   homeBlueprint,
+  homeExtensionBlueprint,
   serverAnatomy,
   patrolNodes,
   rotateXZ,
@@ -69,6 +71,22 @@ test('front gate is two pillars and a lintel over the open passage', () => {
       assert.ok(!keys.includes(key(flag.offset(x, h, WALL_RADIUS))))
   // The gate also never replaces the ground layer.
   assert.ok(gate.every((p) => p.y > flag.y))
+})
+
+test('the finite wall upgrade uses graded ground without sealing homes or the gate road', () => {
+  const inner = new Set(wallBlueprint(flag).map(key))
+  const reinforcement = wallReinforcementBlueprint(flag)
+  assert.equal(new Set(reinforcement.map(key)).size, reinforcement.length)
+  assert.ok(reinforcement.length > 0)
+  assert.ok(reinforcement.every((p) => !inner.has(key(p))))
+  assert.ok(reinforcement.every((p) => Math.max(Math.abs(p.x - flag.x), Math.abs(p.z - flag.z)) === WALL_RADIUS - 1))
+  const homes = new Set(HOME_LOTS.flatMap((_, i) => [
+    ...homeBlueprint(homeLot(flag, i), flag), ...homeExtensionBlueprint(flag, i),
+  ]).map(key))
+  assert.ok(reinforcement.every((p) => !homes.has(key(p))), 'reinforcement must preserve all homes')
+  for (const p of reinforcement)
+    if (p.z === flag.z + WALL_RADIUS - 1)
+      assert.ok(Math.abs(p.x - flag.x) > GATE_HALF_WIDTH, `inner gate blocked at ${p}`)
 })
 
 test('torch spots sit on reachable wall tops including beside the gate, without duplicates', () => {
@@ -135,6 +153,30 @@ test('every home doorway faces the Server', () => {
     // The doorway is two blocks tall.
     assert.ok(!keys.has(key(lot.offset(ox, 2, oz))), `lot ${i} door is blocked above`)
   }
+})
+
+test('planned home extensions join the doorway and never consume another lot or fixture', () => {
+  const fixed = new Set([
+    ...wallBlueprint(flag), ...gateBlueprint(flag),
+    ...Object.values(serverAnatomy(flag)).flat().filter((p) => p instanceof Vec3),
+    ...HOME_LOTS.flatMap((_, i) => homeBlueprint(homeLot(flag, i), flag)),
+  ].map(key))
+  const occupied = new Set(fixed)
+  for (let i = 0; i < HOME_LOTS.length; i++) {
+    const extension = homeExtensionBlueprint(flag, i)
+    assert.ok(extension.length <= 14, 'each home has at most two extra rooms of depth')
+    for (const p of extension) {
+      assert.ok(!occupied.has(key(p)), `lot ${i} overlaps protected village position ${p}`)
+      occupied.add(key(p))
+    }
+    if (i < 4) assert.ok(extension.length > 0, `founding home ${i} can grow`)
+  }
+  // The two-block original entrance stays open and every extension has an
+  // uncovered entrance in its outer wall.
+  const lot = homeLot(flag, 1)
+  const extension = new Set(homeExtensionBlueprint(flag, 1).map(key))
+  assert.ok(!extension.has(key(lot.offset(0, 1, 3))))
+  assert.ok(!extension.has(key(lot.offset(0, 2, 3))))
 })
 
 test('rotateXZ turns clockwise seen from above', () => {
@@ -206,9 +248,13 @@ test('coolant economy: feeds count, booms overheat, booting resets the meter', (
   const roles = { A: 'guard', B: 'builder' }
   village.setRoles(roles)
   village.setHome('A', { done: 23, total: 23, complete: true })
+  village.setHomeUpgrade('A', { done: 7, total: 7, complete: true })
+  village.setStructures({ wallUpgrade: { done: 12, total: 40, complete: false } })
   const reloaded = createVillageState({ path: join(dir, 'village.json') })
   assert.deepEqual(reloaded.raw.roles, roles)
   assert.equal(reloaded.raw.homes.A.complete, true)
+  assert.equal(reloaded.snapshot().homeUpgrades.A.complete, true)
+  assert.equal(reloaded.snapshot().wallUpgrade.done, 12)
   assert.equal(reloaded.raw.waterFed, village.raw.waterTarget)
 })
 
