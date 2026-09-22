@@ -7,7 +7,7 @@ DISP=${1:?display required}
 PATH_NAME=${2:?stream path required}
 REG_X=${3:-}
 REG_Y=${4:-}
-STREAM_FPS=${STREAM_FPS:-20}
+STREAM_FPS=${STREAM_FPS:-30}
 source "$(dirname "$0")/display.sh"
 require_capture_region "$DISP" "${REG_X:-0}" "${REG_Y:-0}"
 

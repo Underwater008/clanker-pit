@@ -7,7 +7,7 @@ gamma:1.0
 graphicsMode:0
 hideBundleTutorial:true
 joinedFirstServer:true
-maxFps:20
+maxFps:30
 onboardAccessibility:false
 overrideHeight:720
 overrideWidth:1280
