@@ -45,6 +45,19 @@ try {
     assert.match(authoritative, /minecraft:birch_log/, 'Server must confirm the harvested item in each inventory')
     console.log(JSON.stringify({ event: 'HARVEST_VERIFIED', username: bot.username, result }))
   }
+  // A raised branch must be approached at ground level, not as an impossible
+  // pathfinder goal at the branch's height.
+  for (const command of [
+    'fill 0 -60 0 0 -58 0 air',
+    'fill 8 -60 0 8 -58 0 air',
+    'setblock 5 -56 2 birch_log',
+    'tp HarvestLabA 2.5 -60 2.5',
+  ]) await rcon.send(command)
+  await sleep(600)
+  const raised = await clients[0].skills.execute('gather_wood')
+  assert.equal(raised.position.y, -56)
+  assert.ok(raised.collected.some((item) => item.name === 'birch_log'))
+  assert.equal(await rcon.send('execute if block 5 -56 2 air'), 'Test passed')
   console.log(JSON.stringify({ event: 'LAB_HARVEST_PASS', concurrentClankers: clients.length }))
 } finally {
   clearTimeout(timer)

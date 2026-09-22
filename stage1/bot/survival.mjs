@@ -670,9 +670,15 @@ export function installSurvival(bot, state, log, opts = {}) {
     return { escapedUpward: true, cleared, rose, position: bot.entity.position.clone() }
   }
   async function reach(block) {
-    const target = block.position.offset(0.5, 0.5, 0.5)
-    if (bot.entity.position.distanceTo(target) > 3.8) {
-      const goal = new goals.GoalGetToBlock(block.position.x, block.position.y, block.position.z)
+    const inDigReach = () => bot.canDigBlock?.(bot.blockAt(block.position)) ?? false
+    if (!inDigReach()) {
+      // A standing clanker can chop a branch above its head. A goal at the
+      // branch's Y level asks Pathfinder to climb an impossible trunk.
+      const elevatedLog = isLog(block.name) &&
+        block.position.y >= bot.entity.position.y + 2
+      const goal = elevatedLog
+        ? new goals.GoalNearXZ(block.position.x, block.position.z, 1)
+        : new goals.GoalGetToBlock(block.position.x, block.position.y, block.position.z)
       // Surface resources usually have a clear route. Searching routes that
       // may dig every nearby block is expensive with a full village cast.
       const activeMoves = movements
@@ -684,11 +690,9 @@ export function installSurvival(bot, state, log, opts = {}) {
       } finally {
         if (activeMoves) activeMoves.canDig = true
       }
-      if (bot.entity.position.distanceTo(target) > 3.8) await walk(goal)
+      if (!inDigReach()) await walk(goal)
     }
-    if (
-      bot.entity.position.distanceTo(block.position.offset(0.5, 0.5, 0.5)) > 4.5
-    )
+    if (!inDigReach())
       throw new Error('Block still out of reach')
   }
   async function approach(position, range, { minY = -Infinity } = {}) {
