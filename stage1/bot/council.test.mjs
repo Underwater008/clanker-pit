@@ -63,6 +63,21 @@ test('policy fill keeps previous roles when they are free, then covers gaps', ()
   assert.ok(assignments.every((a) => ['proposal', 'policy'].includes(a.source)))
 })
 
+test('a four-clanker council always assigns a builder for village construction', () => {
+  const cast = ['Cinder', 'Vex', 'Mira', 'Tally']
+  const proposals = {
+    Cinder: { role: 'coolant' },
+    Vex: { role: 'farmer' },
+    Mira: { role: 'smith' },
+    Tally: { role: 'guard' },
+  }
+  const { roles, assignments } = assignRoles(proposals, cast)
+  assert.equal(roles.Vex, 'builder')
+  assert.equal(assignments.find((a) => a.name === 'Vex').source, 'policy')
+  assert.equal(roles.Cinder, 'coolant')
+  assert.equal(roles.Tally, 'guard')
+})
+
 test('with more villagers than roles, duplicates spread as evenly as possible', () => {
   const cast = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
   const { roles } = assignRoles({}, cast)

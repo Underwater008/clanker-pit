@@ -1,7 +1,8 @@
 // The village council: a periodic discussion where every clanker proposes a
 // role (guard, builder, smith, coolant, farmer), hears the others, and says
 // one line in character. Role assignment itself is deterministic policy that
-// honors model proposals; it is never presented as a model decision.
+// honors model proposals where village coverage permits; it is never presented
+// as a model decision.
 //
 // The same discussion doubles as the public agent chat: every line spoken in
 // the council is also said in-game (visible in the native POV chat) and
@@ -36,7 +37,9 @@ export function parseDiscussResponse(content) {
 /**
  * Deterministic role assignment. Honors unique model proposals in cast order;
  * contested roles go to the earliest claimant and everyone else is filled by
- * policy (previous role first, then round-robin over unfilled roles).
+ * policy (previous role first, then round-robin over unfilled roles). With a
+ * full founding cast, one builder is required so the village can progress
+ * even after booted specialists retire.
  * Returns { roles: {name: role}, assignments: [{name, role, source}] }.
  */
 export function assignRoles(proposals, castOrder, previous = {}) {
@@ -71,6 +74,15 @@ export function assignRoles(proposals, castOrder, previous = {}) {
       ROLES.find((r) => !taken.has(r)) ??
       ROLES.reduce((a, b) => ((usage[a] ?? 0) <= (usage[b] ?? 0) ? a : b))
     claim(name, role, 'policy')
+  }
+  if (castOrder.length >= 4 && !Object.values(roles).includes('builder')) {
+    const donorRole = ['farmer', 'smith', 'guard', 'coolant']
+      .find((role) => castOrder.some((name) => roles[name] === role))
+    const donor = castOrder.find((name) => roles[name] === donorRole)
+    roles[donor] = 'builder'
+    const assignment = assignments.find((entry) => entry.name === donor)
+    assignment.role = 'builder'
+    assignment.source = 'policy'
   }
   return { roles, assignments }
 }

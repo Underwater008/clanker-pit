@@ -1635,7 +1635,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (!nearVillage)
         vadd('return_to_post', 'Head back toward the Server and the village.')
       const preferred = {
-        guard: ['repair_blast_hole', 'patrol', 'attack_threat', 'build_gate', 'build_wall', 'reinforce_wall', 'place_torch', 'return_to_post'],
+        guard: ['repair_blast_hole', 'attack_threat', 'build_gate', 'build_wall', 'patrol', 'reinforce_wall', 'place_torch', 'return_to_post'],
         builder: ['repair_blast_hole', 'build_home', 'build_wall', 'gather_wood', 'gather_wall_earth', 'build_gate', 'reinforce_wall', 'expand_home', 'pave_road', 'craft_stone_shovel', 'place_torch', 'return_to_post'],
         smith: ['craft_stone_sword', 'craft_torch', 'craft_bucket', 'smelt_iron', 'mine_iron_ore', 'return_to_post'],
         coolant: ['scoop_water', 'feed_server', 'craft_bucket', 'mine_iron_ore', 'smelt_iron', 'return_to_post'],
