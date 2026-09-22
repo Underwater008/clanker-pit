@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { Vec3 } from 'vec3'
 import pathfinder from 'mineflayer-pathfinder'
 import minecraftData from 'minecraft-data'
-import { serverAnatomy } from './village.mjs'
+import { homeBed, serverAnatomy } from './village.mjs'
 import {
   gotoConfirmed,
   installSurvival,
@@ -214,6 +214,9 @@ test('village navigation does not excavate the graded floor or trample planned f
   assert.equal(forbidden({ name: 'dirt', position: flag.offset(1, 0, 5) }), 100)
   assert.equal(forbidden({ name: 'dirt', position: flag.offset(0, 0, 12) }), 100)
   assert.equal(forbidden({ name: 'dirt', position: flag.offset(20, 0, 20) }), 0)
+  const bed = homeBed(flag, 0)
+  assert.equal(forbidden({ name: 'red_bed', position: bed.foot }), 100)
+  assert.equal(forbidden({ name: 'red_bed', position: bed.head }), 100)
   assert.equal(movements.exclusionAreasStep[0]({ name: 'farmland', position: flag.offset(2, 0, 12) }), 100)
 })
 

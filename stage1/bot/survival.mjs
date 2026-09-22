@@ -10,6 +10,7 @@ import {
   homeBlueprint,
   homeExtensionBlueprint,
   homeLot,
+  homeBed,
   HOME_LOTS,
   serverAnatomy,
   patrolNodes,
@@ -333,6 +334,10 @@ export function installSurvival(bot, state, log, opts = {}) {
           homeLot(villageCtx.flag, index), villageCtx.flag,
         )),
         ...HOME_LOTS.flatMap((_, index) => homeExtensionBlueprint(villageCtx.flag, index)),
+        ...HOME_LOTS.flatMap((_, index) => {
+          const bed = homeBed(villageCtx.flag, index)
+          return [bed.foot, bed.head]
+        }),
         ...layout.farm,
         ...layout.roads,
       ].map((p) => p.toString())
