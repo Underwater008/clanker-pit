@@ -4,18 +4,20 @@
 # Tile map (1280x720 each):  [0,0]=mira [1280,0]=tally [2560,0]=arena
 #                            [0,720]=cinder [1280,720]=vex
 set -u
+source "$(dirname "$0")/display.sh"
 LOG=/workspace/arena/logs/restack.log
 exec > >(tee -a "$LOG") 2>&1
 echo "=== restack $(date -u +%FT%TZ) ==="
 
 # 1. Stop old captures and camera clients (Xvfb-era)
-tmux kill-session -t cap 2>/dev/null; for d in 101 102 103 104; do tmux kill-session -t cap$d 2>/dev/null; done
-tmux kill-session -t cam 2>/dev/null; for d in 101 102 103 104; do tmux kill-session -t cam$d 2>/dev/null; done
+for s in cap cap101 cap102 cap103 cap104 cap105 caparena capmira captally capcinder capvex; do tmux kill-session -t "$s" 2>/dev/null || true; done
+for s in cam cam101 cam102 cam103 cam104 cam105 arena mira tally cinder vex camarena cammira camtally camcinder camvex; do tmux kill-session -t "$s" 2>/dev/null || true; done
 pkill -f "net.minecraft.client.main.Main" 2>/dev/null
 sleep 3
 
 # 2. Fresh Xorg :10 at 3840x1440
 pkill -f "Xorg :10" 2>/dev/null
+pkill -f "^Xvfb :10 " 2>/dev/null
 sleep 2
 rm -f /tmp/.X10-lock /tmp/.X11-unix/X10
 nohup Xorg :10 -config /etc/X11/xorg-gpu.conf -noreset > /workspace/arena/logs/xorg10.log 2>&1 &
@@ -27,10 +29,11 @@ if ! DISPLAY=:10 xdpyinfo -display :10 > /dev/null 2>&1; then
   echo "Xorg :10 FAILED to start"; tail -10 /workspace/arena/logs/xorg10.log; exit 1
 fi
 echo "Xorg :10 up: $(DISPLAY=:10 xdpyinfo -display :10 | grep dimensions)"
-DISPLAY=:10 glxinfo -B | grep "OpenGL renderer"
+require_capture_region 10 0 0 3840 1440 || exit 1
+DISPLAY=:10 glxinfo -B | grep -i 'OpenGL renderer.*NVIDIA' || { echo "GPU renderer unavailable"; exit 1; }
 
 # 3. Kill leftover Xvfb displays (no longer needed)
-pkill -f "Xvfb :99" 2>/dev/null; for d in 101 102 103 104; do pkill -f "Xvfb :$d" 2>/dev/null; done
+pkill -f "Xvfb :99" 2>/dev/null; for d in 101 102 103 104 105; do pkill -f "Xvfb :$d" 2>/dev/null; done
 
 # 4. Launch the five cameras as tiles on :10
 launch() { # name x y session
@@ -60,5 +63,10 @@ cap 1280 720 vex capvex
 sleep 15
 
 echo "--- HLS path check:"
-for p in arena cinder vex mira tally; do printf "%s: " $p; curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/$p/index.m3u8; done
+failed=0
+for p in arena cinder vex mira tally; do
+  printf "%s: " "$p"
+  curl --fail --max-time 20 -sS -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:8080/$p/index.m3u8" || failed=1
+done
+[ "$failed" = 0 ] || { echo "HLS verification failed; inspect capture logs"; exit 1; }
 echo "=== restack done ==="

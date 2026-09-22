@@ -48,17 +48,45 @@ waypoints, reported observations). Record the run in `stage0/RESULTS.md`.
 - SSH is on a mapped public port; get it from `./pod-status.sh`.
 - Cost control: `podStop` pauses compute billing. The pod bills ~$0.22/hr while RUNNING.
 
+## SSH versus HTTP 404s
+
+Run `bash infra/pod-status.sh` from the repository (or `./pod-status.sh` from
+this directory) to get the current direct SSH command. It queries `pod.json`'s
+pod ID and resolves private port 22 to its **public TCP port**. Copy that whole
+command; neither port 22 on the public IP nor an HTTP proxy URL is a substitute.
+The command uses the project SSH private key. The RunPod API key is used only to
+discover the pod, not to authenticate SSH. Refresh the mapping after a restart.
+
+`https://<pod-id>-8080.proxy.runpod.net` is the video service and
+`https://<pod-id>-8081.proxy.runpod.net/arena/state.json` is telemetry. An HTTP
+404 on these URLs does not diagnose an SSH or API-key failure.
+
+On September 21, 2026, SSH and telemetry were healthy while video returned 404.
+MediaMTX logged `no one is publishing to path`: ffmpeg was capturing tiles outside
+a 1280x720 Xvfb screen. NVIDIA extraction used `-C` instead of `--target`, leaving
+the Xorg module uninstalled; tiled camera startup then silently created the small
+fallback screen. The corrected scripts validate display dimensions, require the
+shared display for tiled clients, and fail readiness if a playlist is unavailable.
+
+Port 8081 now runs `telemetry-server.py`, which serves **only** the state snapshot.
+Do not replace it with `python -m http.server --directory /workspace`: that exposes
+the arena `.env`, server configuration, and logs. Use SSH to inspect logs.
+
+Offline regression checks: `python3 -B -m unittest discover -s infra -p 'test_*.py'`.
+
 ## Live stream (capture path)
 
 Chain: Minecraft client in Xvfb (`tmux session 'cam'`) → ffmpeg x11grab (`'cap'`) →
 RTMP → mediamtx (`'mtx'`) → LL-HLS on :8080 → RunPod proxy → internet.
 
-**Watch URL (HLS):** `https://v4kirw177698qh-8080.proxy.runpod.net/arena/index.m3u8`
+**Watch URL (HLS):** `https://<id-from-pod.json>-8080.proxy.runpod.net/arena/index.m3u8`.
+The website's stream and telemetry URLs must target the same current pod.
 
 - Safari plays HLS natively. Chrome/Firefox need an hls.js player (the website will embed one).
 - The camera account `ClankerCam` is a spectator-mode, invisible client joined via
   `--quickPlayMultiplayer 127.0.0.1:25565` (the legacy `--server/--port` args no longer auto-join).
-- Capture config: 1280x720 @ 30fps, x264 veryfast, ~2.5 Mbps, LL-HLS (2 s segments, 200 ms parts).
+- Capture config: 1280x720 @ 30fps, NVENC when available (otherwise x264 with
+  bounded threads), ~2.5 Mbps, LL-HLS (2 s keyframes, 200 ms target parts).
 - `capture/` holds: `client_setup.py` (vanilla 1.21.1 client downloader), `run-client.sh`,
   `run-stream.sh`, `options.txt` (fast graphics, no HUD-affecting mods), `mediamtx.yml`.
 - Camera control today: `tmux send-keys -t mc "tp ClankerCam X Y Z yaw pitch" Enter` —

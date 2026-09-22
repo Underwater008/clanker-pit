@@ -30,7 +30,7 @@ payload = {
     "containerDiskInGb": 60,
     "minVcpuCount": 4,
     "minMemoryInGb": 16,
-    "ports": "22/tcp,8080/http",
+    "ports": "22/tcp,8080/http,8081/http",
     "startSsh": True,
     "env": [
       {"key": "PUBLIC_KEY", "value": sys.argv[1]},

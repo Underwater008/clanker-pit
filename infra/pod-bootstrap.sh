@@ -4,7 +4,7 @@
 # NVIDIA X driver module, GPU Xorg, five tiled camera clients, mediamtx,
 # ambient bots, spectate loop. Idempotent-ish; logs to /workspace/arena/logs.
 # Required env: TYPESAFE_API_KEY (Jev), RUNPOD_API_KEY (Kimi, optional for ambient).
-set -u
+set -euo pipefail
 exec > >(tee -a /workspace/bootstrap.log) 2>&1
 echo "=== clankerpit bootstrap $(date -u +%FT%TZ) ==="
 
@@ -14,18 +14,13 @@ wlog() {
   echo "[wlog] $1"
   [ -n "${WATCHDOG_URL:-}" ] && curl -s -m 10 -X POST -H "Content-Type: text/plain" --data "$1" "$WATCHDOG_URL" > /dev/null 2>&1 || true
 }
-trap 'wlog "BOOTSTRAP EXIT code=$? at $(date -u +%FT%TZ)"; curl -s -m 15 -X POST -H "Content-Type: text/plain" --data-binary @/workspace/bootstrap.log "$WATCHDOG_URL/full-log" > /dev/null 2>&1 || true' EXIT
-wlog "bootstrap alive: $(hostname) driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)"
+trap 'wlog "BOOTSTRAP EXIT code=$? at $(date -u +%FT%TZ)"' EXIT
+wlog "bootstrap alive: $(hostname) driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | awk 'NR == 1')"
 
 ARENA=/workspace/arena
 MC_VERSION=1.21.1
 mkdir -p "$ARENA"/{server,bots,capture,cameras,stream,logs}
 export DEBIAN_FRONTEND=noninteractive
-
-# Log channel for SSH-less debugging: serves /workspace on :8081 (exposed at pod creation).
-# RunPod's image runs nginx on 8081 — stop it (we don't use their web terminal) and take the port.
-systemctl stop nginx 2>/dev/null; systemctl disable nginx 2>/dev/null; pkill -9 nginx 2>/dev/null
-tmux new-session -d -s filesrv "python3 -m http.server 8081 --directory /workspace" 2>/dev/null || true
 
 wlog "step: apt"
 apt-get update -qq
@@ -87,7 +82,7 @@ EOF
 
 wlog "step: fetch capture + bot code from github"
 RAW=https://raw.githubusercontent.com/Underwater008/clanker-pit/main
-for f in run-client.sh run-stream.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
+for f in run-client.sh run-stream.sh display.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
   curl -fsSL "$RAW/infra/capture/$f" -o "$ARENA/capture/$f"
 done
 for f in ambient.mjs llm.mjs memory.mjs env.mjs identity.cinder.json package.json; do
@@ -95,18 +90,28 @@ for f in ambient.mjs llm.mjs memory.mjs env.mjs identity.cinder.json package.jso
 done
 cp "$ARENA/capture/spectate-loop.mjs" "$ARENA/bots/"
 chmod +x "$ARENA/capture"/*.sh
+curl -fsSL "$RAW/infra/telemetry-server.py" -o "$ARENA/telemetry-server.py"
+# Port 8081 serves one public snapshot, never /workspace (which contains .env).
+systemctl stop nginx 2>/dev/null || true
+systemctl disable nginx 2>/dev/null || true
+pkill nginx 2>/dev/null || true
+tmux kill-session -t filesrv 2>/dev/null || true
+tmux new-session -d -s filesrv "python3 $ARENA/telemetry-server.py 2>&1 | tee -a $ARENA/logs/telemetry.log"
+(umask 077
 cat > "$ARENA/.env" <<EOF
 RUNPOD_API_KEY=${RUNPOD_API_KEY:-}
 TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
 EOF
+)
+chmod 600 "$ARENA/.env"
 
 wlog "step: client download (jar+libs+assets)"
 python3 "$ARENA/capture/client_setup.py" 2>&1 | tail -3
 
 wlog "step: NVIDIA X driver module"
-DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+DRV=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | awk 'NR == 1')
 echo "driver: $DRV"
-if [ ! -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ]; then
+if [ ! -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ] || [ ! -f /usr/lib/xorg/modules/extensions/libglxserver_nvidia.so ]; then
   for BASE in "https://download.nvidia.com/XFree86/Linux-x86_64" "https://us.download.nvidia.com/XFree86/Linux-x86_64" "https://us.download.nvidia.com/tesla"; do
     wget -q "$BASE/$DRV/NVIDIA-Linux-x86_64-$DRV.run" -O /tmp/nv.run || true
     # a real runfile starts with #!/bin/sh — a 200-OK HTML error page does not
@@ -114,7 +119,7 @@ if [ ! -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ]; then
     rm -f /tmp/nv.run
   done
   if [ -s /tmp/nv.run ]; then
-    sh /tmp/nv.run --extract-only -C /tmp/nvx > /dev/null 2>&1 \
+    sh /tmp/nv.run --extract-only --target /tmp/nvx > /dev/null 2>&1 \
       && mkdir -p /usr/lib/xorg/modules/drivers /usr/lib/xorg/modules/extensions \
       && cp /tmp/nvx/nvidia_drv.so /usr/lib/xorg/modules/drivers/ \
       && cp /tmp/nvx/libglxserver_nvidia.so.$DRV /usr/lib/xorg/modules/extensions/ \
@@ -124,7 +129,9 @@ if [ ! -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ]; then
     echo "driver runfile NOT FOUND for $DRV — GPU Xorg unavailable, will fall back to Xvfb"
   fi
 fi
-BUS_HEX=$(nvidia-smi -q | grep "Bus Id" | head -1 | grep -oE "[0-9A-F]{2}:00.0" | cut -d: -f1)
+BUS_ID=$(nvidia-smi --query-gpu=pci.bus_id --format=csv,noheader | awk 'NR == 1')
+BUS_HEX=${BUS_ID#*:}
+BUS_HEX=${BUS_HEX%%:*}
 BUS_DEC=$((16#$BUS_HEX))
 cat > /etc/X11/xorg-gpu.conf <<EOF
 Section "ServerLayout"
@@ -155,7 +162,7 @@ cd "$ARENA/bots" && npm install --omit=dev > /dev/null 2>&1
 wlog "step: start minecraft server"
 tmux new-session -d -s mc "cd $ARENA/server && java -Xms2G -Xmx4G -jar server.jar nogui 2>&1 | tee $ARENA/logs/mc.log"
 for i in $(seq 1 90); do grep -q "Done (" "$ARENA/logs/mc.log" 2>/dev/null && break; sleep 5; done
-grep -q "Done (" "$ARENA/logs/mc.log" && echo "server up" || { echo "SERVER FAILED"; tail -10 "$ARENA/logs/mc.log"; }
+grep -q "Done (" "$ARENA/logs/mc.log" && echo "server up" || { echo "SERVER FAILED"; tail -10 "$ARENA/logs/mc.log"; exit 1; }
 
 mc_cmd() { tmux send-keys -t mc "$1" Enter; sleep 1; }
 mc_cmd "gamerule doDaylightCycle false"
@@ -170,7 +177,7 @@ GPU_OK=0
 if [ -f /usr/lib/xorg/modules/drivers/nvidia_drv.so ]; then
   nohup Xorg :10 -config /etc/X11/xorg-gpu.conf -noreset > "$ARENA/logs/xorg10.log" 2>&1 &
   for i in $(seq 1 30); do DISPLAY=:10 xdpyinfo -display :10 > /dev/null 2>&1 && break; sleep 2; done
-  if DISPLAY=:10 glxinfo -B 2>/dev/null | grep -qi nvidia; then
+  if DISPLAY=:10 glxinfo -B 2>/dev/null | grep -i 'OpenGL renderer.*NVIDIA' > /dev/null; then
     GPU_OK=1
     DISPLAY=:10 glxinfo -B | grep "OpenGL renderer"
   else
@@ -181,9 +188,15 @@ fi
 
 if [ "$GPU_OK" = "1" ]; then
   wlog "step: launch cameras + captures on GPU Xorg"
-  bash "$ARENA/capture/gpu-restack.sh"
-else
+  bash "$ARENA/capture/gpu-restack.sh" || GPU_OK=0
+fi
+if [ "$GPU_OK" != "1" ]; then
   wlog "step: FALLBACK: cameras on Xvfb (llvmpipe)"
+  # A failed restack can leave partial GPU clients/captures alive. Stop only
+  # camera sessions before launching the independent fallback displays.
+  for s in cammira camtally camarena camcinder camvex capmira captally caparena capcinder capvex; do
+    tmux kill-session -t "$s" 2>/dev/null || true
+  done
   for d in 101 102 103 104 105; do Xvfb :$d -screen 0 1280x720x24 & done
   sleep 2
   launch() { tmux new-session -d -s "$4" "bash $ARENA/capture/run-client.sh $1 $2 2>&1 | tee $ARENA/logs/client-$1.log"; sleep 8; }
@@ -203,5 +216,8 @@ tmux new-session -d -s spec "cd $ARENA/bots && node spectate-loop.mjs 2>&1 | tee
 
 wlog "step: HLS check"
 sleep 15
-for p in arena cinder vex mira tally; do printf "%s: " $p; curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/$p/index.m3u8; done
+for p in arena cinder vex mira tally; do
+  printf "%s: " "$p"
+  curl --fail --max-time 20 -sS -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:8080/$p/index.m3u8"
+done
 echo "=== bootstrap done $(date -u +%FT%TZ) ==="

@@ -8,6 +8,17 @@ NAME=${1:-ClankerCam}
 DISP=${2:-99}
 WIN_X=${3:-}
 WIN_Y=${4:-}
+source "$(dirname "$0")/display.sh"
+
+# Tiled clients require the shared display. Silently starting a 1280x720 Xvfb
+# here used to strand four captures outside the screen and produce HLS 404s.
+if [ -n "$WIN_X" ] || [ -n "$WIN_Y" ]; then
+  require_capture_region "$DISP" "${WIN_X:?window_x required}" "${WIN_Y:?window_y required}"
+elif ! xdpyinfo -display ":$DISP" > /dev/null 2>&1; then
+  Xvfb ":$DISP" -screen 0 1280x720x24 &
+  sleep 2
+fi
+require_capture_region "$DISP" "${WIN_X:-0}" "${WIN_Y:-0}"
 
 ROOT=/workspace/arena/client
 GDIR=/workspace/arena/cameras/$NAME
@@ -20,12 +31,6 @@ ASSET_INDEX=$(echo "$META" | python3 -c "import json,sys; print(json.load(sys.st
 MAIN=$(echo "$META" | python3 -c "import json,sys; print(json.load(sys.stdin)['mainClass'])")
 CP=$(cat "$ROOT/classpath.txt")
 
-# Use an existing X server if one is up; else fall back to Xvfb.
-if ! xdpyinfo -display ":$DISP" > /dev/null 2>&1; then
-  Xvfb ":$DISP" -screen 0 1280x720x24 &
-  sleep 2
-fi
-
 export DISPLAY=":$DISP"
 java -Xmx2G -Djava.library.path="$ROOT/natives" -cp "$CP" "$MAIN" \
   --username "$NAME" \
@@ -37,17 +42,20 @@ java -Xmx2G -Djava.library.path="$ROOT/natives" -cp "$CP" "$MAIN" \
   --width 1280 --height 720 &
 JPID=$!
 
-# Tile the window once it appears (xdotool matches by owning PID — race-free).
+# Ignore GLFW's invisible 1x1 helper window; move the visible game window.
 if [ -n "$WIN_X" ] && [ -n "$WIN_Y" ]; then
   (
-    for i in $(seq 1 60); do
-      WID=$(xdotool search --pid $JPID 2>/dev/null | head -1 || true)
+    for i in $(seq 1 150); do
+      kill -0 "$JPID" 2>/dev/null || exit 1
+      WID=$(xdotool search --onlyvisible --all --pid "$JPID" --name '^Minecraft' 2>/dev/null | head -1 || true)
       if [ -n "$WID" ]; then
         xdotool windowmove "$WID" "$WIN_X" "$WIN_Y"
         exit 0
       fi
       sleep 2
     done
+    echo "Timed out positioning $NAME on display :$DISP" >&2
+    exit 1
   ) &
 fi
 
