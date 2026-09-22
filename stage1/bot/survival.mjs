@@ -399,7 +399,9 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
     moves.allow1by1towers = false
     moves.allowParkour = false
-    moves.maxDropDown = 2
+    // A two-block drop into a blast hole can strand a clanker under the
+    // village floor; keep village routes to steps they can climb back out of.
+    moves.maxDropDown = villageCtx ? 1 : 2
     moves.allowSprinting = false
     moves.scafoldingBlocks = []
     bot.pathfinder.setMovements(moves)
@@ -661,10 +663,10 @@ export function installSurvival(bot, state, log, opts = {}) {
     )
       throw new Error('Block still out of reach')
   }
-  async function approach(position, range) {
+  async function approach(position, range, { minY = -Infinity } = {}) {
     const target = new Vec3(position.x, position.y, position.z)
     const before = bot.entity.position.clone()
-    if (before.distanceTo(target) <= range)
+    if (before.distanceTo(target) <= range && before.y >= minY)
       return { returned: true, remaining: 0, moved: 0 }
     const dx = target.x - before.x, dz = target.z - before.z
     const horizontal = Math.hypot(dx, dz)
@@ -672,14 +674,15 @@ export function installSurvival(bot, state, log, opts = {}) {
     // A* search. Each action must make verified local progress toward them.
     const goal = horizontal > 14
       ? new goals.GoalNearXZ(before.x + dx / horizontal * 12, before.z + dz / horizontal * 12, 1)
-      : new goals.GoalNear(target.x, target.y, target.z, range)
+      : new goals.GoalNear(target.x, target.y, target.z, before.y < minY ? 2 : range)
     await walk(goal, 9000)
     const remaining = bot.entity.position.distanceTo(target)
     const moved = before.distanceTo(bot.entity.position)
-    if (remaining > range && moved < 0.75)
+    const returned = remaining <= range && bot.entity.position.y >= minY
+    if (!returned && moved < 0.75)
       throw new Error('Return route made no positional progress')
     return {
-      returned: remaining <= range,
+      returned,
       remaining: Math.round(remaining),
       moved: Math.round(moved * 10) / 10,
     }
@@ -1861,7 +1864,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (action === 'feed_server') return feedServer()
       if (action === 'patrol') return patrolOnce()
       if (action === 'return_to_post') {
-        return approach(layout.flag, 6)
+        return approach(layout.flag, 6, { minY: layout.flag.y + 0.5 })
       }
       if (action === 'attack_threat') return attackThreat()
     }

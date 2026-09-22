@@ -211,6 +211,7 @@ test('village navigation does not excavate the graded floor or trample planned f
   bot.emit('spawn')
   const movements = bot.pathfinder.movements
   const forbidden = movements.exclusionAreasBreak[0]
+  assert.equal(movements.maxDropDown, 1)
   assert.equal(forbidden({ name: 'dirt', position: flag.offset(1, 0, 5) }), 100)
   assert.equal(forbidden({ name: 'dirt', position: flag.offset(0, 0, 12) }), 100)
   assert.equal(forbidden({ name: 'dirt', position: flag.offset(20, 0, 20) }), 0)
@@ -218,6 +219,16 @@ test('village navigation does not excavate the graded floor or trample planned f
   assert.equal(forbidden({ name: 'red_bed', position: bed.foot }), 100)
   assert.equal(forbidden({ name: 'red_bed', position: bed.head }), 100)
   assert.equal(movements.exclusionAreasStep[0]({ name: 'farmland', position: flag.offset(2, 0, 12) }), 100)
+})
+
+test('returning to the village does not report success from beneath its floor', async () => {
+  const flag = new Vec3(0, 63, 0)
+  const { bot, skills } = fixture({ village: {
+    flag, lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false,
+  } })
+  bot.entity.position = new Vec3(4.5, 60, 0.5)
+  bot.pathfinder.goto = async () => {} // a route that resolves without movement
+  await assert.rejects(skills.execute('return_to_post'), /before reaching|no positional progress/)
 })
 
 test('resource scans preserve construction logs but still see a workbench built into a shelter', () => {
