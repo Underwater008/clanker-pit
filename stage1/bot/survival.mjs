@@ -89,7 +89,28 @@ export function installSurvival(bot, state, log) {
   let scoutStep = 0
   function resetMovements() {
     const moves = new Movements(bot)
-    moves.canDig = false
+    moves.canDig = true
+    moves.digCost = 2 // Prefer going around; clear ordinary terrain when needed.
+    moves.exclusionAreasBreak.push((block) => {
+      const soft =
+        [
+          'dirt',
+          'grass_block',
+          'sand',
+          'gravel',
+          'clay',
+          'short_grass',
+          'tall_grass',
+          'snow',
+        ].includes(block.name) ||
+        block.name.endsWith('_leaves') ||
+        isLog(block.name)
+      const rock =
+        ['stone', 'andesite', 'diorite', 'granite', 'coal_ore'].includes(
+          block.name,
+        ) && bot.inventory.items().some((i) => isPick(i.name))
+      return soft || rock ? 0 : 100 // Preserve workbenches, furnaces and built shelters.
+    })
     moves.allow1by1towers = false
     moves.allowParkour = false
     moves.maxDropDown = 2
@@ -101,8 +122,15 @@ export function installSurvival(bot, state, log) {
   }
   bot.on('spawn', resetMovements)
   // Basic swimming belongs in the motor loop, not a multi-second model request.
+  let swimming = false
   bot.on('physicsTick', () => {
-    if (bot.entity?.isInWater) bot.setControlState('jump', true)
+    if (bot.entity?.isInWater) {
+      bot.setControlState('jump', true)
+      swimming = true
+    } else if (swimming) {
+      bot.setControlState('jump', false)
+      swimming = false
+    }
   })
   function threats() {
     return Object.values(bot.entities)
@@ -165,6 +193,20 @@ export function installSurvival(bot, state, log) {
     }
   }
   async function walk(goal, ms = 11000) {
+    let checkpoint = bot.entity.position.clone(),
+      progressed = Date.now()
+    const watchdog = setInterval(() => {
+      if (
+        bot.entity.position.distanceTo(checkpoint) > 0.7 ||
+        bot.targetDigBlock
+      ) {
+        checkpoint = bot.entity.position.clone()
+        progressed = Date.now()
+      } else if (Date.now() - progressed > 4000) {
+        log('navigation_stuck', { position: bot.entity.position, goal })
+        bot.pathfinder.setGoal(null)
+      }
+    }, 500)
     try {
       await bounded(
         () => bot.pathfinder.goto(goal),
@@ -172,6 +214,7 @@ export function installSurvival(bot, state, log) {
         () => bot.pathfinder.setGoal(null),
       )
     } finally {
+      clearInterval(watchdog)
       bot.pathfinder.setGoal(null)
       bot.clearControlStates()
     }
