@@ -220,14 +220,19 @@ controller and gateway trust for village geometry. Deleting
 round at a fresh site.
 
 The cast spawns around the Server, builds the wall/gate/homes from blueprints
-in `village.mjs`, feeds coolant (server-confirmed water placed into the basin
-and drunk by scooping it back), and every `FLAG_WATER_TARGET` buckets boots one
-new villager from `VILLAGER_POOL` (cap `MAX_POPULATION`). A creeper boom within
+in `village.mjs` (standing ON the graded ground), feeds coolant (a
+server-confirmed pour into the basin; the water is genuinely consumed and the
+guest gateway drains the basin on the Server's behalf ~20 s later — a
+labeled match-controller mechanic that doubles as the visible "server
+drinks" moment), and every `FLAG_WATER_TARGET` buckets boots one new
+villager from `VILLAGER_POOL` (cap `MAX_POPULATION`, restored after
+controller restarts, single atomic write per boot). A creeper boom within
 `FLAG_EXPLOSION_RADIUS` of the core makes the Server overheat, dropping
-`FLAG_EXPLOSION_PENALTY` buckets of coolant. The council (`council.mjs`) runs
-every `COUNCIL_INTERVAL_MS`: each clanker proposes a role through its own routed
-LLM and says one line in-game; assignment is deterministic policy that honors
-unique proposals (logged `council_assign` with `source: proposal|policy`).
+`FLAG_EXPLOSION_PENALTY` buckets of coolant. The council (`council.mjs`)
+runs every `COUNCIL_INTERVAL_MS`: each clanker proposes a role through its
+own routed LLM and says one line in-game; assignment is deterministic policy
+that honors unique proposals (logged `council_assign` with
+`source: proposal|policy`).
 
 ### Per-clanker LLMs
 
@@ -255,13 +260,16 @@ every 3 minutes even after a full-length turn.
 
 Abuse controls: guest nicknames may never match clanker/villager/camera names
 (offline-mode name collisions would kick the real player), `View*`/`Cam*`/
-`FlagSetup*` prefixes are reserved, guest tokens are crypto-derived, joins are
-throttled per IP (two per ten minutes), and the queue lives in gateway memory —
-a gateway restart clears the queue (viewers re-join; the event-id sequence is
-restored from `guest.json` so boom/overheat accounting survives restarts).
-Boom events are written to `bot-state/guest.json` and consumed exactly once by
-the controller, which applies overheat penalties and publishes queue status +
-guest chat in `state.json` for the website.
+`FlagSetup*` prefixes are reserved, guest tokens are crypto-derived, and
+joins are throttled per visitor IP at the public proxy (two per ten minutes —
+the gateway only ever sees the proxy's loopback address). The queue lives
+in gateway memory — a gateway restart clears it (viewers re-join; the
+event-id sequence is restored from `guest.json` so boom/overheat accounting
+survives restarts). Booms are single-attempt, verified by an actual creeper
+spawning at the guest's feet, and never fire before the guest is confirmed
+at the gate. Boom events are written to `bot-state/guest.json` and consumed
+exactly once by the controller, which applies overheat penalties and
+publishes queue status + guest chat in `state.json` for the website.
 
 The guest POV is a sixth native view: the gateway attaches a read-only mirror
 on port 25584 (state file `bot-state/mirror-Guest.json`); `camguest` runs the
