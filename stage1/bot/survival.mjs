@@ -892,6 +892,21 @@ export function installSurvival(bot, state, log, opts = {}) {
     return { ground, crop, mature: crop?.name === 'wheat' && Number(crop.getProperties()?.age) >= 7 }
   }
   const holeTargets = () => blastHoleTargets(layout.flag, (p) => bot.blockAt(p))
+  const repairOptions = () => holeTargets().filter((target) =>
+    target.y >= layout.flag.y - 1 &&
+    !resourceBusy(target) &&
+    (blocked.get(target.toString()) ?? 0) < Date.now()).flatMap((target) => {
+    const stations = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+      .map(([dx, dz]) => layout.flag.offset(target.x - layout.flag.x + dx, 0,
+        target.z - layout.flag.z + dz))
+      .filter((ground) => {
+        const floor = bot.blockAt(ground)
+        return solid(floor) && floor.name !== 'farmland' &&
+          bot.blockAt(ground.offset(0, 1, 0))?.name === 'air' &&
+          bot.blockAt(ground.offset(0, 2, 0))?.name === 'air'
+      })
+    return stations.map((ground) => ({ target, stand: ground.offset(0, 1, 0) }))
+  })
   async function awaitBlock(position, expected) {
     const deadline = Date.now() + 1800
     while (Date.now() < deadline) {
@@ -913,25 +928,36 @@ export function installSurvival(bot, state, log, opts = {}) {
     return { changed: expectedName, position }
   }
   async function repairBlastHole() {
-    const target = holeTargets().sort((a, b) =>
-      a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0]
-    if (!target) throw new Error('No shallow dry blast hole on the village floor')
+    const option = repairOptions().sort((a, b) =>
+      a.stand.distanceTo(bot.entity.position) - b.stand.distanceTo(bot.entity.position))[0]
+    if (!option) throw new Error('No reachable shallow dry blast hole on the village floor')
+    const { target, stand } = option
     const item = bot.inventory.items().find((i) => ['dirt', 'cobblestone', 'stone'].includes(i.name))
     if (!item) throw new Error('No dirt or stone to fill the hole')
-    await walk(new goals.GoalNear(target.x, target.y + 1, target.z, 2), 9000)
-    const support = bot.blockAt(target.offset(0, -1, 0))
-    if (!solid(support) || bot.blockAt(target)?.name !== 'air')
-      throw new Error('Blast-hole support changed before repair')
-    if (bot.entity.position.distanceTo(support.position.offset(0.5, 1, 0.5)) > 4.4)
-      throw new Error('Blast-hole support is out of placement reach')
-    const available = bot.inventory.items().find((i) => i.name === item.name && i.count > 0)
-    if (!available) throw new Error('Repair material left inventory')
-    await bot.equip(available, 'hand')
-    if (bot.heldItem?.name !== available.name) throw new Error('Repair material is not held')
-    await bounded(() => bot._placeBlockWithOptions(support, new Vec3(0, 1, 0),
-      { forceLook: true, swingArm: 'right' }), 7000)
-    await awaitBlock(target, (b) => b?.name === available.name)
-    return { placed: available.name, position: target, repairedHole: true }
+    const release = claimResource({ name: 'air', position: target })
+    try {
+      try {
+        await walk(new goals.GoalBlock(stand.x, stand.y, stand.z), 9000)
+      } catch (error) {
+        blocked.set(target.toString(), Date.now() + 120000)
+        throw error
+      }
+      const support = bot.blockAt(target.offset(0, -1, 0))
+      if (!solid(support) || bot.blockAt(target)?.name !== 'air')
+        throw new Error('Blast-hole support changed before repair')
+      if (bot.entity.position.distanceTo(support.position.offset(0.5, 1, 0.5)) > 4.4)
+        throw new Error('Blast-hole support is out of placement reach')
+      const available = bot.inventory.items().find((i) => i.name === item.name && i.count > 0)
+      if (!available) throw new Error('Repair material left inventory')
+      await bot.equip(available, 'hand')
+      if (bot.heldItem?.name !== available.name) throw new Error('Repair material is not held')
+      await bounded(() => bot._placeBlockWithOptions(support, new Vec3(0, 1, 0),
+        { forceLook: true, swingArm: 'right' }), 7000)
+      await awaitBlock(target, (b) => b?.name === available.name)
+      return { placed: available.name, position: target, repairedHole: true }
+    } finally {
+      release()
+    }
   }
   async function tendFarm() {
     const plot = layout.farm.find((p) => {
@@ -1282,6 +1308,7 @@ export function installSurvival(bot, state, log, opts = {}) {
                 wall_upgrade: progress(layout.wallUpgrade),
                 gate: progress(layout.gate),
                 blast_holes: holeTargets().length,
+                repairable_blast_holes: new Set(repairOptions().map(({ target }) => target.toString())).size,
                 farm: {
                   plots: layout.farm.length,
                   tilled: layout.farm.filter((p) => farmStage(p).ground?.name === 'farmland').length,
@@ -1415,7 +1442,8 @@ export function installSurvival(bot, state, log, opts = {}) {
         if ((state.cooldowns[key] ?? 0) < Date.now()) vo[key] = description
       }
       const materials = buildMaterialCount(Boolean(obs.resources.workbench))
-      if (nearVillage && V.blast_holes > 0 && n((name) => ['dirt', 'cobblestone', 'stone'].includes(name)) > 0)
+      if (nearVillage && ['guard', 'builder'].includes(state.role) &&
+          V.repairable_blast_holes > 0 && n((name) => ['dirt', 'cobblestone', 'stone'].includes(name)) > 0)
         vadd('repair_blast_hole', 'Fill one shallow, dry blast hole in the village floor from the bottom up.')
       if (nearVillage && materials >= 2 && !V.wall?.complete)
         vadd(

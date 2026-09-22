@@ -69,6 +69,7 @@ try {
   await command(`setblock ${hole.x} ${hole.y} ${hole.z} air`)
   await command(`setblock ${hole.x} ${hole.y - 1} ${hole.z} air`)
   await sleep(300)
+  state.role = 'builder'
   assert.ok(skills.candidates(skills.observation()).repair_blast_hole,
     'blast damage must be offered to a clanker')
   const firstRepair = await skills.execute('repair_blast_hole')
