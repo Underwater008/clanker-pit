@@ -719,6 +719,27 @@ export function installSurvival(bot, state, log, opts = {}) {
       moved: Math.round(moved * 10) / 10,
     }
   }
+  async function collectItem(item, radius = 0) {
+    // A branch drop may land on leaves above pickup reach. Clear only nearby
+    // natural leaves directly supporting that item, then let it fall.
+    for (let i = 0; i < 3 && item.position.y > bot.entity.position.y + 2; i++) {
+      const support = bot.blockAt(item.position.floored().offset(0, -1, 0))
+      if (!support?.name.endsWith('_leaves') || constructionBlock(support.position) ||
+          !bot.canDigBlock(support)) break
+      await bounded(() => bot.dig(support), 3000, () => bot.stopDigging())
+      if (bot.blockAt(support.position)?.name === support.name)
+        throw new Error('Leaf under the drop was not cleared')
+      await sleep(400)
+    }
+    const elevated = item.position.y > bot.entity.position.y + 2
+    await walk(
+      elevated
+        ? new goals.GoalNearXZ(item.position.x, item.position.z, Math.max(1, radius))
+        : new goals.GoalNear(item.position.x, item.position.y, item.position.z, radius),
+      7000,
+    )
+    await sleep(650)
+  }
   async function collect(position) {
     await sleep(650) // item spawn, pickup delay, and falling logs need server ticks
     const item = Object.values(bot.entities)
@@ -728,18 +749,7 @@ export function installSurvival(bot, state, log, opts = {}) {
           a.position.distanceTo(bot.entity.position) -
           b.position.distanceTo(bot.entity.position),
       )[0]
-    if (item) {
-      await walk(
-        new goals.GoalNear(
-          item.position.x,
-          item.position.y,
-          item.position.z,
-          0,
-        ),
-        7000,
-      )
-      await sleep(650)
-    }
+    if (item) await collectItem(item)
   }
   async function dig(block, toolSuffix) {
     const resource = isLog(block.name) || stoneNames.has(block.name) ||
@@ -874,9 +884,8 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
     const face = hit.face.scaled(-1)
     const reference = bot.blockAt(hit.ref)
-    const crouch = ['crafting_table', 'furnace', 'chest'].includes(
-      reference.name,
-    )
+    const crouch = ['crafting_table', 'furnace', 'chest'].includes(reference.name) ||
+      reference.name.endsWith('_bed')
     bot.setControlState('sneak', crouch)
     try {
       await bounded(
@@ -1542,16 +1551,16 @@ export function installSurvival(bot, state, log, opts = {}) {
           'Raise up to two blocks of the perimeter wall; use gathered earth as a first barricade when stone or wood is scarce.',
         )
       if (nearVillage && (state.role ?? null) === 'builder' &&
-          wallMaterials < 1 && !V.wall?.complete)
+          wallMaterials < 1 && (!V.wall?.complete || !V.my_home?.complete))
         vadd('gather_wall_earth',
-          'Gather one dirt block outside the village footprint for the finite perimeter wall.')
+          'Gather one dirt block outside the village footprint for the finite wall or a starter home.')
       if (nearVillage && materials >= 1 && !V.gate?.complete)
         vadd(
           'build_gate',
           'Raise the front gate pillars and lintel on the south road.',
         )
-      if (nearVillage && materials >= 1 && !V.my_home?.complete)
-        vadd('build_home', 'Place two blocks of your own house on your lot.')
+      if (nearVillage && wallMaterials >= 1 && !V.my_home?.complete)
+        vadd('build_home', 'Raise up to two blocks of your own starter home on its fixed lot; gathered earth can start the shell.')
       if (nearVillage && materials >= 2 && V.wall?.complete && V.gate?.complete &&
           !V.wall_upgrade?.complete)
         vadd('reinforce_wall',
@@ -1831,16 +1840,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         )[0]
       if (!drop) throw Error('Drop disappeared')
       const before = bot.inventory.items().map((item) => ({ name: item.name, count: item.count }))
-      await walk(
-        new goals.GoalNear(
-          drop.position.x,
-          drop.position.y,
-          drop.position.z,
-          1,
-        ),
-        7000,
-      )
-      await sleep(650)
+      await collectItem(drop, 1)
       const collected = inventoryGains(before, bot.inventory.items())
       if (!collected.length) throw Error('Dropped item did not reach inventory')
       return { collectedAt: drop.position, collected }
@@ -1909,7 +1909,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         return { ...result, structure: 'gate' }
       }
       if (action === 'build_home') {
-        const result = await buildFrom(layout.home)
+        const result = await buildFrom(layout.home, 2, { allowDirt: true })
         return { ...result, structure: 'home' }
       }
       if (action === 'expand_home') {

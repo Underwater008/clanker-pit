@@ -14,7 +14,7 @@ import { once } from 'node:events'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Vec3 } from 'vec3'
 import { installSurvival } from './survival.mjs'
-import { serverAnatomy, wallBlueprint, gateBlueprint, torchSpots } from './village.mjs'
+import { serverAnatomy, wallBlueprint, gateBlueprint, torchSpots, homeBlueprint, homeLot, homeBed } from './village.mjs'
 
 const FLAG = new Vec3(0, -60, 0)
 const rcon = await Rcon.connect({
@@ -179,6 +179,18 @@ try {
   assert.equal(earthBlocks.length, earth.placed)
   for (const p of earthBlocks) await rconOk(`setblock ${p.x} ${p.y} ${p.z} air`)
   await rconOk('clear VillageLab minecraft:dirt')
+  const bed = homeBed(FLAG, 0)
+  for (const [p, part] of [[bed.foot, 'foot'], [bed.head, 'head']])
+    await rconOk(`setblock ${p.x} ${p.y} ${p.z} red_bed[facing=${bed.facing},part=${part}]`)
+  await rconOk('give VillageLab minecraft:dirt 4')
+  await sleep(400)
+  const earthHome = await act('build_home')
+  assert.ok(earthHome.placed > 0, 'gathered earth must begin a starter home')
+  const starterShell = homeBlueprint(homeLot(FLAG, 0), FLAG)
+    .filter((p) => bot.blockAt(p)?.name === 'dirt')
+  assert.equal(starterShell.length, earthHome.placed)
+  for (const p of starterShell) await rconOk(`setblock ${p.x} ${p.y} ${p.z} air`)
+  await rconOk('clear VillageLab minecraft:dirt')
   await rconOk('give VillageLab minecraft:cobblestone 256')
   await sleep(1200)
   for (let i = 0; i < 80; i++) {
@@ -215,6 +227,8 @@ try {
   }
   const obs = skills.observation()
   assert.equal(obs.village.my_home.complete, true, 'home blueprint must complete')
+  await assertBlock(bed.foot, 'red_bed', 'founding bed foot survives home building')
+  await assertBlock(bed.head, 'red_bed', 'founding bed head survives home building')
   await rconOk('give VillageLab minecraft:torch 8')
   await sleep(1200)
   const torchBefore = torchSpots(FLAG).filter((p) => bot.blockAt(p)?.name === 'torch').length

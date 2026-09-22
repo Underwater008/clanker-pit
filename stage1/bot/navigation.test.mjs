@@ -354,6 +354,12 @@ test('builders can start a finite earth wall while continuing to seek home timbe
   const withEarth = fixture({ village, blocks: [tree], inventory: [{ name: 'dirt', count: 1 }] })
   withEarth.state.role = 'builder'
   assert.ok(withEarth.skills.candidates(withEarth.skills.observation()).build_wall)
+  assert.ok(withEarth.skills.candidates(withEarth.skills.observation()).build_home)
+  const completedWall = { ...village, summary: () => ({ wall: { complete: true } }) }
+  const noHome = fixture({ village: completedWall })
+  noHome.state.role = 'builder'
+  assert.ok(noHome.skills.candidates(noHome.skills.observation()).gather_wall_earth,
+    'home building must retain an earth supply after the wall is complete')
 })
 
 test('damage preempts ordinary work but does not cancel an active short water escape', async () => {
