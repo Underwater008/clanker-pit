@@ -434,3 +434,18 @@ test('a latched recovery never offers patrol or building merely because its next
   assert.equal(localEscapePlans(bot, new Vec3(0, 71, 0)).length, 0)
   assert.deepEqual(Object.keys(skills.candidates(skills.observation())), ['escape_upward'])
 })
+
+test('a clanker already on an open outdoor bank clears stale underground recovery', async () => {
+  const { bot, skills } = fixture({ village: {
+    flag: new Vec3(0, 70, 0), lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false,
+  } })
+  bot.blockAt = (p) => ({ position: p.floored(), name: 'stone', boundingBox: 'block' })
+  bot.pathfinder.goto = async () => { throw new Error('NoPath') }
+  await assert.rejects(skills.execute('explore'), /NoPath/)
+  assert.ok(skills.candidates(skills.observation()).escape_upward)
+  bot.entity.onGround = true
+  bot.blockAt = (p) => ({ position: p.floored(),
+    name: p.y < 64 ? 'grass_block' : 'air',
+    boundingBox: p.y < 64 ? 'block' : 'empty' })
+  assert.equal(skills.candidates(skills.observation()).escape_upward, undefined)
+})

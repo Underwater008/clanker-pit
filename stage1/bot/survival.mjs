@@ -552,6 +552,18 @@ export function installSurvival(bot, state, log, opts = {}) {
   function escapeTarget() {
     const target = escapeSession ?? (villageCtx ? villageCtx.flag.offset(0, 1, 0) : state.camp)
     if (!target || bot.entity.isInWater) return null
+    // A lower outdoor bank is not an underground trap. Clear a previously
+    // latched climb only when local loaded blocks show open air above a solid
+    // foothold through the village surface level.
+    if (escapeSession && villageCtx && bot.entity.onGround) {
+      const feet = bot.entity.position.floored()
+      let open = solid(bot.blockAt(feet.offset(0, -1, 0)))
+      for (let y = feet.y; open && y <= Math.max(feet.y + 2, target.y + 2); y++) {
+        const block = bot.blockAt(new Vec3(feet.x, y, feet.z))
+        open = Boolean(block) && !solid(block)
+      }
+      if (open) { escapeSession = null; blockedRoutes = 0; return null }
+    }
     if (bot.entity.position.y >= target.y - 0.1 ||
         Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z) > 32) {
       escapeSession = null
