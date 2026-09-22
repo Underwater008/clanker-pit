@@ -2,6 +2,16 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { Vec3 } from 'vec3'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { craftConfirmed } from './crafting.mjs'
+import {
+  wallBlueprint,
+  gateBlueprint,
+  torchSpots,
+  homeBlueprint,
+  homeLot,
+  serverAnatomy,
+  patrolNodes,
+  isBuildMaterial,
+} from './village.mjs'
 
 const { pathfinder, Movements, goals } = pathfinderPkg
 export const GOALS = {
@@ -14,6 +24,12 @@ export const GOALS = {
   improve_camp:
     'Finish the shelter, add a furnace, plant trees, and stockpile useful materials.',
   explore: 'Scout nearby terrain for new resources, remembering where camp is.',
+  protect_server:
+    'Keep the Server alive: feed it coolant, guard it from creepers and hostile players, and repair blast damage.',
+  build_village:
+    'Raise the perimeter wall, the front gate, torches, and your own home around the Server.',
+  stockpile_defense:
+    'Prepare stone swords, torches, raw iron and buckets so the village can defend itself.',
 }
 export const countItems = (items, match) =>
   items
@@ -25,6 +41,7 @@ export const isLog = (n) => /(_log|_stem)$/.test(n)
 export const isPlank = (n) => n.endsWith('_planks')
 const isPick = (n) => n.endsWith('_pickaxe')
 const stoneNames = new Set(['stone', 'cobblestone', 'coal_ore'])
+const ironOreNames = new Set(['iron_ore', 'deepslate_iron_ore'])
 const hostiles = new Set([
   'zombie',
   'husk',
@@ -83,10 +100,26 @@ export function shelterBlueprint(origin) {
   return blocks
 }
 
-export function installSurvival(bot, state, log) {
+export function installSurvival(bot, state, log, opts = {}) {
   bot.loadPlugin(pathfinder)
   const blocked = new Map()
   let scoutStep = 0
+  // Village scenario context (null in plain survival mode). The controller
+  // supplies the Server's flag position, this bot's home-lot index, a live
+  // snapshot of shared village state, and how to recognize guest creeper
+  // players so guards can fight them without hidden world knowledge.
+  const villageCtx = opts.village ?? null
+  const layout = villageCtx
+    ? {
+        flag: villageCtx.flag,
+        anatomy: serverAnatomy(villageCtx.flag),
+        wall: wallBlueprint(villageCtx.flag),
+        gate: gateBlueprint(villageCtx.flag),
+        torches: torchSpots(villageCtx.flag),
+        patrol: patrolNodes(villageCtx.flag),
+        home: homeBlueprint(homeLot(villageCtx.flag, villageCtx.lotIndex), villageCtx.flag),
+      }
+    : null
   function resetMovements() {
     const moves = new Movements(bot)
     moves.canDig = true
@@ -145,10 +178,34 @@ export function installSurvival(bot, state, log) {
           b.position.distanceTo(bot.entity.position),
       )
   }
+  // Guest creeper players near the Server. The controller decides which
+  // usernames count as guests; the bot only ever sees entities it can
+  // already perceive.
+  function enemyPlayers() {
+    if (!villageCtx?.isEnemyPlayer) return []
+    return Object.values(bot.entities).filter(
+      (e) =>
+        e.username &&
+        villageCtx.isEnemyPlayer(e.username) &&
+        e.position.distanceTo(villageCtx.flag) < 20,
+    )
+  }
   function emergency() {
     if (!bot.entity || bot.health <= 0) return null
-    if (threats().some((e) => e.position.distanceTo(bot.entity.position) < 9))
-      return 'flee'
+    const closeThreats = threats().filter(
+      (e) => e.position.distanceTo(bot.entity.position) < 9,
+    )
+    if (villageCtx) {
+      // Guards stand and fight; everyone else keeps the old flee reflex.
+      if ((state.role ?? null) === 'guard' && bot.health > 8) {
+        const flagThreats = threats().filter(
+          (e) => e.position.distanceTo(villageCtx.flag) < 12,
+        )
+        if (closeThreats.length || flagThreats.length || enemyPlayers().length)
+          return 'attack_threat'
+      }
+    }
+    if (closeThreats.length) return 'flee'
     if (bot.food < 16 && bot.inventory.items().some((i) => edible.has(i.name)))
       return 'eat'
     return null
@@ -370,6 +427,200 @@ export function installSurvival(bot, state, log) {
     }
     return { placed: item.name, position }
   }
+  // ---- village construction and coolant skills ----------------------------
+  const buildMaterialCount = () =>
+    countItems(bot.inventory.items(), (n) => isBuildMaterial(n))
+  const firstBuildMaterial = () =>
+    bot.inventory.items().find((i) => isBuildMaterial(i.name))
+  /** Place up to `perAction` missing blocks of a blueprint, in order. */
+  async function buildFrom(blueprint, perAction = 2) {
+    let placed = 0
+    for (const p of blueprint) {
+      if (solid(bot.blockAt(p))) continue
+      const occupant = bot.blockAt(p)
+      if (['short_grass', 'tall_grass'].includes(occupant?.name))
+        await dig(occupant, '_axe').catch(() => {})
+      const material = firstBuildMaterial()
+      if (!material) break
+      await place(p, material)
+      if (++placed === perAction) break
+    }
+    return { placed }
+  }
+  const oreNearby = () => nearbyBlock((b) => ironOreNames.has(b.name), 16)
+  const furnaceNearby = () => nearbyBlock((b) => b.name === 'furnace', 16)
+  async function smeltIron() {
+    const furnaceBlock = furnaceNearby()
+    if (!furnaceBlock) throw new Error('No furnace nearby')
+    const raw = bot.inventory.items().find((i) => i.name === 'raw_iron')
+    if (!raw) throw new Error('No raw iron to smelt')
+    const fuel =
+      bot.inventory.items().find((i) => i.name === 'coal') ??
+      bot.inventory.items().find((i) => isPlank(i.name)) ??
+      bot.inventory.items().find((i) => isLog(i.name))
+    if (!fuel) throw new Error('No fuel (coal or planks) for the furnace')
+    await reach(furnaceBlock)
+    const furnace = await bot.openFurnace(furnaceBlock)
+    try {
+      const count = Math.min(raw.count, fuel.name === 'coal' ? 4 : 2)
+      // Never request more fuel than the bot actually owns.
+      const fuelCount = Math.min(
+        fuel.name === 'coal' ? 1 : Math.ceil((count * 3) / 1.5),
+        fuel.count,
+      )
+      await furnace.putFuel(
+        bot.registry.itemsByName[fuel.name].id,
+        null,
+        fuelCount,
+      )
+      await furnace.putInput(bot.registry.itemsByName.raw_iron.id, null, count)
+      const perItemMs = 11000
+      const deadline = Date.now() + count * perItemMs + 9000
+      while (Date.now() < deadline) {
+        const out = furnace.outputItem()
+        if (out?.name === 'iron_ingot' && out.count >= count) break
+        await sleep(500)
+      }
+      const out = furnace.outputItem()
+      if (out?.name !== 'iron_ingot' || out.count < count)
+        throw new Error(`Furnace produced ${out?.count ?? 0}/${count} ingots`)
+      await furnace.takeOutput()
+    } catch (error) {
+      // Best effort: pull the ore and fuel back out so nothing is stranded
+      // inside the furnace when the chain fails mid-smelt.
+      await furnace.takeInput().catch(() => {})
+      await furnace.takeFuel().catch(() => {})
+      throw error
+    } finally {
+      await furnace.close().catch(() => {})
+    }
+    const gained = countItems(bot.inventory.items(), 'iron_ingot')
+    if (gained < 1) throw new Error('Smelting did not yield iron ingots')
+    return { smelted: gained }
+  }
+  /** Fill an empty bucket at a known water source (the coolant spring). */
+  async function scoopWater() {
+    const water = layout.anatomy.spring
+      .map((p) => bot.blockAt(p))
+      .filter((b) => b?.name === 'water')
+      .sort(
+        (a, b) =>
+          a.position.distanceTo(bot.entity.position) -
+          b.position.distanceTo(bot.entity.position),
+      )[0]
+    if (!water) throw new Error('The coolant spring is dry')
+    await walk(
+      new goals.GoalNear(water.position.x, water.position.y, water.position.z, 2),
+    )
+    const floor = bot.blockAt(water.position.offset(0, -1, 0))
+    if (!solid(floor)) throw new Error('Spring has no solid bed')
+    const bucket = bot.inventory.items().find((i) => i.name === 'bucket')
+    if (!bucket) throw new Error('No empty bucket')
+    await bot.equip(bucket, 'hand')
+    // Clicking the bed's top face with an empty bucket: vanilla scoops the
+    // water source above it, and the block update confirms the pickup.
+    await bot._placeBlockWithOptions(floor, new Vec3(0, 1, 0), {
+      forceLook: true,
+      swingArm: 'right',
+    })
+    await sleep(300)
+    if (!bot.inventory.items().some((i) => i.name === 'water_bucket'))
+      throw new Error('Bucket did not fill at the spring')
+    return { filledBucket: true }
+  }
+  /**
+   * Feed the Server one bucket of coolant. The pour is server-confirmed by
+   * the water block appearing in the basin; the drink is confirmed by the
+   * water disappearing. Only a verified pour counts as a feed. The whole
+   * pour-and-drink cycle runs through the shared basin lock so two
+   * clankers can never interleave their pours and double-credit one bucket.
+   */
+  async function feedServer() {
+    const cycle = async () => {
+      const { basinFloor, basinHole } = layout.anatomy
+      await walk(
+        new goals.GoalNear(basinFloor.x, basinFloor.y, basinFloor.z, 2),
+      )
+      const basinBlock = () => bot.blockAt(basinHole)
+      async function pour(held) {
+        await bot.equip(held, 'hand')
+        await bot._placeBlockWithOptions(basinFloor, new Vec3(0, 1, 0), {
+          forceLook: true,
+          swingArm: 'right',
+        })
+      }
+      // The Server drinks slowly; drain any leftover from a previous feed.
+      if (basinBlock()?.name === 'water') {
+        const empty = bot.inventory.items().find((i) => i.name === 'bucket')
+        if (!empty) throw new Error('Basin is full and no bucket to drain it')
+        await pour(empty)
+        await sleep(300)
+      }
+      const full = bot.inventory.items().find((i) => i.name === 'water_bucket')
+      if (!full) throw new Error('No water bucket to feed the Server')
+      await pour(full)
+      if (basinBlock()?.name !== 'water')
+        throw new Error('Server basin did not accept the coolant')
+      await sleep(1500) // let the stream see the water in the basin
+      const empty = bot.inventory.items().find((i) => i.name === 'bucket')
+      if (!empty) throw new Error('Bucket did not empty into the basin')
+      await pour(empty)
+      if (basinBlock()?.name === 'water')
+        throw new Error('Server did not drink the coolant')
+      return { fedCoolant: true }
+    }
+    if (villageCtx?.withBasin) return villageCtx.withBasin(cycle)
+    return cycle()
+  }
+  async function patrolOnce() {
+    state.patrolIndex =
+      ((state.patrolIndex ?? 0) + 1) % Math.max(1, layout.patrol.length)
+    const node = layout.patrol[state.patrolIndex]
+    await walk(new goals.GoalNear(node.x, node.y, node.z, 2))
+    return { patrolled: node }
+  }
+  async function attackThreat() {
+    const targets = [
+      ...enemyPlayers(),
+      ...Object.values(bot.entities).filter(
+        (e) =>
+          hostiles.has(e.name) &&
+          (e.position.distanceTo(bot.entity.position) < 12 ||
+            e.position.distanceTo(villageCtx.flag) < 12),
+      ),
+    ].sort(
+      (a, b) =>
+        a.position.distanceTo(bot.entity.position) -
+        b.position.distanceTo(bot.entity.position),
+    )
+    const target = targets[0]
+    if (!target) return { peaceful: true }
+    const weapon =
+      bot.inventory.items().find((i) => i.name === 'iron_sword') ??
+      bot.inventory.items().find((i) => i.name === 'stone_sword') ??
+      bot.inventory.items().find((i) => i.name.endsWith('_sword')) ??
+      bot.inventory.items().find((i) => i.name === 'stone_axe')
+    if (weapon) await bot.equip(weapon, 'hand')
+    const deadline = Date.now() + 20000
+    while (
+      bot.entities[target.id] &&
+      Date.now() < deadline &&
+      bot.health > 6 &&
+      target.position.distanceTo(villageCtx.flag) < 24
+    ) {
+      if (target.position.distanceTo(bot.entity.position) > 2.6)
+        await walk(new goals.GoalFollow(target, 2), 6000)
+      await bot.lookAt(target.position.offset(0, 0.8, 0))
+      bot.attack(target)
+      await sleep(800)
+    }
+    return {
+      engaged: target.username ?? target.name,
+      defeated: !bot.entities[target.id],
+      health: Math.round(bot.health),
+    }
+  }
+
   function openGround(center, radius = 5) {
     const candidates = []
     for (let dx = -radius; dx <= radius; dx++)
@@ -454,7 +705,7 @@ export function installSurvival(bot, state, log) {
         .filter(
           (e) =>
             e.username &&
-            !e.username.startsWith('Cam') &&
+            !/^(Cam|View|FlagSetup)/.test(e.username) &&
             e.username !== 'ClankerCam',
         )
         .map((e) => ({
@@ -466,6 +717,44 @@ export function installSurvival(bot, state, log) {
         .map((e) => e.name),
       recent_results: state.recent.slice(-6),
       current_goal: state.plan.goal,
+      ...(villageCtx
+        ? (() => {
+            const progress = (list) => {
+              let done = 0
+              for (const p of list) if (solid(bot.blockAt(p))) done++
+              return { done, total: list.length, complete: done === list.length }
+            }
+            return {
+              village: {
+                ...(villageCtx.summary?.() ?? {}),
+                distance_from_flag: Math.round(
+                  bot.entity.position.distanceTo(villageCtx.flag),
+                ),
+                my_home: progress(layout.home),
+                wall: progress(layout.wall),
+                gate: progress(layout.gate),
+                torches_lit: layout.torches.filter(
+                  (p) => bot.blockAt(p)?.name === 'torch',
+                ).length,
+                torches_total: layout.torches.length,
+                threats_near_flag: threats()
+                  .filter((e) => e.position.distanceTo(villageCtx.flag) < 14)
+                  .map((e) => ({
+                    name: e.name,
+                    distance: Math.round(
+                      e.position.distanceTo(villageCtx.flag),
+                    ),
+                  })),
+                enemy_players: enemyPlayers().map((e) => ({
+                  name: e.username,
+                  distance: Math.round(
+                    e.position.distanceTo(villageCtx.flag),
+                  ),
+                })),
+              },
+            }
+          })()
+        : {}),
     }
   }
   function candidates(obs) {
@@ -547,6 +836,96 @@ export function installSurvival(bot, state, log) {
       'explore',
       'Scout a short new route to find reachable wood, stone, or food.',
     )
+    // ---- village candidates ------------------------------------------------
+    // Role-preferred actions are listed first so the labeled fallback policy
+    // does the right kind of work when Jev is unavailable.
+    if (villageCtx) {
+      const V = obs.village ?? {}
+      const vo = {}
+      const vadd = (key, description) => {
+        if ((state.cooldowns[key] ?? 0) < Date.now()) vo[key] = description
+      }
+      const materials = buildMaterialCount()
+      if (materials >= 2 && !V.wall?.complete)
+        vadd(
+          'build_wall',
+          'Place two blocks of the perimeter wall that protects the Server.',
+        )
+      if (materials >= 2 && !V.gate?.complete)
+        vadd(
+          'build_gate',
+          'Raise the front gate pillars and lintel on the south road.',
+        )
+      if (materials >= 2 && !V.my_home?.complete)
+        vadd('build_home', 'Place two blocks of your own house on your lot.')
+      if (
+        n('torch') > 0 &&
+        V.torches_lit < (V.torches_total ?? 0)
+      )
+        vadd(
+          'place_torch',
+          'Place a torch on the wall to keep monsters out of the village.',
+        )
+      if (
+        obs.resources.workbench &&
+        n('cobblestone') >= 2 &&
+        n('stick') >= 1 &&
+        !n((name) => name.endsWith('_sword'))
+      )
+        vadd('craft_stone_sword', 'Craft a stone sword for guard duty.')
+      if (n('coal') >= 1 && n('stick') >= 1 && n('torch') < 8)
+        vadd(
+          'craft_torch',
+          'Craft torches from coal and sticks to light the village.',
+        )
+      const hasBucket = n('bucket') > 0 || n('water_bucket') > 0
+      if (!hasBucket && !V.atCapacity) {
+        if (n('iron_ingot') >= 3 && obs.resources.workbench)
+          vadd(
+            'craft_bucket',
+            'Craft a bucket from three iron ingots to carry coolant.',
+          )
+        if (n('raw_iron') >= 1 && furnaceNearby())
+          vadd('smelt_iron', 'Smelt raw iron in the furnace toward a bucket.')
+        if (n(isPick) && oreNearby() && n('raw_iron') + n('iron_ingot') < 6)
+          vadd(
+            'mine_iron_ore',
+            'Mine one iron ore with your pickaxe; raw iron smelts into buckets.',
+          )
+      }
+      if (!V.atCapacity) {
+        if (n('water_bucket') === 0 && n('bucket') > 0)
+          vadd(
+            'scoop_water',
+            'Fill your bucket at the coolant spring south of the front gate.',
+          )
+        if (n('water_bucket') > 0)
+          vadd(
+            'feed_server',
+            `Feed the Server one bucket of coolant; it boots a new villager at ${V.water?.target ?? '?'} buckets (now ${V.water?.fed ?? 0}).`,
+          )
+      }
+      if ((state.role ?? null) === 'guard')
+        vadd('patrol', 'Walk the perimeter on watch for creepers and guests.')
+      if (V.distance_from_flag > 64)
+        vadd('return_to_post', 'Head back toward the Server and the village.')
+      const preferred = {
+        guard: ['patrol', 'attack_threat', 'build_gate', 'build_wall', 'place_torch', 'return_to_post'],
+        builder: ['build_wall', 'build_gate', 'build_home', 'place_torch', 'return_to_post'],
+        smith: ['craft_stone_sword', 'craft_torch', 'craft_bucket', 'smelt_iron', 'mine_iron_ore', 'return_to_post'],
+        coolant: ['scoop_water', 'feed_server', 'craft_bucket', 'mine_iron_ore', 'smelt_iron', 'return_to_post'],
+        farmer: ['hunt_food', 'plant_tree', 'return_to_post'],
+      }[state.role ?? ''] ?? ['build_wall', 'build_home', 'feed_server', 'scoop_water']
+      const ordered = {}
+      for (const key of preferred) if (vo[key]) ordered[key] = vo[key]
+      for (const [key, description] of Object.entries(vo))
+        if (!ordered[key]) ordered[key] = description
+      const merged = { ...ordered, ...options }
+      if (!Object.keys(merged).length)
+        merged.explore =
+          'Try a different scouting direction after the blocked route.'
+      return merged
+    }
     if (!Object.keys(options).length)
       options.explore =
         'Try a different scouting direction after the blocked route.'
@@ -721,6 +1100,52 @@ export function installSurvival(bot, state, log) {
         throw e
       }
       return { scouted: bot.entity.position }
+    }
+    if (villageCtx) {
+      if (action === 'build_wall') {
+        const result = await buildFrom(layout.wall)
+        return { ...result, structure: 'wall' }
+      }
+      if (action === 'build_gate') {
+        const result = await buildFrom(layout.gate)
+        return { ...result, structure: 'gate' }
+      }
+      if (action === 'build_home') {
+        const result = await buildFrom(layout.home)
+        return { ...result, structure: 'home' }
+      }
+      if (action === 'place_torch') {
+        const torch = items.find((i) => i.name === 'torch')
+        if (!torch) throw new Error('Torch disappeared')
+        const spot = layout.torches.find(
+          (p) =>
+            !['torch', 'wall_torch'].includes(bot.blockAt(p)?.name) &&
+            solid(bot.blockAt(p.offset(0, -1, 0))),
+        )
+        if (!spot) throw new Error('No open torch spot on solid wall')
+        return place(spot, torch)
+      }
+      if (action === 'mine_iron_ore') {
+        const b = oreNearby()
+        if (!b) throw new Error('No reachable iron ore')
+        return dig(b, '_pickaxe')
+      }
+      if (action === 'smelt_iron') return smeltIron()
+      if (action === 'scoop_water') return scoopWater()
+      if (action === 'feed_server') return feedServer()
+      if (action === 'patrol') return patrolOnce()
+      if (action === 'return_to_post') {
+        await walk(
+          new goals.GoalNear(
+            layout.flag.x,
+            layout.flag.y,
+            layout.flag.z,
+            6,
+          ),
+        )
+        return { returned: true }
+      }
+      if (action === 'attack_threat') return attackThreat()
     }
     throw new Error(`Unsupported action ${action}`)
   }

@@ -1,10 +1,18 @@
 # Clanker Pit: decisions and staged plan
 
-Updated September 20, 2026. This document records the conversation and proposes a build sequence. The current task is documentation only.
+Originally planned September 20, 2026; terminology updated September 21, 2026.
+This document preserves the original planning context and proposed build sequence.
+See [the README](../README.md) for current implementation status.
 
 ## 1. Product premise
 
 Clanker Pit is a social spectator platform for AI competitions. Its first game is a small survival arena inside actual Minecraft. People watch characters make consequential decisions, develop relationships, and respond to setbacks, while sharing a room with other spectators.
+
+**Player terminology (confirmed):** Every automated player is a **clanker**;
+collectively, they are **clankers**. This includes pure AI, pure code, AI + Jev,
+and any future control architecture. Being a clanker does not require a particular
+model, provider, or amount of AI. Earlier references to bots, AI players, or
+contestants describe these same players; use clanker in new product copy and docs.
 
 The longer-term ambition is a world surrounding the competition: districts, residents with backgrounds and motives, a selection draw, a wealthy capital, sponsors, organizers, and an eventual revolution. Events outside the arena affect the contestants and the match; events inside it affect the wider world.
 
@@ -15,6 +23,7 @@ The immediate goal is a small, entertaining match with recognizable characters a
 | Topic | Recorded direction | Status |
 | --- | --- | --- |
 | Platform | Clanker Pit will eventually host more than one AI game. | Confirmed |
+| Player name | All automated players are clankers, regardless of control architecture. | Confirmed |
 | First game | Bots play inside actual Minecraft. | Confirmed |
 | Initial scope | Start simple and expand after the core experience works. | Confirmed |
 | Human gathering place | The control room is a website. | Confirmed |
@@ -23,9 +32,12 @@ The immediate goal is a small, entertaining match with recognizable characters a
 | Seat and room changes | Users may select a different seat or another room. | Desired direction; exact behavior remains open |
 | Conventional viewing | A theater mode shows an ordinary website video player outside the 3D environment. | Confirmed |
 | AI models | Explore Kimi K3 through the user's RunPod access, combined with TypeSafe's Jev. | User-requested technical direction; integration untested |
+| Per-clanker models | Any clanker may think with a different LLM (OpenAI-compatible routing); Kimi K3 is the default. | Confirmed, implemented for the village round |
+| Human participation | Viewers join a queue from the website and periodically play guest creepers near the front gate, with move/look/jump and one boom — nothing else. | Confirmed for the village round |
+| The Server | A monument-flag the clankers defend, feed water coolant, and boot new villagers from. | Confirmed for the village round |
 | Character depth | Backgrounds, motives, memories, and reactions should help make bots interesting. | Confirmed creative direction |
 | Larger world | Districts, selection draws, capital influence, airdrops, game control, and eventual revolution. | Long-term creative direction |
-| Work now | Write plans and decisions without starting the build. | Confirmed scope |
+| Work now | Write plans and decisions without starting the build. | Confirmed scope (superseded for the village round: it is implemented) |
 
 Four contestants, Java Edition, Mineflayer, a closing border, a ten-minute target, and one audience-voted airdrop are **proposed starting defaults** from the discussion. They have not been individually approved as fixed requirements.
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Clanker Pit arena bootstrap — runs unattended at pod start (via dockerArgs).
 # Does the whole stack without SSH: Java, Node, MC server, vanilla client,
-# NVIDIA X driver module, GPU Xorg, five tiled camera clients, mediamtx,
-# ambient bots, spectate loop. Idempotent-ish; logs to /workspace/arena/logs.
+# NVIDIA X driver module, GPU Xorg, six tiled camera clients (incl. the guest
+# creeper view), mediamtx, ambient bots, guest gateway, spectate loop.
+# Idempotent-ish; logs to /workspace/arena/logs.
 # Required env: TYPESAFE_API_KEY (Jev), RUNPOD_API_KEY (Kimi).
 set -euo pipefail
 exec > >(tee -a /workspace/bootstrap.log) 2>&1
@@ -82,6 +83,7 @@ paths:
   vex: {source: publisher}
   mira: {source: publisher}
   tally: {source: publisher}
+  guest: {source: publisher}
 EOF
 
 wlog "step: fetch capture + bot code from github"
@@ -89,7 +91,7 @@ RAW=https://raw.githubusercontent.com/Underwater008/clanker-pit/main
 for f in run-client.sh run-stream.sh run-native-view.py display.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
   curl -fsSL "$RAW/infra/capture/$f" -o "$ARENA/capture/$f"
 done
-for f in ambient.mjs survival.mjs crafting.mjs native-mirror.mjs llm.mjs memory.mjs env.mjs decision.mjs identity.cinder.json package.json package-lock.json; do
+for f in ambient.mjs survival.mjs crafting.mjs native-mirror.mjs llm.mjs memory.mjs env.mjs decision.mjs village.mjs council.mjs models.mjs guest-queue.mjs guest-gateway.mjs flag-setup.mjs fixture-grant.mjs identity.cinder.json package.json package-lock.json; do
   curl -fsSL "$RAW/stage1/bot/$f" -o "$ARENA/bots/$f"
 done
 cp "$ARENA/capture/spectate-loop.mjs" "$ARENA/bots/"
@@ -171,8 +173,25 @@ grep -q "Done (" "$ARENA/logs/mc.log" && echo "server up" || { echo "SERVER FAIL
 mc_cmd() { tmux send-keys -t mc "$1" Enter; sleep 1; }
 mc_cmd "gamerule doDaylightCycle true"
 
+wlog "step: village round setup (Server fixture; idempotent)"
+# The Server monument, coolant basin + spring, starter chest and world spawn
+# are round fixtures, labeled as such in the logs and chat. Idempotent: a
+# second run keeps an existing village.json.
+BOT_DATA_DIR="$ARENA/bot-state" RCON_PASSWORD=clanker-dev \
+  SCENARIO="${SCENARIO:-village}" node "$ARENA/bots/flag-setup.mjs" 2>&1 | tee -a "$ARENA/logs/flag-setup.log" || true
+
 wlog "step: launch survival cast and native mirrors"
-tmux new-session -d -s bots "cd $ARENA/bots && node ambient.mjs 2>&1 | tee -a $ARENA/logs/bots.log"
+# SCENARIO=village: clankers protect the Server. CLANKER_MODELS routes a
+# different LLM per clanker (Name=provider); default: all Kimi K3.
+tmux new-session -d -s bots "cd $ARENA/bots && SCENARIO=${SCENARIO:-village} DEFAULT_LLM_PROVIDER=${DEFAULT_LLM_PROVIDER:-kimi} CLANKER_MODELS='${CLANKER_MODELS:-}' node ambient.mjs 2>&1 | tee -a $ARENA/logs/bots.log"
+
+wlog "step: starter kit fixture grant (waits for the cast, idempotent)"
+( sleep 75
+  cd "$ARENA/bots" && BOT_DATA_DIR="$ARENA/bot-state" RCON_PASSWORD=clanker-dev \
+    node fixture-grant.mjs >> "$ARENA/logs/flag-setup.log" 2>&1 || true ) &
+
+wlog "step: guest creeper gateway (viewer queue + turns + guest mirror)"
+tmux new-session -d -s guest "cd $ARENA/bots && BOT_DATA_DIR=$ARENA/bot-state RCON_PASSWORD=clanker-dev node guest-gateway.mjs 2>&1 | tee -a $ARENA/logs/guest.log"
 
 wlog "step: start stream services"
 tmux new-session -d -s mtx "cd $ARENA/capture && $ARENA/stream/mediamtx mediamtx.yml 2>&1 | tee $ARENA/logs/mtx.log"
@@ -197,12 +216,13 @@ if [ "$GPU_OK" = "1" ]; then
 fi
 if [ "$GPU_OK" != "1" ]; then
   wlog "step: FALLBACK: cameras on Xvfb (llvmpipe)"
-  # A failed restack can leave partial GPU clients/captures alive. Stop only
-  # camera sessions before launching the independent fallback displays.
-  for s in cammira camtally camarena camcinder camvex capmira captally caparena capcinder capvex; do
+  # A failed restack can leave partial GPU clients/captures alive — including
+  # the guest tile — before launching the independent fallback displays.
+  for s in cammira camtally camarena camcinder camvex camguest capmira captally caparena capcinder capvex capguest; do
     tmux kill-session -t "$s" 2>/dev/null || true
   done
-  for d in 101 102 103 104 105; do Xvfb :$d -screen 0 1280x720x24 & done
+  pkill -f "run-native-view.py Guest" 2>/dev/null || true
+  for d in 101 102 103 104 105 106; do Xvfb :$d -screen 0 1280x720x24 & done
   sleep 2
   launch() { tmux new-session -d -s "$4" "bash $ARENA/capture/run-client.sh $1 $2 2>&1 | tee $ARENA/logs/client-$1.log"; sleep 8; }
   launch ClankerCam 103 "" arena
@@ -211,9 +231,10 @@ if [ "$GPU_OK" != "1" ]; then
   native Tally 102 25583 camtally
   native Cinder 104 25580 camcinder
   native Vex 105 25581 camvex
+  native Guest 106 25584 camguest
   sleep 60
   capf() { tmux new-session -d -s "cap$1" "bash $ARENA/capture/run-stream.sh $1 $2 2>&1 | tee -a $ARENA/logs/cap-$2.log"; }
-  capf 101 mira; capf 102 tally; capf 103 arena; capf 104 cinder; capf 105 vex
+  capf 101 mira; capf 102 tally; capf 103 arena; capf 104 cinder; capf 105 vex; capf 106 guest
 fi
 
 wlog "step: wide spectator camera"
@@ -223,6 +244,10 @@ wlog "step: HLS check"
 sleep 15
 for p in arena cinder vex mira tally; do
   printf "%s: " "$p"
-  curl --fail --max-time 20 -sS -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:8080/$p/index.m3u8"
+  curl --fail --max-time 20 -sS -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:8080/$p/index.m3u8" || true
 done
+# The guest feed only publishes while a viewer is actually playing a creeper
+# turn, so a 404 here is normal on an idle queue.
+printf "guest (idle ok): "
+curl --max-time 20 -sS -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:8080/guest/index.m3u8" || true
 echo "=== bootstrap done $(date -u +%FT%TZ) ==="

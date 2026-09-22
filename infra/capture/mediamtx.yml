@@ -1,5 +1,7 @@
 # mediamtx config: RTMP in, LL-HLS out on the pod's public port.
-# One path per camera: arena (wide), plus one POV per contestant.
+# One path per camera: arena (wide), one POV per contestant, and the guest
+# creeper feed (only publishes while a viewer is playing a turn — a 404 on
+# /guest/index.m3u8 between turns is normal).
 rtmpAddress: :1935
 hlsAddress: :8080
 hlsAllowOrigin: "*"
@@ -16,4 +18,6 @@ paths:
   mira:
     source: publisher
   tally:
+    source: publisher
+  guest:
     source: publisher

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Moves all five cameras from Xvfb/llvmpipe onto the GPU Xorg :10 (3840x1440).
+# Moves all cameras from Xvfb/llvmpipe onto the GPU Xorg :10 (3840x1440).
 # Self-contained: safe to run via nohup so SSH drops can't kill it halfway.
 # Tile map (1280x720 each):  [0,0]=mira [1280,0]=tally [2560,0]=arena
-#                            [0,720]=cinder [1280,720]=vex
+#                            [0,720]=cinder [1280,720]=vex [2560,720]=guest
 set -u
 source "$(dirname "$0")/display.sh"
 LOG=/workspace/arena/logs/restack.log
@@ -10,8 +10,8 @@ exec > >(tee -a "$LOG") 2>&1
 echo "=== restack $(date -u +%FT%TZ) ==="
 
 # 1. Stop old captures and camera clients (Xvfb-era)
-for s in cap cap101 cap102 cap103 cap104 cap105 caparena capmira captally capcinder capvex; do tmux kill-session -t "$s" 2>/dev/null || true; done
-for s in cam cam101 cam102 cam103 cam104 cam105 arena mira tally cinder vex camarena cammira camtally camcinder camvex; do tmux kill-session -t "$s" 2>/dev/null || true; done
+for s in cap cap101 cap102 cap103 cap104 cap105 cap106 caparena capmira captally capcinder capvex capguest; do tmux kill-session -t "$s" 2>/dev/null || true; done
+for s in cam cam101 cam102 cam103 cam104 cam105 cam106 arena mira tally cinder vex guest camarena cammira camtally camcinder camvex camguest; do tmux kill-session -t "$s" 2>/dev/null || true; done
 pkill -f "net.minecraft.client.main.Main" 2>/dev/null
 sleep 3
 
@@ -33,7 +33,7 @@ require_capture_region 10 0 0 3840 1440 || exit 1
 DISPLAY=:10 glxinfo -B | grep -i 'OpenGL renderer.*NVIDIA' || { echo "GPU renderer unavailable"; exit 1; }
 
 # 3. Kill leftover Xvfb displays (no longer needed)
-pkill -f "Xvfb :99" 2>/dev/null; for d in 101 102 103 104 105; do pkill -f "Xvfb :$d" 2>/dev/null; done
+pkill -f "Xvfb :99" 2>/dev/null; for d in 101 102 103 104 105 106; do pkill -f "Xvfb :$d" 2>/dev/null; done
 
 # 4. Launch the five cameras as tiles on :10
 bash /workspace/arena/capture/launch-cameras.sh || exit 1
@@ -51,6 +51,7 @@ cap 1280 0 tally captally
 cap 2560 0 arena caparena
 cap 0 720 cinder capcinder
 cap 1280 720 vex capvex
+cap 2560 720 guest capguest
 sleep 15
 
 echo "--- HLS path check:"
@@ -59,5 +60,8 @@ for p in arena cinder vex mira tally; do
   printf "%s: " "$p"
   curl --fail --max-time 20 -sS -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:8080/$p/index.m3u8" || failed=1
 done
+# The guest path publishes only during a live creeper turn; 404 is normal.
+printf "guest (idle ok): "
+curl --max-time 20 -sS -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:8080/guest/index.m3u8" || true
 [ "$failed" = 0 ] || { echo "HLS verification failed; inspect capture logs"; exit 1; }
 echo "=== restack done ==="

@@ -2,11 +2,13 @@
 import importlib.util
 import json
 import os
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 import subprocess
 import tempfile
 import threading
 import unittest
+import urllib.request
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import urlopen
@@ -61,7 +63,19 @@ class TelemetryTests(unittest.TestCase):
         self.state = Path(self.tmp.name) / 'state.json'
         self.state.write_text(json.dumps({'updated': 'now', 'bots': {}}))
         (Path(self.tmp.name) / '.env').write_text('SECRET=must-not-be-public')
-        env = patch.dict(os.environ, STATE_PATH=str(self.state))
+        # A stub guest gateway on loopback: it records what the public
+        # telemetry server forwards.
+        self.upstream = telemetry.ThreadingHTTPServer(('127.0.0.1', 0), StubGateway)
+        StubGateway.requests.clear()
+        StubGateway.next_payload = {}
+        StubGateway.next_status = 200
+        threading.Thread(target=self.upstream.serve_forever, daemon=True).start()
+        self.addCleanup(self.upstream.server_close)
+        self.addCleanup(self.upstream.shutdown)
+        env = patch.dict(os.environ, {
+            'STATE_PATH': str(self.state),
+            'GUEST_FORWARD': f'http://127.0.0.1:{self.upstream.server_port}',
+        })
         env.start()
         self.addCleanup(env.stop)
         self.server = telemetry.ThreadingHTTPServer(('127.0.0.1', 0), telemetry.Handler)
@@ -70,14 +84,22 @@ class TelemetryTests(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
         self.base = f'http://127.0.0.1:{self.server.server_port}'
 
+    def request(self, path, method='GET', body=None, headers=None):
+        req = urllib.request.Request(self.base + path, data=body, method=method,
+                                     headers=headers or {})
+        with urlopen(req) as response:
+            return response, json.load(response)
+
     def test_public_state(self):
         with urlopen(self.base + '/arena/state.json?t=1') as response:
             self.assertEqual(response.status, 200)
             self.assertEqual(response.headers['Cache-Control'], 'no-store')
+            self.assertEqual(response.headers['Access-Control-Allow-Origin'], '*')
             self.assertEqual(json.load(response)['bots'], {})
 
     def test_workspace_secrets_logs_and_traversal_are_inaccessible(self):
-        for path in ['/', '/arena/.env', '/bootstrap.log', '/arena/../.env', '/arena/%2e%2e/.env']:
+        for path in ['/', '/arena/.env', '/bootstrap.log', '/arena/../.env', '/arena/%2e%2e/.env',
+                     '/guest/secret', '/guest/../gateway.js', '/guest/input/../../x']:
             with self.subTest(path=path), self.assertRaises(HTTPError) as error:
                 urlopen(self.base + path)
             self.assertEqual(error.exception.code, 404)
@@ -89,6 +111,86 @@ class TelemetryTests(unittest.TestCase):
             urlopen(self.base + '/arena/state.json')
         self.assertEqual(error.exception.code, 503)
         error.exception.close()
+
+    def test_guest_status_is_proxied_with_cors(self):
+        StubGateway.next_payload = {'ok': True, 'queueLength': 2, 'active': None}
+        response, payload = self.request('/guest/status')
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers['Access-Control-Allow-Origin'], '*')
+        self.assertEqual(payload['queueLength'], 2)
+        self.assertEqual(StubGateway.requests, [('GET', '/status', None)])
+
+    def test_guest_join_forwards_the_body(self):
+        StubGateway.next_payload = {'ok': True, 'token': 't'}
+        response, payload = self.request('/guest/join', method='POST',
+                                         body=json.dumps({'nickname': 'Ada'}).encode(),
+                                         headers={'Content-Type': 'text/plain'})
+        self.assertEqual(payload['token'], 't')
+        self.assertEqual(StubGateway.requests,
+                         [('POST', '/join', json.dumps({'nickname': 'Ada'}).encode())])
+
+    def test_oversized_guest_bodies_are_rejected_before_the_gateway(self):
+        try:
+            self.request('/guest/input', method='POST', body=b'x' * (telemetry.GUEST_BODY_LIMIT + 1))
+            self.fail('oversized body accepted')
+        except HTTPError as error:
+            self.assertEqual(error.code, 413)
+            error.close()
+        self.assertEqual(StubGateway.requests, [])
+
+    def test_preflight_options_are_allowed_for_guest_paths(self):
+        req = urllib.request.Request(self.base + '/guest/input', method='OPTIONS')
+        with urlopen(req) as response:
+            self.assertEqual(response.status, 204)
+            self.assertEqual(response.headers['Access-Control-Allow-Origin'], '*')
+
+    def test_gateway_rejection_reaches_the_browser(self):
+        StubGateway.next_status = 400
+        StubGateway.next_payload = {'error': 'Pick a name'}
+        try:
+            self.request('/guest/join', method='POST', body=b'{}')
+            self.fail('rejection swallowed')
+        except HTTPError as error:
+            self.assertEqual(error.code, 400)
+            self.assertEqual(json.load(error)['error'], 'Pick a name')
+            error.close()
+
+    def test_gateway_downtime_is_a_502_not_a_leak(self):
+        self.upstream.shutdown()
+        self.upstream.server_close()
+        try:
+            self.request('/guest/status')
+            self.fail('downtime swallowed')
+        except HTTPError as error:
+            self.assertEqual(error.code, 502)
+            body = error.read()
+            self.assertNotIn(b'Secret', body)
+            error.close()
+
+
+class StubGateway(BaseHTTPRequestHandler):
+    requests: list = []
+    next_payload: dict = {}
+    next_status: int = 200
+
+    def _respond(self):
+        StubGateway.requests.append((self.command, self.path, self.rfile.read(int(self.headers.get('Content-Length') or 0)) or None))
+        payload = json.dumps(StubGateway.next_payload).encode()
+        self.send_response(StubGateway.next_status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Content-Length', str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def do_GET(self):
+        self._respond()
+
+    def do_POST(self):
+        self._respond()
+
+    def log_message(self, format, *args):
+        pass
 
 
 class SpectatorTests(unittest.TestCase):

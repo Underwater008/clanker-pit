@@ -1,7 +1,14 @@
 # Infra: the arena box
 
-RunPod pod running the Minecraft server, bots, and (later) the capture/stream path.
-Everything is driven from this directory; the only manual step is the API key.
+RunPod runs the Minecraft server, survival controllers, native player renderers,
+and capture/stream services. Vercel serves the separate website. Start with
+[agent guidance](../AGENTS.md) for the source map and development checks.
+
+`pod-bootstrap.sh` is the current full-stack startup path. It fetches source from
+GitHub `main`, installs Java 21 and Node 22+, and preserves existing
+`server.properties`. It starts services and may interrupt existing sessions;
+do not rerun the entire bootstrap as a routine code update. Inspect the running
+stack and restart only the affected components.
 
 ## Prereqs
 
@@ -10,18 +17,25 @@ Everything is driven from this directory; the only manual step is the API key.
   cannot create pods.
 - `infra/pod_ed25519` — project SSH keypair (generated, gitignored). The public key
   is injected into the pod at creation time via the `PUBLIC_KEY` env var.
+- Full-stack bootstrap also needs `RUNPOD_API_KEY` (Kimi) and `TYPESAFE_API_KEY`
+  (Jev) in its process environment. It writes the private bot configuration to
+  `/workspace/arena/.env`; it does not read the local `stage0/.env` automatically.
 
-## Lifecycle
+## Pod utilities and legacy setup
+
+Run these commands from `infra/`. Creation and setup scripts below were written
+for the initial stage-0 arena; their hardware and single-camera defaults are not
+a description of the current pod. Query live provider state for capacity/cost.
 
 | Command | What it does |
 | --- | --- |
-| `./create-pod.sh` | Creates `clankerpit-arena` (RTX 3090, community cloud, 4 vCPU / 16 GB / 60 GB disk, ~$0.22/hr). Writes `pod.json`. Refuses to create twice. |
+| `./create-pod.sh` | Legacy provisioning defaults. Creates a paid pod and writes `pod.json`; refuses to create twice. Inspect configuration before use. |
 | `./pod-status.sh --wait` | Polls until RUNNING, prints the SSH command. |
-| `./setup-pod.sh` | Uploads and runs `pod-setup.bash` (Java 21, Node 20, vanilla 1.21.1 server, Xvfb/ffmpeg/mediamtx), installs bot deps. Idempotent. |
+| `./setup-pod.sh` | Legacy stage-0 installer (`pod-setup.bash`), including Node 20 and a single camera. Does not install the current survival stack. |
 | `./stop-pod.sh` | Stops compute billing; container preserved for resume. |
 | `./stop-pod.sh --terminate` | Destroys the pod permanently (asks for confirmation). |
 
-## Stage 0 bot check
+## Historical stage-0 bot check
 
 After `setup-pod.sh` completes, SSH in (`./pod-status.sh` prints the command) and run:
 
@@ -36,17 +50,24 @@ waypoints, reported observations). Record the run in `stage0/RESULTS.md`.
 
 ```
 /workspace/arena/
-  server/    vanilla 1.21.1, offline mode, flat arena world, tmux session 'mc'
-  bot/       mineflayer stage0 scripts
-  stream/    mediamtx (HLS relay, port 8080 via RunPod proxy)
-  logs/      mc.log etc.
+  server/     vanilla 1.21.1; server.properties selects the active world
+  bots/       installed survival controller and dependencies
+  bot-state/  persistent plans, camps, outcomes, and mirror heartbeats
+  capture/    renderers, capture scripts, and relay configuration
+  cameras/    native client profiles
+  stream/     MediaMTX executable (HLS on 8080 via RunPod proxy)
+  state.json  public telemetry snapshot (allowlisted on 8081)
+  .env        private provider credentials
+  logs/       server, controller, renderer, and capture logs
+  backups/    retained world/configuration backups
 ```
 
 ## Notes
 
 - RunPod's Cloudflare blocks Python's default user agent — API calls use curl.
 - SSH is on a mapped public port; get it from `./pod-status.sh`.
-- Cost control: `podStop` pauses compute billing. The pod bills ~$0.22/hr while RUNNING.
+- Cost control: stopping a pod pauses compute billing; retained storage may still
+  cost money. Verify the current rate and storage policy in the provider account.
 
 ## SSH versus HTTP 404s
 
@@ -76,30 +97,45 @@ Offline regression checks: `python3 -B -m unittest discover -s infra -p 'test_*.
 
 ## Live stream (capture path)
 
-Chain: Minecraft client in Xvfb (`tmux session 'cam'`) → ffmpeg x11grab (`'cap'`) →
-RTMP → mediamtx (`'mtx'`) → LL-HLS on :8080 → RunPod proxy → internet.
+Chain: official Minecraft clients on a shared GPU Xorg display → FFmpeg x11grab →
+RTMP → MediaMTX (`mtx`) → LL-HLS on :8080 → RunPod proxy → website player.
+Independent Xvfb displays are a fallback; tiled capture requires a correctly sized
+shared display (3840×1440), not a single 1280×720 fallback screen.
 
-**Watch URL (HLS):** `https://<id-from-pod.json>-8080.proxy.runpod.net/arena/index.m3u8`.
+**Watch URL (HLS):** `https://<id-from-pod.json>-8080.proxy.runpod.net/mira/index.m3u8`.
+Other paths: `cinder`, `vex`, `tally`, and `arena` (wide spectator).
 The website's stream and telemetry URLs must target the same current pod.
 
-- Safari plays HLS natively. Chrome/Firefox need an hls.js player (the website will embed one).
+- The website uses hls.js where supported, with native HLS as a fallback.
 - The camera account `ClankerCam` is a spectator-mode, invisible client joined via
   `--quickPlayMultiplayer 127.0.0.1:25565` (the legacy `--server/--port` args no longer auto-join).
-- Capture config: 1280x720 @ 20fps, NVENC when available (otherwise x264 with
+- Capture config: 1280x720 @ 30fps, NVENC when available (otherwise x264 with
   bounded threads), ~2.5 Mbps, LL-HLS (2 s keyframes, 200 ms target parts).
 - `capture/` holds: `client_setup.py` (vanilla 1.21.1 client downloader), `run-client.sh`,
   `run-stream.sh`, `options.txt` (fast graphics, no HUD-affecting mods), `mediamtx.yml`.
-- Camera control today: `tmux send-keys -t mc "tp ClankerCam X Y Z yaw pitch" Enter` —
-  a scripted broadcast camera is a later increment.
+- `spectate-loop.mjs` controls the wide camera. Contestant views follow their
+  respective protocol mirrors, described below.
 
-## tmux layout on the pod
+## tmux layout on the GPU pod
 
 | Session | Purpose |
 | --- | --- |
 | `mc` | Vanilla 1.21.1 server console (send commands with `tmux send-keys -t mc`) |
-| `cam` | ClankerCam spectator client inside Xvfb :99 |
-| `cap` | ffmpeg x11grab → RTMP |
+| `bots` | Village survival controller, native protocol mirrors, council + brain telemetry |
+| `guest` | Guest creeper gateway: viewer queue, 3-minute turns, guest mirror (25584) |
+| `cam{arena,cinder,vex,mira,tally,guest}` | Wide client or native-view watcher on GPU Xorg :10 |
+| `cap{arena,cinder,vex,mira,tally,guest}` | FFmpeg x11grab → RTMP, one publisher per feed |
 | `mtx` | mediamtx HLS server |
+| `spec` | Wide spectator camera controller |
+| `filesrv` | Allowlisted telemetry + guest API proxy on 8081 |
+
+Braces above denote separate sessions, e.g. `cammira` and `capmira`. Inspect
+`tmux ls` before operating; legacy/fallback launches can use different names.
+
+Tile map on the shared 3840x1440 display (1280x720 each): `[0,0]`=mira,
+`[1280,0]`=tally, `[2560,0]`=arena, `[0,720]`=cinder, `[1280,720]`=vex,
+`[2560,720]`=guest. The guest feed only publishes while a viewer is actually
+playing a creeper turn; `guest/index.m3u8` returning 404 between turns is normal.
 
 ## Native contestant feeds and survival controller
 
@@ -159,3 +195,76 @@ Player POV is the website default; `?v=arena` explicitly selects the wide camera
 the complete 23-block shelter from an uneven approach, with every block checked
 through RCON. Placement keeps the player clear of the destination and requires
 an exposed face; elevated faces use a bounded jump with a confirmed placement.
+
+`lab-village.mjs` is the village-round regression for the same isolated lab:
+it fixtures a Server + spring + basin with RCON, then verifies the whole
+server-confirmed mechanics chain — infinite spring refill, `scoop_water`,
+`feed_server` (pour + drink, twice), complete wall/gate blueprints with the
+gate passage open, home completion, torch placement, `mine_iron_ore` →
+`smelt_iron` → `craft_bucket`, and patrol staying near the village.
+
+## Village round: protect the Server
+
+`SCENARIO=village` (set by pod-bootstrap) gives the controller its defense game.
+`flag-setup.mjs` is the idempotent round fixture, run once before the cast: a
+probe bot picks a flat dry site near world spawn, then RCON grades a village
+green, raises the Server monument (obsidian base, iron core, sea lantern), digs
+the coolant basin and a 2x2 infinite spring south of the future gate, stocks a
+starter chest, and sets world spawn inside the plaza. `fixture-grant.mjs` runs
+~75 s later (pod-bootstrap schedules it) and waits for Cinder to join before
+handing over two starter water buckets; the grant is recorded in
+`village.json` and never repeats. All of it is **labeled fixture**, never an
+autonomous achievement; `village.json` in `bot-state/` is the only source the
+controller and gateway trust for village geometry. Deleting
+`bot-state/village.json` and rerunning `node flag-setup.mjs` re-stages the
+round at a fresh site.
+
+The cast spawns around the Server, builds the wall/gate/homes from blueprints
+in `village.mjs`, feeds coolant (server-confirmed water placed into the basin
+and drunk by scooping it back), and every `FLAG_WATER_TARGET` buckets boots one
+new villager from `VILLAGER_POOL` (cap `MAX_POPULATION`). A creeper boom within
+`FLAG_EXPLOSION_RADIUS` of the core makes the Server overheat, dropping
+`FLAG_EXPLOSION_PENALTY` buckets of coolant. The council (`council.mjs`) runs
+every `COUNCIL_INTERVAL_MS`: each clanker proposes a role through its own routed
+LLM and says one line in-game; assignment is deterministic policy that honors
+unique proposals (logged `council_assign` with `source: proposal|policy`).
+
+### Per-clanker LLMs
+
+`CLANKER_MODELS=Cinder=deepseek,Vex=openrouter` routes any OpenAI-compatible
+chat endpoint to a specific clanker; declare providers with
+`LLM_<ID>_BASE_URL/_API_KEY/_MODEL` in `/workspace/arena/.env`. Unlisted
+clankers use `DEFAULT_LLM_PROVIDER` (kimi). A missing key or model yields a
+labeled `planner_fallback` log and policy behavior — never a silent switch.
+
+## Guest creepers (viewer participation)
+
+`guest-gateway.mjs` (tmux `guest`) owns the human side of the game. The public
+enters through the allowlisted proxy on port 8081: `GET /guest/status`,
+`POST /guest/join|/guest/leave|/guest/input` (the Python telemetry server
+forwards to the loopback-only gateway on 8090 and caps request bodies). Every
+`GUEST_TURN_EVERY_MS` (3 minutes) the queue head becomes a creeper-costumed
+guest bot just outside the front gate: creeper head via RCON, real player, real
+death, teleport verified before controls arm. The guest's entire control set is
+move (WASD / left-half joystick), look (mouse / right-half drag), jump, and
+one BOOM — boom summons an ignited creeper at the guest's position (a genuine
+explosion that can breach the wall) and ends the turn. Idle guests (no input
+for `GUEST_IDLE_END_MS`) free their slot; the hard cap (`GUEST_TURN_MAX_MS`,
+default one cadence) ends the turn at 3 minutes so a new creeper can start
+every 3 minutes even after a full-length turn.
+
+Abuse controls: guest nicknames may never match clanker/villager/camera names
+(offline-mode name collisions would kick the real player), `View*`/`Cam*`/
+`FlagSetup*` prefixes are reserved, guest tokens are crypto-derived, joins are
+throttled per IP (two per ten minutes), and the queue lives in gateway memory —
+a gateway restart clears the queue (viewers re-join; the event-id sequence is
+restored from `guest.json` so boom/overheat accounting survives restarts).
+Boom events are written to `bot-state/guest.json` and consumed exactly once by
+the controller, which applies overheat penalties and publishes queue status +
+guest chat in `state.json` for the website.
+
+The guest POV is a sixth native view: the gateway attaches a read-only mirror
+on port 25584 (state file `bot-state/mirror-Guest.json`); `camguest` runs the
+`run-native-view.py Guest` watcher on tile `[2560,720]` and `capguest` captures
+it to the `guest` HLS path. Between turns the watcher idles with no client
+running; a turn starting adds ~30-40 s of Java client startup to the guest cam.

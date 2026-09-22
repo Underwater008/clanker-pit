@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# (Re)launches the five camera clients as tiles on Xorg :10. Idempotent.
+# (Re)launches the camera clients as tiles on Xorg :10. Idempotent.
 # Assumes Xorg :10 is already running at 3840x1440 (see gpu-restack.sh).
+# Tiles (1280x720): [0,0]=mira [1280,0]=tally [2560,0]=arena
+#                   [0,720]=cinder [1280,720]=vex [2560,720]=guest
 set -euo pipefail
 source "$(dirname "$0")/display.sh"
 require_capture_region 10 0 0 3840 1440
@@ -11,7 +13,7 @@ pkill -TERM -f '^python3 /workspace/arena/capture/run-native-view.py ' 2>/dev/nu
 sleep 3
 pkill -f "net.minecraft.client.main.Main" 2>/dev/null || true
 sleep 3
-for s in cammira camtally camarena camcinder camvex; do tmux kill-session -t "$s" 2>/dev/null || true; done
+for s in cammira camtally camarena camcinder camvex camguest; do tmux kill-session -t "$s" 2>/dev/null || true; done
 
 launch() { # name x y session
   mkdir -p "/workspace/arena/cameras/$1"
@@ -37,4 +39,9 @@ native Tally 25583 1280 0 camtally
 launch ClankerCam 2560 0 camarena
 native Cinder 25580 0 720 camcinder
 native Vex 25581 1280 720 camvex
+# Sixth tile: the guest creeper's POV. Its mirror state file only reports
+# ready while a guest turn is live, so the watcher idles cheaply between
+# turns and the run-native-view supervisor starts the display per turn.
+tmux new-session -d -s camguest "python3 /workspace/arena/capture/run-native-view.py Guest 25584 2560 720 2>&1 | tee /workspace/arena/logs/client-ViewGuest.log"
+echo "launched guest view supervisor at (2560,720)"
 echo "done; clients joining"

@@ -1,0 +1,208 @@
+// Pure queue/turn scheduling for guest creeper turns. No I/O — the gateway
+// owns the bots and HTTP; this class decides WHO plays WHEN.
+//
+// Rules (product): stream viewers join a queue; every GUEST_TURN_EVERY_MS
+// (default 3 minutes) the queue's head becomes a creeper near the front gate,
+// for at most GUEST_TURN_MAX_MS (default one cadence, so a new creeper can
+// start every 3 minutes even after a full-length turn). A turn ends on boom,
+// death, disconnect, idling out, or the cap. Reserved names (the clankers,
+// camera accounts, villager pool) can never be used as guest nicknames —
+// the server is offline-mode and a name collision would kick the real player.
+// Guest tokens must come from a cryptographic source (the gateway injects
+// crypto.randomUUID-derived tokens; Math.random is only a test default).
+
+import { randomUUID } from 'node:crypto'
+
+export const TURN_EVERY_MS = Math.max(
+  30000,
+  Number(process.env.GUEST_TURN_EVERY_MS ?? 180000),
+)
+export const TURN_MAX_MS = Math.max(
+  60000,
+  Number(process.env.GUEST_TURN_MAX_MS ?? 180000),
+)
+export const MAX_QUEUE = Math.max(1, Number(process.env.GUEST_MAX_QUEUE ?? 20))
+export const INPUT_STALE_MS = Math.max(
+  500,
+  Number(process.env.GUEST_INPUT_STALE_MS ?? 2500),
+)
+/** A guest who stops sending input entirely (closed tab) frees the slot. */
+export const IDLE_END_MS = Math.max(
+  15000,
+  Number(process.env.GUEST_IDLE_END_MS ?? 45000),
+)
+
+const TOKEN_ALPHABET =
+  'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+
+/** Minecraft-safe viewer nickname. Rejects anything unusable. */
+export function sanitizeNickname(raw) {
+  if (typeof raw !== 'string') return null
+  const name = raw.replace(/[^A-Za-z0-9_]/g, '').trim().slice(0, 14)
+  return name.length >= 2 && name.length <= 14 ? name : null
+}
+
+export class GuestQueue {
+  constructor({
+    now = Date.now,
+    random = Math.random,
+    makeToken = null,
+    turnEveryMs = TURN_EVERY_MS,
+    turnMaxMs = TURN_MAX_MS,
+    maxQueue = MAX_QUEUE,
+    idleEndMs = IDLE_END_MS,
+    reservedNames = [],
+  } = {}) {
+    this.now = now
+    this.random = random
+    this.makeToken = makeToken
+    this.turnEveryMs = turnEveryMs
+    this.turnMaxMs = turnMaxMs
+    this.maxQueue = maxQueue
+    this.idleEndMs = idleEndMs
+    // Case-insensitive reserved names: clankers, camera/mirror accounts and
+    // the villager pool. A guest stealing one of these would kick the real
+    // player on an offline-mode server.
+    this.reserved = new Set(reservedNames.map((n) => String(n).toLowerCase()))
+    this.queue = [] // {id, token, nickname, joinedAt}
+    this.active = null // {id, token, nickname, botName, startedAt, endsAt, spawned}
+    this.nextSlotAt = now()
+    this.lastSpawnAt = -Infinity
+    this.seq = 0
+  }
+
+  #token() {
+    if (this.makeToken) return this.makeToken()
+    let token = ''
+    for (let i = 0; i < 24; i++)
+      token += TOKEN_ALPHABET[Math.floor(this.random() * TOKEN_ALPHABET.length)]
+    return token
+  }
+
+  status() {
+    const now = this.now()
+    return {
+      queueLength: this.queue.length,
+      queuePreview: this.queue.slice(0, 5).map((e) => e.nickname),
+      active: this.active
+        ? {
+            nickname: this.active.nickname,
+            botName: this.active.botName ?? null,
+            remainingMs: Math.max(0, this.active.endsAt - now),
+          }
+        : null,
+      nextTurnInMs: Math.max(0, this.nextSlotAt - now),
+      turnEveryMs: this.turnEveryMs,
+      turnMaxMs: this.turnMaxMs,
+      acceptingJoins: this.queue.length < this.maxQueue,
+    }
+  }
+
+  join(nickname) {
+    const name = sanitizeNickname(nickname)
+    if (!name) return { error: 'Pick a name: 2-14 letters, numbers or _' }
+    // Reserved names kick real players on an offline-mode server; mirror and
+    // camera account prefixes (View*/Cam*) are exempt from guard combat, so
+    // a guest must never wear them either.
+    if (this.reserved.has(name.toLowerCase()))
+      return { error: 'That name belongs to the village' }
+    if (/^(view|cam|flagsetup)/i.test(name))
+      return { error: 'That name is reserved for the arena crew' }
+    if (this.active?.nickname === name)
+      return { error: 'That name is playing right now' }
+    if (this.queue.some((e) => e.nickname === name))
+      return { error: 'Someone with that name is already queued' }
+    if (this.queue.length >= this.maxQueue)
+      return { error: 'The creeper queue is full right now' }
+    const entry = {
+      id: ++this.seq,
+      token: this.#token(),
+      nickname: name,
+      joinedAt: this.now(),
+    }
+    this.queue.push(entry)
+    // No shortcut for boom-and-rejoin: the next slot stays booked at
+    // last-spawn + cadence. An idle stream (overdue slot) starts immediately
+    // for whoever is first — nothing to adjust here.
+    return {
+      ok: true,
+      token: entry.token,
+      nickname: entry.nickname,
+      position: this.queue.length,
+    }
+  }
+
+  leave(token) {
+    const index = this.queue.findIndex((e) => e.token === token)
+    if (index === -1) return false
+    this.queue.splice(index, 1)
+    return true
+  }
+
+  position(token) {
+    const index = this.queue.findIndex((e) => e.token === token)
+    return index === -1 ? null : { position: index + 1, nickname: this.queue[index].nickname }
+  }
+
+  /** Advance the schedule. Returns pending transitions for the gateway:
+   * {spawn: entry} when a turn should start, {end: {entry, reason}} when the
+   * active turn hit its cap or went idle. */
+  tick() {
+    const now = this.now()
+    if (this.active) {
+      if (now >= this.active.endsAt) {
+        const entry = this.active
+        this.active = null
+        return { end: { entry, reason: 'timeout' } }
+      }
+      if (
+        this.active.spawned &&
+        now - (this.active.lastInputAt ?? this.active.startedAt) > this.idleEndMs
+      ) {
+        const entry = this.active
+        this.active = null
+        return { end: { entry, reason: 'idle' } }
+      }
+    }
+    if (!this.active && this.queue.length > 0 && now >= this.nextSlotAt) {
+      const [entry] = this.queue.splice(0, 1)
+      this.active = {
+        ...entry,
+        botName: null,
+        startedAt: now,
+        endsAt: now + this.turnMaxMs,
+        spawned: false,
+      }
+      this.lastSpawnAt = now
+      this.nextSlotAt = now + this.turnEveryMs
+      return { spawn: this.active }
+    }
+    return {}
+  }
+
+  /** The gateway confirms the guest bot exists (or failed to spawn). */
+  markSpawned(botName) {
+    if (!this.active) return
+    this.active.botName = botName
+    this.active.spawned = true
+  }
+
+  /** Explicit turn end: boom, death, or the human disconnected. */
+  finishActive(reason) {
+    if (!this.active) return null
+    const entry = this.active
+    this.active = null
+    return { entry, reason }
+  }
+
+  controlsFor(token) {
+    return this.active?.token === token ? this.active : null
+  }
+
+  /** Stop moving when the browser stopped sending input. */
+  isInputStale(entry) {
+    return this.now() - (entry.lastInputAt ?? 0) > INPUT_STALE_MS
+  }
+}
+
+export { randomUUID }

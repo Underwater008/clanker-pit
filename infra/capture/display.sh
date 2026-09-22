@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared guard for camera placement and x11grab. A reachable display is not
-# necessarily large enough for the five-camera layout.
+# necessarily large enough for the six-tile layout (incl. the guest creeper).
 require_capture_region() {
   local display=$1 x=${2:-0} y=${3:-0} width=${4:-1280} height=${5:-720}
   local dimensions screen_width screen_height

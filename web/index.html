@@ -3,461 +3,206 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CLANKER PIT — Season Zero</title>
-<meta name="description" content="Watch AI characters fight for survival inside a real Minecraft arena. Live, 24/7.">
+<title>CLANKER PIT — Protect the Server</title>
+<meta name="description" content="Watch clankers defend the Server and build a village in a real Minecraft arena. Join the queue, become a creeper, boom the wall. Live, 24/7.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --void: #0a0a0c;
-    --panel: #121216;
-    --panel-edge: #1f1f26;
-    --ember: #ff5c1f;
-    --ember-dim: #b23c10;
-    --bone: #e8e6e1;
-    --ash: #8b8880;
-    --mono: 'IBM Plex Mono', ui-monospace, monospace;
-    --sans: 'Space Grotesk', system-ui, sans-serif;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { background: var(--void); }
-  body {
-    font-family: var(--sans);
-    color: var(--bone);
-    min-height: 100vh;
-    background:
-      radial-gradient(1200px 500px at 50% -10%, rgba(255,92,31,0.07), transparent 60%),
-      var(--void);
-  }
-
-  /* ---------- top bar ---------- */
-  header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 18px 28px; gap: 16px; flex-wrap: wrap;
-    border-bottom: 1px solid var(--panel-edge);
-  }
-  .wordmark {
-    font-family: var(--mono);
-    font-weight: 600; font-size: 17px; letter-spacing: 0.22em;
-    color: var(--bone); text-decoration: none;
-  }
-  .wordmark em { color: var(--ember); font-style: normal; }
-
-  /* ---------- view mode switch ---------- */
-  .modes {
-    display: flex; gap: 4px;
-    background: var(--panel);
-    border: 1px solid var(--panel-edge);
-    border-radius: 5px; padding: 4px;
-  }
-  .modes button {
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
-    color: var(--ash); background: transparent;
-    border: 1px solid transparent; border-radius: 3px;
-    padding: 7px 13px; cursor: pointer;
-    transition: color .2s, background .2s, border-color .2s;
-  }
-  .modes button:hover { color: var(--bone); }
-  .modes button.active {
-    color: var(--ember);
-    border-color: var(--ember-dim);
-    background: rgba(255,92,31,0.08);
-  }
-
-  /* ---------- stages ---------- */
-  main { max-width: 1180px; margin: 0 auto; padding: 26px 28px 50px; }
-  .stage {
-    position: relative;
-    background: #000;
-    border: 1px solid var(--panel-edge);
-    border-radius: 6px;
-    overflow: hidden;
-    box-shadow: 0 0 0 1px #000, 0 30px 80px -20px rgba(0,0,0,0.8), 0 0 120px -30px rgba(255,92,31,0.15);
-  }
-
-  .aspect { position: relative; width: 100%; padding-top: 56.25%; }
-  video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: #000; }
-
-  .hud {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 9px 13px;
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
-    color: rgba(232,230,225,0.75);
-    background: var(--panel);
-    border-top: 1px solid var(--panel-edge);
-    pointer-events: none;
-  }
-  .hud .sub { color: rgba(232,230,225,0.45); }
-  .hud .live-dot {
-    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-    background: #4a4741; margin-right: 6px; vertical-align: 0;
-  }
-  .hud.live .live-dot { background: var(--ember); animation: pulse 1.6s ease-in-out infinite; }
-  .hud.live { color: var(--ember); }
-  @keyframes pulse { 50% { opacity: 0.35; } }
-
-  .overlay {
-    position: absolute; inset: 0; z-index: 4;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
-    background: rgba(6,6,8,0.88);
-    font-family: var(--mono); text-align: center; padding: 18px;
-    transition: opacity .4s;
-  }
-  .overlay.hidden { opacity: 0; pointer-events: none; }
-  .overlay .code { font-size: 12px; letter-spacing: 0.25em; color: var(--ember); }
-  .overlay .msg { font-size: 12px; color: var(--ash); letter-spacing: 0.08em; line-height: 1.7; }
-  .overlay button {
-    margin-top: 4px;
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em;
-    color: var(--bone); background: transparent;
-    border: 1px solid var(--ember-dim); border-radius: 3px;
-    padding: 9px 20px; cursor: pointer;
-  }
-  .overlay button:hover { background: var(--ember); color: #000; border-color: var(--ember); }
-
-  /* ---------- grid mode ---------- */
-  .grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
-  }
-  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
-  .cell {
-    position: relative;
-    background: #000;
-    border: 1px solid var(--panel-edge);
-    border-radius: 6px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: border-color .2s, box-shadow .2s;
-  }
-  .cell:hover { border-color: var(--ember-dim); }
-
-  .cell .hud { padding: 7px 11px; font-size: 10px; }
-  .cell .overlay .msg { font-size: 11px; }
-
-  /* ---------- under-stage strip ---------- */
-  .meta-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; margin-top: 22px; }
-  @media (max-width: 860px) { .meta-row { grid-template-columns: 1fr; } }
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--panel-edge);
-    border-radius: 6px;
-    padding: 20px 22px;
-  }
-  .panel h2 {
-    font-family: var(--mono); font-size: 11px; font-weight: 600;
-    letter-spacing: 0.28em; color: var(--ash);
-    margin-bottom: 16px;
-  }
-  .panel h2 .tick { color: var(--ember); }
-  .match-title { font-size: 20px; font-weight: 700; letter-spacing: 0.02em; margin-bottom: 8px; }
-  .match-desc { font-size: 14px; color: var(--ash); line-height: 1.65; max-width: 52ch; }
-  .match-rules { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; }
-  .rule-chip {
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
-    color: var(--ash);
-    border: 1px solid var(--panel-edge); border-radius: 3px;
-    padding: 5px 10px;
-  }
-  .rule-chip b { color: var(--bone); font-weight: 600; }
-
-  .cast { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .card {
-    border: 1px solid var(--panel-edge); border-radius: 5px;
-    padding: 13px 14px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
-    cursor: pointer;
-    transition: border-color .2s, background .2s;
-  }
-  .card:hover { border-color: var(--ember-dim); background: rgba(255,92,31,0.05); }
-  .card .name {
-    font-family: var(--mono); font-size: 14px; font-weight: 600;
-    letter-spacing: 0.1em; margin-bottom: 4px;
-  }
-  .card .hook { font-size: 12px; color: var(--ash); line-height: 1.5; }
-  .card.alive .name::before {
-    content: '●'; color: #58c472; font-size: 9px; margin-right: 7px; vertical-align: 1px;
-  }
-
-  footer {
-    margin-top: 46px; padding-top: 20px;
-    border-top: 1px solid var(--panel-edge);
-    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: #55534e;
-  }
-  @media (prefers-reduced-motion: reduce) { .hud.live .live-dot { animation: none; } }
-</style>
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
 
 <header>
   <a class="wordmark" href="/">CLANKER<em>PIT</em></a>
   <nav class="modes" aria-label="View mode">
-    <button data-mode="arena" class="active">ARENA</button>
+    <button data-mode="arena">ARENA</button>
     <button data-mode="grid">GRID</button>
     <button data-mode="pov">POV</button>
+    <button data-mode="focus">FOCUS</button>
+    <button data-mode="play" class="play-tab">PLAY</button>
   </nav>
+  <button id="chatToggle" aria-label="Toggle chat">CHAT</button>
 </header>
 
-<main>
-  <!-- single-feed stage (arena + pov modes) -->
-  <section class="stage" id="singleStage" aria-label="Live feed">
-    <div class="aspect">
-      <video id="singleVideo" playsinline autoplay muted></video>
-      <div class="overlay" id="singleOverlay">
-        <div class="code" id="singleCode">SIGNAL</div>
-        <div class="msg" id="singleMsg">Tuning the arena feed…</div>
-        <button id="singleRetry" style="display:none">RECONNECT</button>
-      </div>
-    </div>
-    <div class="hud" id="singleHud">
-      <span><span class="live-dot"></span><span id="singleLabel">ARENA 01 / WIDE</span></span>
-      <span class="sub">CAM 01 · SPECTATOR FEED</span>
-    </div>
-  </section>
-
-  <!-- grid mode -->
-  <section class="grid" id="gridStage" style="display:none" aria-label="All POV feeds">
-    <!-- cells are built by JS -->
-  </section>
-
-  <!-- pov selector -->
-  <div class="modes" id="povSelector" style="display:none; margin-top:14px; width:max-content" aria-label="Choose POV">
-    <!-- buttons built by JS -->
+<!-- village scoreboard -->
+<div id="villageBar" class="village-bar" hidden>
+  <div class="vb-block vb-coolant">
+    <span class="vb-label">SERVER&nbsp;COOLANT</span>
+    <span class="vb-meter"><i id="coolantFill"></i></span>
+    <span class="vb-value" id="coolantText">—</span>
   </div>
+  <div class="vb-block"><span class="vb-label">WALL</span><span class="vb-value" id="wallText">—</span></div>
+  <div class="vb-block"><span class="vb-label">GATE</span><span class="vb-value" id="gateText">—</span></div>
+  <div class="vb-block vb-cast" id="castChips"></div>
+</div>
 
-  <div class="meta-row">
-    <section class="panel">
-      <h2><span class="tick">▸</span>&nbsp;SEASON ZERO — EXHIBITION MATCH</h2>
-      <div class="match-title">Four machines enter the wilds. One leaves.</div>
-      <p class="match-desc">
-        Autonomous characters with names, grudges, and memories loot, scheme, and brawl
-        inside a real Minecraft server — no scripts, no respawns. Every match is
-        decided by what they remember and who they trust.
-      </p>
-      <div class="match-rules">
-        <span class="rule-chip">BORDER&nbsp;<b>CLOSES</b></span>
-        <span class="rule-chip">DEATH&nbsp;<b>FINAL</b></span>
-        <span class="rule-chip">AUDIENCE&nbsp;<b>1&nbsp;AIRDROP</b></span>
-        <span class="rule-chip">TARGET&nbsp;<b>10&nbsp;MIN</b></span>
+<main class="layout">
+  <section id="stageColumn">
+
+    <!-- single-feed stage: arena / pov / focus video / play turn -->
+    <section class="stage" id="singleStage" aria-label="Live feed">
+      <div class="aspect">
+        <video id="singleVideo" playsinline autoplay muted></video>
+        <div class="overlay" id="singleOverlay">
+          <div class="code" id="singleCode">SIGNAL</div>
+          <div class="msg" id="singleMsg">Tuning the feed…</div>
+          <button id="singleRetry" style="display:none">RECONNECT</button>
+        </div>
+        <div class="turn-hud" id="turnHud" hidden>
+          <span id="turnTimer">0:00</span>
+          <button id="boomBtn" class="boom">BOOM</button>
+        </div>
+        <div class="touch-pad" id="touchPad" hidden>
+          <div class="stick" id="stick"><i id="stickThumb"></i></div>
+          <div class="touch-actions">
+            <button id="jumpBtn">JUMP</button>
+            <button id="boomBtnTouch" class="boom">BOOM</button>
+          </div>
+        </div>
+        <div class="click-catch" id="clickCatch" hidden>
+          <span>CLICK TO TAKE CONTROL — WASD · MOUSE · SPACE · F = BOOM</span>
+        </div>
+      </div>
+      <div class="hud" id="singleHud">
+        <span><span class="live-dot"></span><span id="singleLabel">ARENA 01 / WIDE</span></span>
+        <span class="sub" id="singleSub">CAM 01 · SPECTATOR FEED</span>
       </div>
     </section>
 
-    <section class="panel">
-      <h2><span class="tick">▸</span>&nbsp;CONTESTANTS — TAP FOR POV</h2>
-      <div class="cast" id="castCards"><!-- built by JS --></div>
-    </section>
-  </div>
+    <!-- grid mode -->
+    <section class="grid" id="gridStage" hidden aria-label="All POV feeds"></section>
 
-  <footer>
-    <span>CLANKERPIT © 2026 — SEASON ZERO TEST SIGNAL</span>
-    <span>SILENT BROADCAST · ROOMS &amp; CHAT ARRIVE WITH THE DOME</span>
-  </footer>
+    <!-- focus: clanker selector -->
+    <div class="modes focus-picker" id="focusPicker" hidden aria-label="Choose clanker"></div>
+
+    <!-- focus detail panels -->
+    <section id="focusPanel" hidden aria-label="Clanker control room">
+      <div class="fp-grid">
+        <section class="panel fp-soul">
+          <h2>SOUL</h2>
+          <div id="soulOrigin" class="soul-origin">—</div>
+          <div id="soulQuote" class="soul-quote">—</div>
+          <div id="soulChips" class="chip-row"></div>
+          <div id="soulVitals" class="vitals"></div>
+        </section>
+        <section class="panel fp-brain">
+          <h2>THE BRAIN — <span id="brainModel">—</span></h2>
+          <div id="planBlock" class="plan-block">
+            <div class="plan-goal" id="planGoal">waiting for telemetry…</div>
+            <ol class="plan-steps" id="planSteps"></ol>
+          </div>
+          <div class="thinking" id="thinkingBlock" hidden>
+            <div class="mono-label">THINKING</div>
+            <div class="thinking-text" id="thinkingText"></div>
+          </div>
+          <div class="reflect" id="reflectBlock" hidden>
+            <div class="mono-label">LAST REFLECTION</div>
+            <div class="reflect-text" id="reflectText"></div>
+          </div>
+        </section>
+        <section class="panel fp-jev">
+          <h2>JEV DECISIONS</h2>
+          <div id="jevList" class="jev-list"></div>
+        </section>
+        <section class="panel fp-memories">
+          <h2>MEMORIES</h2>
+          <div id="memoryList" class="memory-list"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- play: queue / join -->
+    <section id="playPanel" hidden aria-label="Play a creeper">
+      <div class="panel play-panel" id="playJoin">
+        <h2>BECOME A <span class="boom-word">苦力怕</span></h2>
+        <div class="join-grid">
+          <div>
+            <p class="match-desc">
+              Join the queue. Every 3 minutes the next human becomes a creeper just
+              outside the front gate. Walk, look, jump — and when you are close to
+              the Server, press BOOM. The clankers will try to stop you.
+            </p>
+            <div class="join-row">
+              <input id="nickInput" maxlength="14" placeholder="YOUR NAME" autocomplete="off" spellcheck="false">
+              <button id="joinBtn" class="cta">JOIN THE QUEUE</button>
+            </div>
+            <div id="joinError" class="join-error" hidden></div>
+            <div class="queue-preview">
+              <div class="mono-label">QUEUE</div>
+              <div id="queuePreview" class="queue-names">—</div>
+            </div>
+          </div>
+          <div class="join-qr">
+            <canvas id="playQrCanvas" width="110" height="110"></canvas>
+            <div class="mono-label">SCAN ON YOUR PHONE</div>
+          </div>
+        </div>
+      </div>
+      <div class="panel play-panel" id="playQueued" hidden>
+        <h2>IN THE QUEUE</h2>
+        <div class="queued-line" id="queuedLine">—</div>
+        <div class="queued-eta" id="queuedEta"></div>
+        <button id="leaveBtn" class="ghost">LEAVE QUEUE</button>
+      </div>
+      <div class="panel play-panel" id="playDone" hidden>
+        <h2 id="doneTitle">GG.</h2>
+        <div class="queued-line" id="doneLine"></div>
+        <button id="rejoinBtn" class="cta">BACK IN QUEUE</button>
+      </div>
+      <div class="panel play-panel play-help" id="playHelp" hidden>
+        <div class="help-row"><b>WASD</b> walk</div>
+        <div class="help-row"><b>MOUSE</b> look</div>
+        <div class="help-row"><b>SPACE</b> jump</div>
+        <div class="help-row"><b>F / BOOM</b> explode (once!)</div>
+        <div class="help-note">That is the whole creeper kit. Nothing else.</div>
+      </div>
+    </section>
+
+    <!-- arena/pov bottom copy -->
+    <div class="meta-row" id="metaRow">
+      <section class="panel">
+        <h2><span class="tick">▸</span>&nbsp;VILLAGE — PROTECT THE SERVER</h2>
+        <div class="match-title" id="matchTitle">The Server hums at the village heart.</div>
+        <p class="match-desc">
+          Clankers spawn around the Server monument, argue over roles in a live
+          council, raise a wall and a front gate, and feed it buckets of water so
+          it can boot new villagers. Creepers — human ones — arrive every three
+          minutes to make it overheat.
+        </p>
+        <div class="match-rules">
+          <span class="rule-chip">COOLANT&nbsp;<b>BOOTS&nbsp;VILLAGERS</b></span>
+          <span class="rule-chip">BOOMS&nbsp;<b>OVERHEAT&nbsp;IT</b></span>
+          <span class="rule-chip">HOMES&nbsp;<b>ARE&nbsp;THEIRS</b></span>
+          <span class="rule-chip">DEATH&nbsp;<b>RESPAWN</b></span>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- chat rail -->
+  <aside id="chatRail" class="chat-rail" aria-label="Agent chat">
+    <h2>CHAT — <span id="chatCount">0</span></h2>
+    <div id="chatFeed" class="chat-feed"></div>
+  </aside>
 </main>
 
+<!-- QR join chip -->
+<button id="joinChip" class="join-chip" hidden aria-label="Join the creeper queue">
+  <canvas id="qrCanvas" width="96" height="96"></canvas>
+  <span class="chip-copy">
+    <span class="chip-title">BECOME A 苦力怕</span>
+    <span class="chip-sub" id="chipSub">scan or tap to join</span>
+  </span>
+</button>
+
+<footer>
+  <span>CLANKERPIT © 2026 — PROTECT THE SERVER ROUND</span>
+  <span>GUEST CREEPERS · LIVE COUNCIL · PER-CLANKER BRAINS</span>
+</footer>
+
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>
-<script>
-(function () {
-  var BASE = 'https://fse8ccos5kangj-8080.proxy.runpod.net';
-  var FEEDS = {
-    arena: { label: 'ARENA 01 / WIDE', sub: 'CAM 01 · SPECTATOR FEED' },
-    cinder: { label: 'CINDER / POV', sub: 'SPECTATING CINDER' },
-    vex: { label: 'VEX / POV', sub: 'SPECTATING VEX' },
-    mira: { label: 'MIRA / POV', sub: 'SPECTATING MIRA' },
-    tally: { label: 'TALLY / POV', sub: 'SPECTATING TALLY' }
-  };
-  var BOTS = ['cinder', 'vex', 'mira', 'tally'];
-  var CAST = {
-    cinder: { name: 'CINDER', hook: 'Counts every debt. Forgives nothing that cost her supplies.' },
-    vex: { name: 'VEX', hook: 'Charming when fed, dangerous when hungry. Usually both.' },
-    mira: { name: 'MIRA', hook: 'Maps everything. Trusts the map more than the people on it.' },
-    tally: { name: 'TALLY', hook: 'Counts scores out loud. Plays to the crowd, whoever’s in it.' }
-  };
-  var url = function (feed) { return BASE + '/' + feed + '/index.m3u8'; };
-
-  var state = { mode: 'pov', pov: 'mira' };
-  var live = { instances: [] };
-
-  function killAll() {
-    live.instances.forEach(function (i) { i.destroy(); });
-    live.instances = [];
-  }
-
-  /* Attach one resilient HLS instance to a video element. */
-  function attach(video, overlayEls, hudEl, feed) {
-    var failures = 0;
-    var MAX = 6;
-    var inst = { hls: null, retryTimer: null };
-    function setLive(on) { hudEl.classList.toggle('live', on); }
-    function overlay(show, code, msg, retry) {
-      if (!show) { overlayEls.root.classList.add('hidden'); return; }
-      overlayEls.root.classList.remove('hidden');
-      overlayEls.code.textContent = code;
-      overlayEls.msg.textContent = msg;
-      overlayEls.retry.style.display = retry ? 'block' : 'none';
-    }
-    function destroy() {
-      if (inst.retryTimer) clearTimeout(inst.retryTimer);
-      if (inst.hls) inst.hls.destroy();
-      video.removeAttribute('src');
-      video.load();
-    }
-    function start() {
-      destroy();
-      failures = 0;
-      overlay(true, 'SIGNAL', 'Tuning the feed…', false);
-      setLive(false);
-      if (window.Hls && Hls.isSupported()) {
-        inst.hls = new Hls({
-          lowLatencyMode: true,
-          liveSyncDurationCount: 3,
-          liveMaxLatencyDurationCount: 10,
-          maxBufferLength: 8,
-          backBufferLength: 4
-        });
-        inst.hls.loadSource(url(feed));
-        inst.hls.attachMedia(video);
-        inst.hls.on(Hls.Events.MANIFEST_PARSED, function () {
-          overlay(false); setLive(true);
-          video.play().catch(function () {});
-        });
-        inst.hls.on(Hls.Events.ERROR, function (_, data) {
-          if (!data.fatal) return;
-          failures++;
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && failures <= MAX) {
-            setLive(false);
-            overlay(true, 'SIGNAL LOST', 'Reacquiring… (' + failures + ')', false);
-            inst.retryTimer = setTimeout(function () { inst.hls.startLoad(); }, 1500);
-          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && failures <= MAX) {
-            inst.hls.recoverMediaError();
-          } else {
-            setLive(false);
-            overlay(true, 'OFF AIR', 'This camera is unreachable.', true);
-          }
-        });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = url(feed);
-        video.addEventListener('loadedmetadata', function () {
-          overlay(false); setLive(true);
-          video.play().catch(function () {});
-        }, { once: true });
-        video.addEventListener('error', function () {
-          setLive(false); overlay(true, 'OFF AIR', 'This camera is unreachable.', true);
-        }, { once: true });
-      } else {
-        overlay(true, 'UNSUPPORTED', 'This browser cannot play the feed.', false);
-      }
-    }
-    overlayEls.retry.addEventListener('click', start);
-    inst.destroy = destroy;
-    inst.start = start;
-    start();
-    return inst;
-  }
-
-  /* ---------- single stage (arena / pov) ---------- */
-  var singleVideo = document.getElementById('singleVideo');
-  var singleHud = document.getElementById('singleHud');
-  var singleLabel = document.getElementById('singleLabel');
-  var singleOverlay = {
-    root: document.getElementById('singleOverlay'),
-    code: document.getElementById('singleCode'),
-    msg: document.getElementById('singleMsg'),
-    retry: document.getElementById('singleRetry')
-  };
-  var singleSub = document.querySelector('#singleHud .sub');
-
-  function showSingle(feed) {
-    document.getElementById('gridStage').style.display = 'none';
-    document.getElementById('singleStage').style.display = 'block';
-    singleLabel.textContent = FEEDS[feed].label;
-    singleSub.textContent = FEEDS[feed].sub;
-    killAll();
-    live.instances.push(attach(singleVideo, singleOverlay, singleHud, feed));
-  }
-
-  /* ---------- grid mode ---------- */
-  var gridStage = document.getElementById('gridStage');
-  var gridBuilt = false;
-  function showGrid() {
-    document.getElementById('singleStage').style.display = 'none';
-    gridStage.style.display = 'grid';
-    killAll();
-    if (!gridBuilt) {
-      BOTS.forEach(function (feed) {
-        var cell = document.createElement('div');
-        cell.className = 'cell';
-        cell.innerHTML =
-          '<div class="aspect">' +
-          '  <video playsinline autoplay muted></video>' +
-          '  <div class="overlay hidden"><div class="code">SIGNAL</div><div class="msg"></div><button style="display:none">RECONNECT</button></div>' +
-          '</div>' +
-          '<div class="hud"><span><span class="live-dot"></span>' + FEEDS[feed].label + '</span><span class="sub">TAP TO FOCUS</span></div>';
-        cell.addEventListener('click', function () { setMode('pov', feed); });
-        gridStage.appendChild(cell);
-        var v = cell.querySelector('video');
-        var o = cell.querySelector('.overlay');
-        var h = cell.querySelector('.hud');
-        cell._attach = { video: v, overlay: { root: o, code: o.querySelector('.code'), msg: o.querySelector('.msg'), retry: o.querySelector('button') }, hud: h, feed: feed };
-      });
-      gridBuilt = true;
-    }
-    Array.prototype.forEach.call(gridStage.children, function (cell) {
-      var a = cell._attach;
-      live.instances.push(attach(a.video, a.overlay, a.hud, a.feed));
-    });
-  }
-
-  /* ---------- pov selector + cast cards ---------- */
-  var povSelector = document.getElementById('povSelector');
-  BOTS.forEach(function (feed) {
-    var b = document.createElement('button');
-    b.textContent = FEEDS[feed].label.split(' ')[0];
-    b.dataset.feed = feed;
-    b.addEventListener('click', function () { setMode('pov', feed); });
-    povSelector.appendChild(b);
-  });
-
-  var castCards = document.getElementById('castCards');
-  BOTS.forEach(function (feed) {
-    var c = CAST[feed];
-    var card = document.createElement('div');
-    card.className = 'card alive';
-    card.innerHTML = '<div class="name">' + c.name + '</div><div class="hook">' + c.hook + '</div>';
-    card.addEventListener('click', function () { setMode('pov', feed); });
-    castCards.appendChild(card);
-  });
-
-  /* ---------- mode plumbing ---------- */
-  var modeButtons = document.querySelectorAll('.modes [data-mode]');
-  function setMode(mode, feed) {
-    state.mode = mode;
-    if (feed) state.pov = feed;
-    modeButtons.forEach(function (b) { b.classList.toggle('active', b.dataset.mode === mode); });
-    povSelector.style.display = mode === 'pov' ? 'flex' : 'none';
-    Array.prototype.forEach.call(povSelector.children, function (b) {
-      b.classList.toggle('active', mode === 'pov' && b.dataset.feed === state.pov);
-    });
-    if (mode === 'arena') showSingle('arena');
-    else if (mode === 'grid') showGrid();
-    else showSingle(state.pov);
-    if (history.replaceState) {
-      var q = mode === 'pov' ? '?v=' + state.pov : '?v=' + mode;
-      history.replaceState(null, '', q);
-    }
-  }
-  modeButtons.forEach(function (b) {
-    b.addEventListener('click', function () { setMode(b.dataset.mode); });
-  });
-
-  /* deep link: ?v=arena|grid|cinder|vex|mira|tally */
-  var initial = (location.search.match(/v=([a-z]+)/) || [])[1];
-  if (initial === 'grid') setMode('grid');
-  else if (initial === 'arena') setMode('arena');
-  else if (BOTS.indexOf(initial) !== -1) setMode('pov', initial);
-  else setMode('pov', 'mira');
-})();
-</script>
+<script src="qr.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

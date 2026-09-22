@@ -70,21 +70,40 @@ export function createDecisionMaker({
     // Validate the model's choice against fresh candidates: the world may
     // have moved on since the request was made.
     const options = skills.candidates(skills.observation())
+    const compact = (opts) =>
+      Object.fromEntries(
+        Object.entries(opts).map(([key, description]) => [
+          key,
+          {
+            desc: description.slice(0, 120),
+            p: null,
+          },
+        ]),
+      )
     let choice, source
     if (settled && !settled.r.error && options[settled.r.choice]) {
       choice = settled.r.choice
       source = 'jev'
+      const withProbs = compact(options)
+      for (const [key, value] of Object.entries(withProbs))
+        value.p =
+          typeof settled.r.probabilities?.[key] === 'number'
+            ? Math.round(settled.r.probabilities[key] * 1000) / 1000
+            : null
       log('jev_decision', {
         choice,
         durationMs: Date.now() - settled.startedAt,
         confidence: settled.r.confidence,
         model: settled.r.model,
+        options: withProbs,
       })
     } else {
       if (settled?.r.error) log('jev_fallback', { error: settled.r.error })
       else if (settled) log('jev_stale_choice', { choice: settled.r.choice })
       choice = Object.keys(options)[0]
       source = 'fallback'
+      // Labeled policy fallback, never presented as a model decision.
+      log('fallback_decision', { choice, options: compact(options) })
     }
     // Overlap the next decision with the action the caller is about to run.
     pending = fire()
