@@ -2,6 +2,41 @@
 // A stale stateId asks vanilla to return its authoritative window after each click.
 import { once } from 'node:events'
 
+// The registry expands Minecraft's plank tag into single-species recipes.
+// Vanilla also accepts mixed species in these recipes; select the actual item
+// for every slot so execution can still confirm the real server's result.
+const mixedPlankOutputs = new Set(['stick', 'crafting_table', 'wooden_pickaxe'])
+export function craftableRecipe(bot, item, table = null) {
+  const exact = bot.recipesFor(item.id, null, 1, table)[0]
+  if (exact || !mixedPlankOutputs.has(item.name)) return exact
+  for (const recipe of bot.recipesAll(item.id, null, table)) {
+    const available = new Map()
+    for (const held of bot.inventory.items())
+      available.set(held.type, (available.get(held.type) ?? 0) + held.count)
+    const planks = [...available.keys()].filter((id) => bot.registry.items[id]?.name.endsWith('_planks'))
+    let missing = false
+    const allocate = (ingredient) => {
+      if (ingredient.id === -1) return { ...ingredient }
+      const isPlank = bot.registry.items[ingredient.id]?.name.endsWith('_planks')
+      const count = ingredient.count ?? 1
+      const id = isPlank ? planks.find((id) => (available.get(id) ?? 0) >= count) : ingredient.id
+      if (id === undefined || (available.get(id) ?? 0) < count) missing = true
+      else available.set(id, available.get(id) - count)
+      return { ...ingredient, id }
+    }
+    const inShape = recipe.inShape?.map((row) => row.map(allocate)) ?? null
+    const ingredients = recipe.ingredients?.map(allocate) ?? null
+    if (missing) continue
+    const used = new Map()
+    for (const ingredient of [...(inShape?.flat() ?? []), ...(ingredients ?? [])])
+      if (ingredient.id !== -1) used.set(ingredient.id, (used.get(ingredient.id) ?? 0) + (ingredient.count ?? 1))
+    const delta = [...used].map(([id, count]) => ({ id, metadata: null, count: -count }))
+    delta.push({ ...recipe.result })
+    return { ...recipe, inShape, ingredients, delta }
+  }
+  return undefined
+}
+
 export async function craftConfirmed(bot, recipe, count = 1, table = null) {
   let window = bot.inventory
   if (recipe.requiresTable) {

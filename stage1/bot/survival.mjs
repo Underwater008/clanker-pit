@@ -1,7 +1,7 @@
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { Vec3 } from 'vec3'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { craftConfirmed } from './crafting.mjs'
+import { craftConfirmed, craftableRecipe } from './crafting.mjs'
 import {
   wallBlueprint,
   gateBlueprint,
@@ -553,7 +553,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     // Inventory recipes (planks, sticks, workbench) do not need a trip to a
     // distant or obstructed workbench merely because one is in loaded chunks.
     let bench = null
-    let recipe = bot.recipesFor(item.id, null, 1, null)[0]
+    let recipe = craftableRecipe(bot, item)
     if (!recipe) {
       bench = table()
       if (bench) {
@@ -564,7 +564,7 @@ export function installSurvival(bot, state, log, opts = {}) {
           throw error
         }
       }
-      recipe = bot.recipesFor(item.id, null, 1, bench)[0]
+      recipe = craftableRecipe(bot, item, bench)
     }
     if (!recipe) throw new Error(`Missing ingredients or workbench for ${name}`)
     const before = countItems(bot.inventory.items(), name)
