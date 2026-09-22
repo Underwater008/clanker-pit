@@ -207,13 +207,18 @@ provider status and labeled decisions appear together. `?v=arena` explicitly
 selects the wide camera. Public telemetry's `buildSha` identifies loaded
 controller source; a fresh snapshot alone does not prove movement or progress.
 
-The village round started on 2026-09-22 uses `round-village-20260922`, with its
-Server at (-152, 63, -168). The previous world remains in `server/` and the clean
-pre-switch archive is `backups/pre-village-20260922T180203Z/previous-round.tar.gz`.
-That directory also holds the prior clanker state and a SHA-256 manifest;
-`latest-round-backup.json` records the restore inputs. The archive was verified
-before switching worlds. Runtime `release.json` records hashes of installed
-source files. Keep these backups when updating code or restarting the controller.
+The current village round uses `round-village-20260922T2040Z` (seed
+`3521697135391931937`), with its Server at (-674, 66, 328). The first village
+world, `round-village-20260922`, remains in `server/`. Its world, player data,
+clanker state and server settings were archived after a clean shutdown at
+`backups/pre-round-village-20260922T2040Z/previous-world-and-state.tar.gz`;
+SHA-256: `f1db1f32c3df448cf3948b3f5c8af6e7ced0b1cbbddbe0a07522f2f6e21be882`.
+The archive was verified before the switch, and that backup directory also
+holds the old `bot-state/`. The earlier pre-village archive remains at
+`backups/pre-village-20260922T180203Z/previous-round.tar.gz`.
+`latest-round-backup.json` records the current restore inputs. Runtime
+`release.json` records hashes of installed source files. Keep these backups
+when updating code or restarting the controller.
 The founding four clankers respawn, but a Server-booted clanker's death is final.
 The vacated home lot is assigned to the next booted clanker without removing
 the house blocks from the world. `home-beds.mjs` places labeled beds in the
