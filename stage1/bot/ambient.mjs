@@ -467,6 +467,9 @@ function actor(name, index) {
       role: state.role,
       home: obs?.village?.my_home ?? null,
       village_distance: obs?.village?.distance_from_flag ?? null,
+      inventory: obs?.inventory ?? [],
+      current_goal: state.plan.goal,
+      available_actions: obs && skills ? Object.keys(skills.candidates(obs)) : [],
     }
   }
   function safelyObserve() {

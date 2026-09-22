@@ -23,7 +23,7 @@ async function post(url, key, body, deadlineMs, signal) {
   // One deadline covers retries as well as response-body reads. A controller
   // cancellation must never be retried as a transient network failure.
   const timer = setTimeout(abort, deadlineMs)
-  let lastErr
+  let lastErr, lastStatus = null
   try {
     for (let attempt = 0; attempt < 2 && !ctrl.signal.aborted; attempt++) {
       try {
@@ -36,6 +36,7 @@ async function post(url, key, body, deadlineMs, signal) {
           body: JSON.stringify(body),
           signal: ctrl.signal,
         })
+        lastStatus = res.status
         const text = await res.text()
         if (res.ok) return { ok: true, json: JSON.parse(text), status: res.status }
         lastErr = new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`)
@@ -47,6 +48,7 @@ async function post(url, key, body, deadlineMs, signal) {
     }
     return {
       ok: false,
+      status: ctrl.signal.aborted ? null : lastStatus,
       error: ctrl.signal.aborted
         ? (signal?.aborted ? 'Request cancelled' : `Request deadline exceeded (${deadlineMs}ms)`)
         : String(lastErr),
@@ -108,7 +110,7 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
       deadlineMs,
       signal,
     )
-    if (!r.ok) return { error: r.error }
+    if (!r.ok) return { error: r.error, status: r.status }
     if (r.json.choices?.[0]?.finish_reason === 'length')
       return { error: `${label} response reached its ${maxTokens}-token limit before completion` }
     const message = r.json.choices?.[0]?.message ?? {}
@@ -317,7 +319,7 @@ export async function jevChoose({
     },
   }
   const r = await post(`${TYPESAFE_URL}/v1/systemone`, key, body, 15000, signal)
-  if (!r.ok) return { error: r.error }
+  if (!r.ok) return { error: r.error, status: r.status }
   const answer = r.json.answers?.[questionId]
   if (!answer)
     return {

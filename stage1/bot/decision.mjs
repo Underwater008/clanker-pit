@@ -12,10 +12,12 @@ export function createDecisionMaker({
   waitCapMs = 4000,
   minRequestIntervalMs = 2500,
   maxChoiceAgeMs = 15000,
+  billingCooldownMs = 300000,
 }) {
   let pending = null
   let nextRequestAt = 0
   let closed = false
+  let providerPause = null
   const compact = (options) => Object.fromEntries(
     Object.entries(options).map(([key, description]) => [
       key, { desc: String(description).slice(0, 120), p: null },
@@ -26,13 +28,14 @@ export function createDecisionMaker({
     if (!pending || pending.invalidated) return
     pending.invalidated = reason
     pending.controller.abort()
-    log('jev_status', { status: 'cancelled', reason })
+    if (!providerPause) log('jev_status', { status: 'cancelled', reason })
     // Retain the slot until the transport acknowledges cancellation. Even a
     // provider/client that ignores abort cannot create overlapping requests.
   }
 
   function fire() {
     if (closed || pending || Date.now() < nextRequestAt) return
+    providerPause = null
     const observation = skills.observation()
     const options = skills.candidates(observation)
     if (!Object.keys(options).length) return
@@ -47,6 +50,7 @@ export function createDecisionMaker({
     nextRequestAt = request.startedAt + minRequestIntervalMs
     log('jev_status', {
       status: 'pending', requestedAt: new Date(request.startedAt).toISOString(),
+      retryAt: null, reason: null,
     })
     request.p = Promise.resolve()
       .then(() => jevChoose({
@@ -58,11 +62,20 @@ export function createDecisionMaker({
       .then((result) => {
         request.settled = true
         request.result = result
-        if (!request.invalidated) log('jev_status', {
+        // A billing failure cannot improve by polling every action. Preserve
+        // its labeled fallback while gameplay continues, then probe once
+        // after five minutes (or immediately after a controller restart).
+        if (result.status === 402) {
+          nextRequestAt = Math.max(nextRequestAt, Date.now() + billingCooldownMs)
+          providerPause = { error: result.error, retryAt: new Date(nextRequestAt).toISOString() }
+        }
+        if (!request.invalidated || providerPause) log('jev_status', {
           status: result.error ? 'error' : 'ready',
           completedAt: new Date().toISOString(),
           durationMs: Date.now() - request.startedAt,
           error: result.error ?? null,
+          reason: providerPause ? 'billing_unavailable' : null,
+          retryAt: providerPause?.retryAt ?? null,
         })
       })
   }
@@ -105,14 +118,15 @@ export function createDecisionMaker({
         model: result.model, options: withProbs,
       })
     } else {
-      reason = request?.invalidated ?? (result?.error ? 'provider_error'
+      reason = providerPause ? 'billing_unavailable' : request?.invalidated ?? (result?.error ? 'provider_error'
         : result && age > maxChoiceAgeMs ? 'expired_observation'
         : result ? 'stale_choice'
         : request ? 'request_pending' : 'request_interval')
       choice = Object.keys(options)[0]
       source = 'fallback'
       log('fallback_decision', {
-        choice, reason, error: result?.error ?? null,
+        choice, reason, error: result?.error ?? providerPause?.error ?? null,
+        retryAt: providerPause?.retryAt ?? null,
         requestPending: Boolean(request && !request.settled),
         durationMs: age, options: compact(options),
       })

@@ -14,6 +14,7 @@ export const SYSTEM_PROMPT = (identity) =>
   `Dispositions: ${identity.dispositions.join(', ')}. Catchphrase flavor: ${identity.catchphrase ?? ''} ` +
   `You are at a village council deciding who does what. Roles: ` +
   `${ROLES.map((r) => `${r} (${ROLE_LABELS[r]})`).join('; ')}. ` +
+  `Use your actual inventory and available actions to propose work you can start now; consider roles already proposed by teammates. ` +
   `Reply with ONLY a JSON object: {"role":"chosen role key","says":"one short line you say aloud to the team, in character"}. No markdown.`
 
 export function parseDiscussResponse(content) {

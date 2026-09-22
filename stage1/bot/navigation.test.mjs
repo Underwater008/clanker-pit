@@ -13,6 +13,7 @@ import {
   navigationReached,
   navigationGoalSummary,
   navigateWithRecovery,
+  woodForTools,
   shelterBlueprint,
 } from './survival.mjs'
 
@@ -254,4 +255,79 @@ test('scooping a self-refilling spring uses held-item activation and confirms th
   assert.deepEqual(await skills.execute('scoop_water'), { filledBucket: true })
   assert.equal(uses, 1)
   assert.equal(bot.blockAt(serverAnatomy(flag).spring[0]).name, 'water', 'Spring need not disappear to prove a filled bucket')
+})
+
+test('gathering requires an inventory gain even when the dig promise resolves', async () => {
+  const logs = [{ name: 'oak_log', position: new Vec3(1, 64, 0), boundingBox: 'block' }]
+  const { bot, skills } = fixture({ blocks: logs })
+  bot.canDigBlock = () => true
+  bot.dig = async () => { logs[0] = { ...logs[0], name: 'air', boundingBox: 'empty' } }
+  await assert.rejects(skills.execute('gather_wood'), /did not deliver oak_log to inventory/)
+})
+
+test('concurrent clankers reserve different trees and report their own collected inventory', async () => {
+  const logs = [1, 6].map((x) => ({ name: 'oak_log', position: new Vec3(x, 64, 0), boundingBox: 'block' }))
+  const inventoryA = [], inventoryB = []
+  const a = fixture({ blocks: logs, inventory: inventoryA })
+  const b = fixture({ blocks: logs, inventory: inventoryB })
+  let finishA, startedA
+  const started = new Promise((resolve) => { startedA = resolve })
+  a.bot.canDigBlock = b.bot.canDigBlock = () => true
+  a.bot.dig = async () => {
+    startedA()
+    await new Promise((resolve) => { finishA = resolve })
+    logs[0] = { ...logs[0], name: 'air', boundingBox: 'empty' }
+    inventoryA.push({ name: 'oak_log', count: 1 })
+  }
+  b.bot.pathfinder.goto = async (goal) => { b.bot.entity.position = new Vec3(goal.x + 1, goal.y, goal.z) }
+  b.bot.dig = async (block) => {
+    assert.equal(block.position.x, 6, 'Second clanker must leave the first tree alone')
+    logs[1] = { ...logs[1], name: 'air', boundingBox: 'empty' }
+    inventoryB.push({ name: 'oak_log', count: 1 })
+  }
+  const gatheringA = a.skills.execute('gather_wood')
+  await started
+  assert.equal(b.skills.observation().resources.tree.position.x, 6)
+  b.bot.entities = { 1: { name: 'item', position: new Vec3(1, 64, 0) } }
+  assert.equal(b.skills.candidates(b.skills.observation()).collect_drops, undefined,
+    'Generic pickup must leave another clanker’s active harvest alone')
+  await assert.rejects(b.skills.execute('collect_drops'), /Drop disappeared/)
+  b.bot.entities = {}
+  const gatheringB = b.skills.execute('gather_wood')
+  finishA()
+  const [resultA, resultB] = await Promise.all([gatheringA, gatheringB])
+  assert.deepEqual(resultA.collected, [{ name: 'oak_log', count: 1 }])
+  assert.deepEqual(resultB.collected, [{ name: 'oak_log', count: 1 }])
+})
+
+test('village fallback protects starter wood and prioritizes the actual tool prerequisite', () => {
+  const village = { flag: new Vec3(0, 63, 0), lotIndex: 0, summary: () => ({}) }
+  const { state, skills } = fixture({ inventory: [{ name: 'birch_planks', count: 4 }], village })
+  state.plan.goal = 'equip_tools'
+  state.role = 'builder'
+  const options = skills.candidates(skills.observation())
+  assert.equal(Object.keys(options)[0], 'craft_table')
+  assert.equal(options.build_wall, undefined)
+  assert.equal(woodForTools([{ name: 'birch_planks', count: 4 }], false), 9)
+})
+
+test('damage preempts ordinary work but does not cancel an active short water escape', async () => {
+  const { bot, skills } = fixture()
+  bot.entity.isInWater = true
+  bot.entities = { 2: { name: 'zombie', position: new Vec3(-2, 64, 0.5) } }
+  let cancelled = 0
+  bot.pathfinder.setGoal = () => { cancelled++ }
+  bot.emit('entityHurt', bot.entity)
+  assert.equal(cancelled, 1, 'Damage must still interrupt normal work')
+  bot.pathfinder.goto = async (goal) => {
+    assert.ok(goal.x <= 4, 'Swimming retreat must use a reachable short target')
+    bot.emit('entityHurt', bot.entity)
+    assert.equal(cancelled, 1, 'Damage must not cancel the escape it just triggered')
+    bot.entity.position = new Vec3(goal.x + 0.5, 64, goal.z + 0.5)
+  }
+  const result = await skills.execute('flee')
+  assert.equal(result.retreatedFrom, 'zombie')
+  const afterEscape = cancelled
+  bot.emit('entityHurt', bot.entity)
+  assert.equal(cancelled, afterEscape + 1, 'The exemption ends when the flee action ends')
 })

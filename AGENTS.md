@@ -94,7 +94,7 @@ On the pod, installed bots read `/workspace/arena/.env`. Check the loader before
 diagnosing missing credentials; do not assume all entrypoints use the same file.
 
 `lab-smoke.mjs`, `lab-navigation.mjs`, `lab-placement.mjs`,
-`lab-village.mjs`, and `lab-guest.mjs` mutate fixtures and
+`lab-village.mjs`, `lab-guest.mjs`, `lab-harvest.mjs`, and `lab-escape.mjs` mutate fixtures and
 must only run on an isolated server (Minecraft `25566`, RCON `25576`). Never aim
 them at the production arena. Keep canary `BOT_NAMES`, `BOT_DATA_DIR`, `STATE_PATH`,
 and server ports separate; disable mirrors with `NATIVE_MIRRORS=0` or assign a

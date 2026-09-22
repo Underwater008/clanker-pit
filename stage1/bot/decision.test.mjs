@@ -161,3 +161,40 @@ test('a prefetched choice expires even if its action is still feasible', async (
   assert.equal(result.reason, 'expired_observation')
   dm.close()
 })
+
+test('billing errors pause Jev calls while retaining honest fallback and recover after cooldown', async (t) => {
+  let now = 1000, calls = 0
+  t.mock.method(Date, 'now', () => now)
+  const events = []
+  const dm = createDecisionMaker({
+    jevChoose: async () => {
+      calls++
+      return calls === 1
+        ? { error: 'HTTP 402: billing_error no available credits', status: 402 }
+        : { choice: 'explore' }
+    },
+    identity, getPlan: () => ({}), skills: fakeSkills(), sleep,
+    log: (event, data) => events.push({ event, ...data }),
+  })
+  const first = await dm.next()
+  assert.equal(first.source, 'fallback')
+  assert.equal(first.reason, 'billing_unavailable')
+  dm.cancel('plan_changed')
+  dm.cancel('safety_reflex')
+  assert.equal(events.filter((e) => e.event === 'jev_status').at(-1).status, 'error')
+  for (let i = 0; i < 30; i++) {
+    now += 3000
+    const next = await dm.next()
+    assert.equal(next.reason, 'billing_unavailable')
+  }
+  assert.equal(calls, 1, 'billing pause must survive many action cycles')
+  const latest = events.filter((e) => e.event === 'fallback_decision').at(-1)
+  assert.match(latest.error, /no available credits/)
+  assert.equal(latest.retryAt, new Date(301000).toISOString())
+  now = 301001
+  const recovered = await dm.next()
+  assert.equal(calls, 2)
+  assert.equal(recovered.source, 'jev')
+  assert.equal(recovered.choice, 'explore')
+  dm.close()
+})

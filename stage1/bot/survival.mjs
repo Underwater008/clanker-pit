@@ -19,6 +19,10 @@ import {
 // put/take on one furnace window would mix their iron. Also, opening a
 // furnace has no internal timeout, so it must be raced with a deadline.
 let furnaceChain = Promise.resolve()
+// Clankers in this controller share locally observed resource claims. Holding
+// the nearby trunk/drop area through pickup keeps the cast from all mining
+// one log while only the closest clanker receives its drop.
+const resourceClaims = new Map()
 
 const { pathfinder, Movements, goals } = pathfinderPkg
 export const GOALS = {
@@ -82,6 +86,19 @@ const edible = new Set([
 ])
 const solid = (b) =>
   b && b.boundingBox === 'block' && !['magma_block', 'cactus'].includes(b.name)
+
+export function woodForTools(items, hasWorkbench) {
+  const n = (match) => countItems(items, match)
+  const needPick = !n(isPick)
+  return (hasWorkbench || n('crafting_table') ? 0 : 4) +
+    (needPick ? 3 : 0) + (needPick && n('stick') < 2 ? 2 : 0)
+}
+
+export function inventoryGains(before, after) {
+  const names = new Set(after.map((item) => item.name))
+  return [...names].map((name) => ({ name, count: countItems(after, name) - countItems(before, name) }))
+    .filter((item) => item.count > 0)
+}
 
 // goto() in the pinned pathfinder also resolves for an empty failed path.
 // Only the current game position can establish that a navigation goal was met.
@@ -196,6 +213,33 @@ export function installSurvival(bot, state, log, opts = {}) {
   let scoutStep = 0
   let failedScouts = 0
   let fleeTurn = 0
+  let fleeing = false
+  const claimOwner = Symbol(bot.username)
+  const resourceScope = () => opts.resourceScope ?? [
+    bot._client?.socket?.remoteAddress ?? process.env.MC_HOST ?? 'local',
+    bot._client?.socket?.remotePort ?? process.env.MC_PORT ?? '25565',
+    bot.game?.dimension ?? 'overworld',
+  ].join(':')
+  function resourceBusy(position) {
+    const now = Date.now(), scope = resourceScope()
+    for (const [key, claim] of resourceClaims) {
+      if (claim.until <= now) { resourceClaims.delete(key); continue }
+      if (claim.scope !== scope || claim.owner === claimOwner) continue
+      const horizontal = Math.hypot(position.x - claim.position.x, position.z - claim.position.z)
+      if (horizontal < (claim.tree ? 2.5 : 1.5) &&
+          Math.abs(position.y - claim.position.y) < (claim.tree ? 12 : 3)) return true
+    }
+    return false
+  }
+  function claimResource(block) {
+    if (resourceBusy(block.position)) throw new Error('Resource is being gathered by another clanker')
+    const key = Symbol('resource')
+    resourceClaims.set(key, {
+      owner: claimOwner, scope: resourceScope(), position: block.position.clone(),
+      tree: isLog(block.name), until: Date.now() + 45000,
+    })
+    return () => resourceClaims.delete(key)
+  }
   // Village scenario context (null in plain survival mode). The controller
   // supplies the Server's flag position, this bot's home-lot index, a live
   // snapshot of shared village state, and how to recognize guest creeper
@@ -243,7 +287,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     moves.canDig = true
     moves.digCost = 2 // Prefer going around; clear ordinary terrain when needed.
     moves.exclusionAreasBreak.push((block) => {
-      if (constructionBlock(block.position)) return 100
+      if (constructionBlock(block.position) || resourceBusy(block.position)) return 100
       const soft =
         [
           'dirt',
@@ -330,7 +374,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     return null
   }
   bot.on('entityHurt', (entity) => {
-    if (entity === bot.entity && emergency() === 'flee') {
+    if (entity === bot.entity && emergency() === 'flee' && !fleeing) {
       bot.pathfinder.setGoal(null)
       bot.stopDigging()
     }
@@ -343,7 +387,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         (b) =>
           b &&
           !((isLog(b.name) || stoneNames.has(b.name) || ironOreNames.has(b.name)) &&
-            constructionBlock(b.position)) &&
+            (constructionBlock(b.position) || resourceBusy(b.position))) &&
           (blocked.get(b.position.toString()) ?? 0) < Date.now() &&
           b.position.y >= bot.entity.position.y - 3 &&
           b.position.y <= bot.entity.position.y + 5,
@@ -442,7 +486,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   async function collect(position) {
     await sleep(650) // item spawn, pickup delay, and falling logs need server ticks
     const item = Object.values(bot.entities)
-      .filter((e) => e.name === 'item' && e.position.distanceTo(position) < 5)
+      .filter((e) => e.name === 'item' && e.position.distanceTo(position) < 5 && !resourceBusy(e.position))
       .sort(
         (a, b) =>
           a.position.distanceTo(bot.entity.position) -
@@ -462,8 +506,13 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
   }
   async function dig(block, toolSuffix) {
+    const resource = isLog(block.name) || stoneNames.has(block.name) || ironOreNames.has(block.name)
+    const release = resource ? claimResource(block) : () => {}
+    const before = bot.inventory.items().map((item) => ({ name: item.name, count: item.count }))
     try {
       await reach(block)
+      if (bot.blockAt(block.position)?.name !== block.name)
+        throw new Error('Resource changed before gathering began')
       const items = bot.inventory.items()
       const tools = items.filter((i) =>
         i.name.endsWith(toolSuffix ?? '_pickaxe'),
@@ -477,11 +526,24 @@ export function installSurvival(bot, state, log, opts = {}) {
         12000,
         () => bot.stopDigging(),
       )
-      await collect(block.position).catch(() => {})
-      return { block: block.name, position: block.position }
+      let pickupError
+      await collect(block.position).catch((error) => { pickupError = error })
+      const gained = inventoryGains(before, bot.inventory.items())
+      const expected = isLog(block.name) ? block.name
+        : block.name === 'coal_ore' ? 'coal'
+          : ironOreNames.has(block.name) ? 'raw_iron'
+            : stoneNames.has(block.name) ? 'cobblestone' : null
+      if (resource && !gained.some((item) => item.name === expected)) {
+        log('gather_uncollected', { block: block.name, position: block.position, gained,
+          error: pickupError ? String(pickupError) : 'No matching item reached inventory' })
+        throw new Error(`Gathering ${block.name} did not deliver ${expected} to inventory`)
+      }
+      return { block: block.name, position: block.position, collected: gained }
     } catch (e) {
       blocked.set(block.position.toString(), Date.now() + 120000)
       throw e
+    } finally {
+      release()
     }
   }
   const table = () => nearbyBlock((b) => b.name === 'crafting_table', 24)
@@ -590,10 +652,25 @@ export function installSurvival(bot, state, log, opts = {}) {
     return { placed: item.name, position }
   }
   // ---- village construction and coolant skills ----------------------------
-  const buildMaterialCount = () =>
-    countItems(bot.inventory.items(), (n) => isBuildMaterial(n) || isPlank(n))
-  const firstBuildMaterial = () =>
-    bot.inventory.items().find((i) => isBuildMaterial(i.name) || isPlank(i.name))
+  function constructionMaterials(hasWorkbench = Boolean(table())) {
+    const items = bot.inventory.items()
+    const planks = countItems(items, isPlank)
+    const reserved = woodForTools(items, hasWorkbench)
+    const usablePlanks = Math.max(0, planks - reserved)
+    const usableLogs = Math.min(
+      countItems(items, (name) => isLog(name) && isBuildMaterial(name)),
+      Math.max(0, countItems(items, isLog) - Math.ceil(Math.max(0, reserved - planks) / 4)),
+    )
+    const mineral = items.filter((item) => isBuildMaterial(item.name) && !isPlank(item.name) && !isLog(item.name))
+    const planksItem = usablePlanks > 0 ? items.find((item) => isPlank(item.name)) : null
+    const logItem = usableLogs > 0 ? items.find((item) => isLog(item.name) && isBuildMaterial(item.name)) : null
+    return {
+      count: countItems(mineral, () => true) + usablePlanks + (logItem ? usableLogs : 0),
+      first: mineral[0] ?? planksItem ?? logItem,
+    }
+  }
+  const buildMaterialCount = (hasWorkbench) => constructionMaterials(hasWorkbench).count
+  const firstBuildMaterial = () => constructionMaterials().first
   /** Place up to `perAction` missing blocks of a blueprint, in order. */
   async function buildFrom(blueprint, perAction = 2) {
     let placed = 0
@@ -1014,7 +1091,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       add('plant_tree', 'Replant a sapling on nearby grass or dirt.')
     const drops = Object.values(bot.entities).some(
       (e) =>
-        e.name === 'item' && e.position.distanceTo(bot.entity.position) < 10,
+        e.name === 'item' && e.position.distanceTo(bot.entity.position) < 10 && !resourceBusy(e.position),
     )
     if (drops) add('collect_drops', 'Pick up a nearby dropped item.')
     if (
@@ -1037,7 +1114,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       const vadd = (key, description) => {
         if ((state.cooldowns[key] ?? 0) < Date.now()) vo[key] = description
       }
-      const materials = buildMaterialCount()
+      const materials = buildMaterialCount(Boolean(obs.resources.workbench))
       if (nearVillage && materials >= 2 && !V.wall?.complete)
         vadd(
           'build_wall',
@@ -1117,6 +1194,12 @@ export function installSurvival(bot, state, log, opts = {}) {
         farmer: ['hunt_food', 'plant_tree', 'return_to_post'],
       }[state.role ?? ''] ?? ['build_wall', 'build_home', 'feed_server', 'scoop_water']
       const ordered = {}
+      const toolPrerequisites = !n(isPick) || !obs.resources.workbench || state.plan.goal === 'equip_tools'
+      if (toolPrerequisites) {
+        for (const key of ['place_table', 'craft_table', 'craft_wooden_pickaxe', 'craft_stone_pickaxe',
+          'craft_stone_axe', 'craft_sticks', 'craft_planks'])
+          if (options[key]) ordered[key] = options[key]
+      }
       for (const key of preferred) if (vo[key]) ordered[key] = vo[key]
       for (const [key, description] of Object.entries(vo))
         if (!ordered[key]) ordered[key] = description
@@ -1140,25 +1223,31 @@ export function installSurvival(bot, state, log, opts = {}) {
       const dx = p.x - threat.position.x,
         dz = p.z - threat.position.z
       const angle = Math.atan2(dz, dx)
+      const distance = bot.entity.isInWater ? 3 : 8
       let lastError
       // Alternate escape sides after a failed route, staying in the half-plane
       // away from the threat instead of retrying one impassable cliff forever.
-      for (const offset of [0, Math.PI / 3, -Math.PI / 3]) {
-        const bearing = angle + (fleeTurn % 2 ? -offset : offset)
-        try {
-          await walk(new goals.GoalNearXZ(
-            Math.floor(p.x + Math.cos(bearing) * 8),
-            Math.floor(p.z + Math.sin(bearing) * 8),
-            1,
-          ), 2500)
-          fleeTurn = 0
-          return { retreatedFrom: threat.name, safe: !emergency(), position: bot.entity.position }
-        } catch (error) {
-          lastError = error
+      fleeing = true
+      try {
+        for (const offset of [0, Math.PI / 3, -Math.PI / 3]) {
+          const bearing = angle + (fleeTurn % 2 ? -offset : offset)
+          try {
+            await walk(new goals.GoalNearXZ(
+              Math.floor(p.x + Math.cos(bearing) * distance),
+              Math.floor(p.z + Math.sin(bearing) * distance),
+              1,
+            ), 2500)
+            fleeTurn = 0
+            return { retreatedFrom: threat.name, safe: !emergency(), position: bot.entity.position }
+          } catch (error) {
+            lastError = error
+          }
         }
+        fleeTurn++
+        throw lastError
+      } finally {
+        fleeing = false
       }
-      fleeTurn++
-      throw lastError
     }
     if (action === 'eat') {
       const food = items.find((i) => edible.has(i.name))
@@ -1279,7 +1368,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         .filter(
           (e) =>
             e.name === 'item' &&
-            e.position.distanceTo(bot.entity.position) < 12,
+            e.position.distanceTo(bot.entity.position) < 12 && !resourceBusy(e.position),
         )
         .sort(
           (a, b) =>
@@ -1287,6 +1376,7 @@ export function installSurvival(bot, state, log, opts = {}) {
             b.position.distanceTo(bot.entity.position),
         )[0]
       if (!drop) throw Error('Drop disappeared')
+      const before = bot.inventory.items().map((item) => ({ name: item.name, count: item.count }))
       await walk(
         new goals.GoalNear(
           drop.position.x,
@@ -1296,7 +1386,10 @@ export function installSurvival(bot, state, log, opts = {}) {
         ),
         7000,
       )
-      return { collectedAt: drop.position }
+      await sleep(650)
+      const collected = inventoryGains(before, bot.inventory.items())
+      if (!collected.length) throw Error('Dropped item did not reach inventory')
+      return { collectedAt: drop.position, collected }
     }
     if (action === 'return_to_camp') {
       const p = state.camp
@@ -1406,6 +1499,8 @@ export function installSurvival(bot, state, log, opts = {}) {
     candidates,
     execute,
     stop() {
+      for (const [key, claim] of resourceClaims)
+        if (claim.owner === claimOwner) resourceClaims.delete(key)
       bot.pathfinder.setGoal(null)
       bot.clearControlStates()
       bot.stopDigging()

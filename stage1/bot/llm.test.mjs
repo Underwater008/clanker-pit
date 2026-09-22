@@ -88,3 +88,21 @@ test('council leaves room for reasoning and reports token exhaustion explicitly'
   assert.equal(failed.role, undefined)
   assert.equal(calls, 2, 'A truncated reply must not silently trigger another paid call')
 })
+
+test('Jev preserves HTTP billing status and never retries a 402 response', async (t) => {
+  const previous = process.env.TYPESAFE_API_KEY
+  process.env.TYPESAFE_API_KEY = 'test-key'
+  t.after(() => {
+    if (previous === undefined) delete process.env.TYPESAFE_API_KEY
+    else process.env.TYPESAFE_API_KEY = previous
+  })
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++
+    return { ok: false, status: 402, text: async () => '{"error":"billing_error: no available credits"}' }
+  })
+  const result = await jevChoose({ identity, stance: {}, observation: {}, questionId: 'action', options: { explore: 'Explore' } })
+  assert.equal(result.status, 402)
+  assert.match(result.error, /no available credits/)
+  assert.equal(calls, 1)
+})

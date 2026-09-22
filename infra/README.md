@@ -233,6 +233,11 @@ across gateway restart, and disconnecting a guest who leaves. Its private HTTP
 gateway is on 18090 and its read-only mirror is on 25694. Run it after other
 fixture-mutating labs finish, with no production guest queue involved.
 
+`lab-harvest.mjs` verifies two concurrent clankers select separate trees and
+each receives its own server-confirmed drop. `lab-escape.mjs` verifies retreat
+from water continues when the server delivers damage during movement. Both
+use only Minecraft 25566/RCON 25576 and require the isolated lab above.
+
 ## Village round: protect the Server
 
 `SCENARIO=village` (set by pod-bootstrap) gives the controller its defense game.
