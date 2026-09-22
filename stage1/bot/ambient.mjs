@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { kimiPlan, jevChoose } from './llm.mjs'
+import { createDecisionMaker } from './decision.mjs'
 import { GOALS, installSurvival } from './survival.mjs'
 import { createNativeMirror } from './native-mirror.mjs'
 
@@ -15,10 +16,6 @@ const PORT = Number(process.env.MC_PORT ?? 25565)
 const PLAN_INTERVAL = Math.max(
   90000,
   Number(process.env.PLAN_INTERVAL_MS ?? 300000),
-)
-const DECISION_INTERVAL = Math.max(
-  1000,
-  Number(process.env.DECISION_INTERVAL_MS ?? 8000),
 )
 const MODELS = process.env.MODEL_MODE !== 'off'
 const MIRRORS = process.env.NATIVE_MIRRORS !== '0'
@@ -93,7 +90,6 @@ function actor(name, index) {
     epoch = 0,
     planning = false,
     lastPlan = 0,
-    lastDecision = 0,
     failures = 0,
     task = 'connecting',
     staleRevision = 0
@@ -167,71 +163,45 @@ function actor(name, index) {
     }
   }
   async function loop(thisEpoch) {
+    // Jev decisions are requested while the previous action runs, so the bot
+    // starts its next action immediately instead of idling between cycles.
+    const decisions = MODELS
+      ? createDecisionMaker({
+          jevChoose,
+          identity,
+          getPlan: () => state.plan,
+          skills,
+          log: (e, d) => log(name, e, d),
+          sleep,
+        })
+      : null
     while (connected && epoch === thisEpoch && !stopping) {
       try {
         void plan()
-        const observation = skills.observation(),
-          options = skills.candidates(observation)
         let urgent = skills.emergency()
-        let choice = urgent ?? Object.keys(options)[0],
-          source = urgent
-            ? 'safety_reflex'
-            : MODELS
-              ? 'fallback'
-              : 'test_policy'
-        if (
-          !urgent &&
-          MODELS &&
-          Date.now() - lastDecision >= DECISION_INTERVAL
-        ) {
-          lastDecision = Date.now()
-          let response
-          void jevChoose({
-            identity,
-            stance: state.plan,
-            observation,
-            questionId: 'survival_action',
-            options,
-          })
-            .then((r) => {
-              response = r
-            })
-            .catch((e) => {
-              response = { error: String(e) }
-            })
-          while (
-            !response &&
-            connected &&
-            epoch === thisEpoch &&
-            !(urgent = skills.emergency())
-          )
-            await sleep(200)
-          const r = response ?? {
-            error: 'Decision interrupted by immediate danger',
+        let choice, source
+        if (urgent) {
+          decisions?.cancel()
+          choice = urgent
+          source = 'safety_reflex'
+        } else if (MODELS) {
+          const d = await decisions.next()
+          if (epoch !== thisEpoch || !connected) break
+          if (d.urgent) {
+            choice = d.urgent
+            source = 'safety_reflex'
+          } else {
+            choice = d.choice
+            source = d.source
           }
-          if (!connected || epoch !== thisEpoch) break
-          if (r.error) log(name, 'jev_fallback', { error: r.error, choice })
-          else {
-            choice = r.choice
-            source = 'jev'
-            log(name, 'jev_decision', {
-              choice,
-              durationMs: Date.now() - lastDecision,
-              confidence: r.confidence,
-              model: r.model,
-            })
-          }
-        } else if (!urgent && MODELS) {
-          await sleep(
-            Math.min(
-              250,
-              Math.max(100, DECISION_INTERVAL - (Date.now() - lastDecision)),
-            ),
-          )
-          continue
+        } else {
+          const observation = skills.observation()
+          choice = Object.keys(skills.candidates(observation))[0]
+          source = 'test_policy'
         }
         urgent = skills.emergency()
         if (urgent) {
+          decisions?.cancel()
           choice = urgent
           source = 'safety_reflex'
         }
@@ -286,7 +256,7 @@ function actor(name, index) {
         }
         save()
         report()
-        await sleep(MODELS ? 250 : 600)
+        await sleep(MODELS ? 100 : 600)
       } catch (e) {
         log(name, 'loop_error', { error: String(e) })
         await sleep(2000)
@@ -374,7 +344,7 @@ log('director', 'survival_start', {
   cast: names,
   models: MODELS,
   planInterval: PLAN_INTERVAL,
-  decisionInterval: DECISION_INTERVAL,
+  decisions: 'overlapped',
   mirrors: MIRRORS,
 })
 function stop() {
