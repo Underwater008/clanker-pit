@@ -100,6 +100,47 @@ export function inventoryGains(before, after) {
     .filter((item) => item.count > 0)
 }
 
+const escapeTerrain = new Set(['stone', 'andesite', 'diorite', 'granite', 'dirt', 'grass_block', 'clay'])
+export function localEscapePlans(bot, target, protectedBlock = () => false) {
+  const origin = bot.entity.position.floored()
+  const hazards = new Set(['water', 'lava', 'sand', 'red_sand', 'gravel'])
+  const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+    .sort(([ax, az], [bx, bz]) =>
+      Math.hypot(origin.x + ax - target.x, origin.z + az - target.z) -
+      Math.hypot(origin.x + bx - target.x, origin.z + bz - target.z))
+  return directions.map(([dx, dz]) => {
+    const step = origin.offset(dx, 0, dz)
+    const support = bot.blockAt(step)
+    if (!solid(support) || hazards.has(support.name)) return null // Keep a stable stair support.
+    const spaces = [origin.offset(0, 2, 0), step.offset(0, 2, 0), step.offset(0, 1, 0)]
+    const clear = []
+    for (const position of spaces) {
+      const block = bot.blockAt(position)
+      if (!block || hazards.has(block.name)) return null
+      // Never open a fluid pocket, cut under falling terrain, or probe unloaded space.
+      for (const [x, y, z] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1]]) {
+        const neighbor = bot.blockAt(position.offset(x, y, z))
+        if (!neighbor || hazards.has(neighbor.name)) return null
+      }
+      if (!solid(block)) continue
+      if (!escapeTerrain.has(block.name) || protectedBlock(position)) return null
+      clear.push(position)
+    }
+    return { destination: step.offset(0, 1, 0), clear }
+  }).filter(Boolean)
+}
+
+function sightToThreat(bot, entity) {
+  const from = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
+  const to = entity.position.offset(0, 0.7, 0)
+  const distance = from.distanceTo(to)
+  for (let d = 0.3; d < distance; d += 0.3) {
+    const block = bot.blockAt(from.plus(to.minus(from).scaled(d / distance)))
+    if (!block || solid(block)) return false
+  }
+  return true
+}
+
 // goto() in the pinned pathfinder also resolves for an empty failed path.
 // Only the current game position can establish that a navigation goal was met.
 export function navigationReached(goal, position) {
@@ -214,6 +255,12 @@ export function installSurvival(bot, state, log, opts = {}) {
   let failedScouts = 0
   let fleeTurn = 0
   let fleeing = false
+  let blockedRoutes = 0
+  let lastBlockedRoute = 0
+  let escapeSession = null
+  let escaping = false
+  let lastHurtAt = 0
+  let skillRevision = 0
   const claimOwner = Symbol(bot.username)
   const resourceScope = () => opts.resourceScope ?? [
     bot._client?.socket?.remoteAddress ?? process.env.MC_HOST ?? 'local',
@@ -283,6 +330,9 @@ export function installSurvival(bot, state, log, opts = {}) {
     return villageConstruction.has(key) || shelterConstruction.has(key)
   }
   function resetMovements() {
+    skillRevision++
+    blockedRoutes = 0
+    escapeSession = null
     const moves = new Movements(bot)
     moves.canDig = true
     moves.digCost = 2 // Prefer going around; clear ordinary terrain when needed.
@@ -355,16 +405,21 @@ export function installSurvival(bot, state, log, opts = {}) {
   }
   function emergency() {
     if (!bot.entity || bot.health <= 0) return null
-    const closeThreats = threats().filter(
+    // A guard buried below stone cannot fight a spider overhead. Do not let
+    // that unreachable target starve escape; contact/recent damage still wins.
+    const danger = (entity) => !escapeTarget() || Date.now() - lastHurtAt < 2500 ||
+      entity.position.distanceTo(bot.entity.position) < 2 || sightToThreat(bot, entity)
+    const visibleThreats = threats().filter(danger)
+    const closeThreats = visibleThreats.filter(
       (e) => e.position.distanceTo(bot.entity.position) < 9,
     )
     if (villageCtx) {
       // Guards stand and fight; everyone else keeps the old flee reflex.
       if ((state.role ?? null) === 'guard' && bot.health > 8) {
-        const flagThreats = threats().filter(
+        const flagThreats = visibleThreats.filter(
           (e) => e.position.distanceTo(villageCtx.flag) < 12,
         )
-        if (closeThreats.length || flagThreats.length || enemyPlayers().length)
+        if (closeThreats.length || flagThreats.length || enemyPlayers().filter(danger).length)
           return 'attack_threat'
       }
     }
@@ -374,6 +429,13 @@ export function installSurvival(bot, state, log, opts = {}) {
     return null
   }
   bot.on('entityHurt', (entity) => {
+    if (entity === bot.entity) lastHurtAt = Date.now()
+    if (entity === bot.entity && escaping) {
+      skillRevision++
+      bot.pathfinder.setGoal(null)
+      bot.stopDigging()
+      return
+    }
     if (entity === bot.entity && emergency() === 'flee' && !fleeing) {
       bot.pathfinder.setGoal(null)
       bot.stopDigging()
@@ -441,9 +503,87 @@ export function installSurvival(bot, state, log, opts = {}) {
       bot.clearControlStates()
     }
   }
-  const walk = (goal, ms = 11000) => navigateWithRecovery({
-    bot, goal, ms, run: walkOnce, emergency, log,
-  })
+  const walk = async (goal, ms = 11000) => {
+    try {
+      const result = await navigateWithRecovery({ bot, goal, ms, run: walkOnce, emergency, log })
+      blockedRoutes = 0
+      return result
+    } catch (error) {
+      blockedRoutes++
+      lastBlockedRoute = Date.now()
+      throw error
+    }
+  }
+  function escapeTarget() {
+    const target = escapeSession ?? (villageCtx ? villageCtx.flag.offset(0, 1, 0) : state.camp)
+    if (!target || bot.entity.isInWater) return null
+    if (bot.entity.position.y >= target.y - 0.1 ||
+        Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z) > 32) {
+      escapeSession = null
+      return null
+    }
+    if (!escapeSession && (blockedRoutes < 2 || Date.now() - lastBlockedRoute > 60000 ||
+        target.y - bot.entity.position.y < 3)) return null
+    escapeSession ??= new Vec3(target.x, target.y, target.z)
+    return escapeSession
+  }
+  async function escapeUpward() {
+    escaping = true
+    try { return await escapeUpwardStep() }
+    finally { escaping = false }
+  }
+  async function escapeUpwardStep() {
+    const revision = skillRevision
+    const interrupted = () => revision !== skillRevision || bot.health <= 0 || emergency()
+    const target = escapeTarget()
+    if (!target) throw new Error('No blocked underground route to recover')
+    const protectedBlock = (position) => constructionBlock(position) || resourceBusy(position)
+    const plan = localEscapePlans(bot, target, protectedBlock)[0]
+    if (!plan) throw new Error('No safe local staircase step')
+    const before = bot.entity.position.clone()
+    bot.pathfinder.setGoal(null)
+    bot.clearControlStates()
+    const pick = bot.inventory.items().find((i) => isPick(i.name))
+    if (pick) await bot.equip(pick, 'hand')
+    else if (bot.heldItem) await bot.unequip('hand')
+    let cleared = 0
+    for (const position of plan.clear) {
+      if (interrupted()) throw new Error('Escape interrupted by safety or cancellation')
+      // Re-check after every server update; hazards or another builder may have appeared.
+      if (!localEscapePlans(bot, target, protectedBlock).some((p) => p.destination.equals(plan.destination)))
+        throw new Error('Escape step is no longer safe')
+      const block = bot.blockAt(position)
+      if (!solid(block)) continue
+      if (!bot.canDigBlock(block)) throw new Error('Escape block is out of reach')
+      let confirmed = false
+      const update = (packet) => {
+        if (new Vec3(packet.location.x, packet.location.y, packet.location.z).equals(position) &&
+            packet.type === bot.registry.blocksByName.air.minStateId) confirmed = true
+      }
+      bot._client.on('block_change', update)
+      try {
+        log('escape_clearing', { position, block: block.name, byHand: !pick, destination: plan.destination })
+        await bounded(() => bot.dig(block, true), 11000, () => bot.stopDigging())
+        const deadline = Date.now() + 1500
+        while (!confirmed && Date.now() < deadline) await sleep(50)
+        if (!confirmed) throw new Error('Escape clearing was not confirmed by the server')
+        cleared++
+      } finally {
+        bot._client.removeListener('block_change', update)
+      }
+    }
+    if (interrupted()) throw new Error('Escape interrupted before climbing')
+    await walk(new goals.GoalBlock(plan.destination.x, plan.destination.y, plan.destination.z), 5000)
+    await sleep(250)
+    if (interrupted()) throw new Error('Escape interrupted before movement was confirmed')
+    const rose = bot.entity.position.y - before.y
+    if (rose < 0.75 || Math.hypot(bot.entity.position.x - plan.destination.x - 0.5,
+      bot.entity.position.z - plan.destination.z - 0.5) > 0.8)
+      throw new Error('Escape step did not reach the higher foothold')
+    log('escape_progress', { from: before, position: bot.entity.position, cleared, rose })
+    if (bot.entity.position.y >= target.y - 0.1) escapeSession = null
+    return { escapedUpward: true, cleared, rose, position: bot.entity.position.clone() }
+  }
   async function reach(block) {
     if (
       bot.entity.position.distanceTo(block.position.offset(0.5, 0.5, 0.5)) > 3.8
@@ -1024,6 +1164,8 @@ export function installSurvival(bot, state, log, opts = {}) {
     const add = (key, description) => {
       if ((state.cooldowns[key] ?? 0) < Date.now()) options[key] = description
     }
+    if (escapeTarget() && localEscapePlans(bot, escapeTarget(), (p) => constructionBlock(p) || resourceBusy(p)).length)
+      return { escape_upward: 'Recover from the blocked underground route: clear one inspected natural-terrain staircase step and climb toward the remembered surface. Bare hands may clear stone slowly; preserve construction and avoid fluid or falling terrain.' }
     if (bot.food < 19 && n((name) => edible.has(name)))
       add('eat', 'Eat available food now to restore hunger and allow healing.')
     const needsWood =
@@ -1216,6 +1358,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   }
   async function execute(action) {
     const items = bot.inventory.items()
+    if (action === 'escape_upward') return escapeUpward()
     if (action === 'flee') {
       const threat = threats()[0]
       if (!threat) return { safe: true }
@@ -1471,7 +1614,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         'flee', 'eat', 'gather_wood', 'mine_stone', 'craft_planks', 'craft_sticks',
         'craft_table', 'place_table', 'craft_wooden_pickaxe', 'craft_stone_pickaxe',
         'craft_stone_axe', 'craft_furnace', 'place_furnace', 'hunt_food',
-        'plant_tree', 'collect_drops', 'return_to_camp', 'explore',
+        'plant_tree', 'collect_drops', 'return_to_camp', 'explore', 'escape_upward',
         ...(villageCtx
           ? ['build_wall', 'build_gate', 'build_home', 'place_torch',
               'craft_stone_sword', 'craft_torch', 'craft_bucket', 'mine_iron_ore',
@@ -1499,6 +1642,9 @@ export function installSurvival(bot, state, log, opts = {}) {
     candidates,
     execute,
     stop() {
+      skillRevision++
+      escapeSession = null
+      blockedRoutes = 0
       for (const [key, claim] of resourceClaims)
         if (claim.owner === claimOwner) resourceClaims.delete(key)
       bot.pathfinder.setGoal(null)

@@ -10,6 +10,7 @@ import {
   gotoConfirmed,
   installSurvival,
   localShelter,
+  localEscapePlans,
   navigationReached,
   navigationGoalSummary,
   navigateWithRecovery,
@@ -330,4 +331,68 @@ test('damage preempts ordinary work but does not cancel an active short water es
   const afterEscape = cancelled
   bot.emit('entityHurt', bot.entity)
   assert.equal(cancelled, afterEscape + 1, 'The exemption ends when the flee action ends')
+})
+
+test('underground recovery plans one upward stair without cutting its supporting floor', () => {
+  const { bot } = fixture()
+  bot.blockAt = (p) => ({ position: p.floored(), name: 'stone', boundingBox: 'block' })
+  const plan = localEscapePlans(bot, new Vec3(4, 70, 0))[0]
+  assert.deepEqual(plan.destination, new Vec3(1, 65, 0))
+  assert.equal(plan.clear.length, 3)
+  assert.ok(plan.clear.every((p) => p.y >= 65), 'Never dig the floor or stair support')
+})
+
+test('recovery refuses fluid pockets, falling terrain, unloaded space and construction', () => {
+  const { bot } = fixture()
+  const natural = (p) => ({ position: p.floored(), name: 'stone', boundingBox: 'block' })
+  for (const name of ['water', 'lava', 'sand', 'gravel', null]) {
+    bot.blockAt = (p) => p.floored().y === 67 ? (name ? { position: p.floored(), name, boundingBox: 'block' } : null) : natural(p)
+    assert.equal(localEscapePlans(bot, new Vec3(4, 70, 0)).length, 0, String(name))
+  }
+  bot.blockAt = natural
+  assert.equal(localEscapePlans(bot, new Vec3(4, 70, 0), () => true).length, 0)
+})
+
+test('recovery takes priority while a guard is buried under an unreachable threat, but real hurt preempts it', async () => {
+  const { bot, skills, state } = fixture({ village: { flag: new Vec3(0, 70, 0), lotIndex: 0, summary: () => ({}) } })
+  state.role = 'guard'
+  bot.blockAt = (p) => ({ position: p.floored(), name: 'stone', boundingBox: 'block' })
+  bot.pathfinder.goto = async () => { throw new Error('NoPath') }
+  await assert.rejects(skills.execute('explore'), /NoPath/)
+  bot.entities = { 2: { name: 'spider', position: new Vec3(0.5, 70, 0.5) } }
+  assert.equal(skills.emergency(), null)
+  assert.deepEqual(Object.keys(skills.candidates(skills.observation())), ['escape_upward'])
+  bot.emit('entityHurt', bot.entity)
+  assert.equal(skills.emergency(), 'attack_threat')
+})
+
+test('ordinary successful navigation clears earlier failure history before recovery activates', async () => {
+  const { bot, state, skills } = fixture()
+  state.camp = { x: 0, y: 70, z: 0 }
+  bot.blockAt = (p) => ({ position: p.floored(), name: 'stone', boundingBox: 'block' })
+  bot.pathfinder.goto = async () => { throw new Error('NoPath') }
+  await assert.rejects(skills.execute('explore'), /NoPath/)
+  bot.pathfinder.goto = async (goal) => { bot.entity.position = new Vec3(goal.x + 0.5, 64, goal.z + 0.5) }
+  await skills.execute('explore')
+  assert.equal(skills.candidates(skills.observation()).escape_upward, undefined)
+})
+
+test('stop during authoritative escape clearing cannot continue to another block or climb', async () => {
+  const { bot, state, skills } = fixture()
+  state.camp = { x: 4, y: 70, z: 0 }
+  bot.blockAt = (p) => ({ position: p.floored(), name: 'stone', boundingBox: 'block' })
+  bot.pathfinder.goto = async () => { throw new Error('NoPath') }
+  await assert.rejects(skills.execute('explore'), /NoPath/)
+  bot._client = new EventEmitter()
+  bot.canDigBlock = () => true
+  let dug = 0
+  bot.dig = async (block) => {
+    dug++
+    bot._client.emit('block_change', { location: block.position, type: bot.registry.blocksByName.air.minStateId })
+    skills.stop()
+  }
+  await assert.rejects(skills.execute('escape_upward'), /interrupted/)
+  assert.equal(dug, 1)
+  assert.equal(bot.entity.position.y, 64)
+  assert.equal(bot._client.listenerCount('block_change'), 0)
 })
