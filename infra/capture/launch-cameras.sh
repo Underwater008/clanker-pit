@@ -7,6 +7,8 @@ require_capture_region 10 0 0 3840 1440
 exec > >(tee -a /workspace/arena/logs/launch-cameras.log) 2>&1
 echo "=== launch-cameras $(date -u +%FT%TZ) ==="
 
+pkill -TERM -f '^python3 /workspace/arena/capture/run-native-view.py ' 2>/dev/null || true
+sleep 3
 pkill -f "net.minecraft.client.main.Main" 2>/dev/null || true
 sleep 3
 for s in cammira camtally camarena camcinder camvex; do tmux kill-session -t "$s" 2>/dev/null || true; done
@@ -22,7 +24,13 @@ native() { # contestant port x y session
   mkdir -p "/workspace/arena/cameras/View$1"
   cp -f /workspace/arena/capture/options.txt "/workspace/arena/cameras/View$1/options.txt"
   tmux new-session -d -s "$5" "python3 /workspace/arena/capture/run-native-view.py $1 $2 $3 $4 2>&1 | tee /workspace/arena/logs/client-View$1.log"
-  sleep 8
+  # This pod has about four CPU cores. Wait for each renderer to finish its
+  # expensive startup before launching the next one.
+  for _ in $(seq 1 120); do
+    if jq -e '.viewer == true' "/workspace/arena/bot-state/mirror-$1.json" >/dev/null 2>&1; then return; fi
+    sleep 2
+  done
+  echo "Native $1 still loading; supervisor will keep retrying"
 }
 native Mira 25582 0 0 cammira
 native Tally 25583 1280 0 camtally

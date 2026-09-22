@@ -660,7 +660,11 @@ export function installSurvival(bot, state, log) {
     }
     if (action === 'explore') {
       const p = bot.entity.position
-      const angle = scoutStep * 2.39996 + (bot.username.charCodeAt(0) % 6)
+      // Walk toward visible resources before choosing a blind scouting bearing.
+      const landmark = nearbyBlock((b) => isLog(b.name), 64)
+      const angle = landmark
+        ? Math.atan2(landmark.position.z - p.z, landmark.position.x - p.x)
+        : scoutStep * 2.39996 + (bot.username.charCodeAt(0) % 6)
       const goal = new goals.GoalNearXZ(
         Math.floor(p.x + Math.cos(angle) * 12),
         Math.floor(p.z + Math.sin(angle) * 12),

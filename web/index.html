@@ -276,7 +276,7 @@
   };
   var url = function (feed) { return BASE + '/' + feed + '/index.m3u8'; };
 
-  var state = { mode: 'arena', pov: 'cinder' };
+  var state = { mode: 'pov', pov: 'mira' };
   var live = { instances: [] };
 
   function killAll() {
@@ -443,7 +443,7 @@
     else if (mode === 'grid') showGrid();
     else showSingle(state.pov);
     if (history.replaceState) {
-      var q = mode === 'pov' ? '?v=' + state.pov : mode === 'grid' ? '?v=grid' : '';
+      var q = mode === 'pov' ? '?v=' + state.pov : '?v=' + mode;
       history.replaceState(null, '', q);
     }
   }
@@ -451,11 +451,12 @@
     b.addEventListener('click', function () { setMode(b.dataset.mode); });
   });
 
-  /* deep link: ?v=grid|cinder|vex|mira|tally */
+  /* deep link: ?v=arena|grid|cinder|vex|mira|tally */
   var initial = (location.search.match(/v=([a-z]+)/) || [])[1];
   if (initial === 'grid') setMode('grid');
+  else if (initial === 'arena') setMode('arena');
   else if (BOTS.indexOf(initial) !== -1) setMode('pov', initial);
-  else setMode('arena');
+  else setMode('pov', 'mira');
 })();
 </script>
 </body>

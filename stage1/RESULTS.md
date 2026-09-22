@@ -117,7 +117,27 @@ Minecraft client. Raw Xorg capture showed native hearts, hunger, hotbar and hand
 corresponding to the bot. Reconnect testing found and fixed a partial player-info
 update that previously overwrote cached profiles with undefined values.
 
-The main-world starting area was a largely treeless coastline. An operator
-terrain query found forest around (-529, -70), roughly 192 blocks from Cinder.
-Moving the starting camp into that existing forest is arena setup, not a bot
-achievement. No model benchmark claim is based on that setup.
+The original starting area was a largely treeless coastline. A biome query
+returned forest around (-529, -70), but the fresh world's ground there was
+flooded. Biome labels alone are insufficient for selecting a safe spawn.
+
+The user authorized a new round. The old `server/world` remains intact, with
+controller/config/state backups under `backups/round-20260921-native` on the pod.
+The active world is `round-20260921-native`, with the same seed, normal
+difficulty and a running daylight cycle. Operators moved the cast to a dry
+cherry grove, restored health/hunger for the start, and set spawn near
+(-113, 117, -1225). These are round setup actions, not bot achievements.
+
+Live Kimi/Jev decisions subsequently gathered real cherry logs and crafted
+planks, sticks and workbenches. Mira placed a workbench; inventory deltas and
+server block updates verified the actions. A raw capture of Mira's official
+client showed the cherry grove and native hearts, hunger, hand and hotbar.
+
+`lab-navigation.mjs` also verified a detour around an unbreakable three-high
+wall and excavation through a dirt barrier in a closed corridor. RCON confirmed
+both dirt blocks became air and the player reached the other side. This is a
+deterministic motor-skill test, separate from live model decisions.
+
+The pod has a 4.25-core CPU quota. Concurrent renderer startup caused tick lag
+and false watchdog reconnects. Camera startup is now staggered until each
+native viewer joins; heartbeat and bot timeout tolerances cover cold starts.

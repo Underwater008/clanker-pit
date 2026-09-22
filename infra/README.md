@@ -141,3 +141,16 @@ Validation:
 
 The bots use structured local game state. Their native video is a viewer feed;
 this implementation does not claim the models are playing from screenshots.
+
+`lab-navigation.mjs` uses that same isolated lab to verify obstacle detours and
+server-confirmed excavation. Normal movement may clear ordinary terrain; it
+preserves player-built planks, workbenches and furnaces. Routes with no progress
+are cancelled after four seconds, excluding active digging. Scouting prefers
+visible wood before a blind heading. Nearby enemies and hunger trigger bounded
+safety actions without waiting for a planner response.
+
+The production round selected on 2026-09-21 is `round-20260921-native`, with a
+dry cherry-grove spawn near (-113, 117, -1225). The old `world` directory and
+`backups/round-20260921-native` are retained. Bootstrap preserves existing
+`server.properties` so it cannot silently switch back to the old beach world.
+Player POV is the website default; `?v=arena` explicitly selects the wide camera.

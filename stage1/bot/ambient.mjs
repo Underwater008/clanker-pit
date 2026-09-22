@@ -303,6 +303,7 @@ function actor(name, index) {
       username: name,
       auth: 'offline',
       hideErrors: true,
+      checkTimeoutInterval: 120000,
       viewDistance: 6,
     })
     mirror?.attach(bot)

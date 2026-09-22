@@ -42,7 +42,7 @@ try:
             state = json.loads(state_path.read_text())
         except (OSError, ValueError):
             state = {}
-        ready = state.get('ready') and time.time() * 1000 - state.get('updated', 0) < 15000
+        ready = state.get('ready') and time.time() * 1000 - state.get('updated', 0) < 120000
         if process and state.get('viewer'):
             joined = True
         if process and (not ready or generation != state.get('generation')):
