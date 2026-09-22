@@ -1,7 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
+import mc from 'minecraft-protocol'
 import {
   MirrorCache,
+  createNativeMirror,
   wrapAngle,
   chaseAngle,
   interpolatePositionAt,
@@ -66,4 +69,52 @@ test('MirrorCache still stores singleton packets', () => {
   assert.deepEqual(cache.base.get('login'), { entityId: 1 })
   cache.accept('respawn', { dimension: 'overworld' })
   assert.equal(cache.chunks.size, 0)
+})
+
+test('late native viewers receive the chunk-loading event after world setup and before chunks', (t) => {
+  const server = new EventEmitter()
+  server.close = () => {}
+  t.mock.method(mc, 'createServer', () => server)
+  const mirror = createNativeMirror({ port: 0, name: 'Test' })
+  t.after(() => mirror.close())
+
+  const bot = new EventEmitter()
+  bot._client = new EventEmitter()
+  bot._client.write = () => {}
+  bot.entity = { id: 1, position: { x: 0.5, y: 64, z: 0.5 }, yaw: 0, pitch: 0 }
+  bot.entities = {}
+  mirror.attach(bot)
+  const receive = (name, data) => bot._client.emit('packet', data, { name, state: 'play' })
+  receive('login', { entityId: 1 })
+  // The real server sends this before any native viewer is connected.
+  receive('game_state_change', { reason: 13, gameMode: 0 })
+  receive('map_chunk', { x: 0, z: 0 })
+  bot.emit('spawn')
+
+  function joinViewer() {
+    const viewer = new EventEmitter()
+    const packets = []
+    viewer.state = 'play'
+    viewer.serializer = { createPacketBuffer: (packet) => packet }
+    viewer.writeRaw = (packet) => packets.push(packet)
+    viewer.end = () => { viewer.state = 'disconnected'; viewer.emit('end') }
+    server.emit('playerJoin', viewer)
+    return packets
+  }
+  function assertLoadingOrder(packets, afterRespawn = false) {
+    const names = packets.map((p) => p.name)
+    const events = packets.filter((p) => p.name === 'game_state_change')
+    assert.deepEqual(events, [{ name: 'game_state_change', params: { reason: 13, gameMode: 0 } }])
+    const start = names.indexOf('game_state_change')
+    assert.ok(start > names.indexOf('login'))
+    if (afterRespawn) assert.ok(start > names.indexOf('respawn'))
+    assert.ok(start < names.indexOf('map_chunk'))
+    assert.equal(packets.find((p) => p.name === 'position').params.y, 64)
+  }
+  assertLoadingOrder(joinViewer())
+  // The event must be repeated for a replacement display and must follow a
+  // cached respawn; replaying it earlier would reset the client's load state.
+  receive('respawn', { dimension: 'overworld' })
+  receive('map_chunk', { x: 0, z: 0 })
+  assertLoadingOrder(joinViewer(), true)
 })

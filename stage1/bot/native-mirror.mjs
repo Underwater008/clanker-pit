@@ -332,6 +332,10 @@ export function createNativeMirror({ port, name, statePath, log = () => {} }) {
     client.on('error', (e) => log('mirror_client_error', { error: String(e) }))
     send('login', { ...cache.base.get('login'), enforcesSecureChat: false })
     for (const [n, d] of cache.base) if (n !== 'login') send(n, d)
+    // This one-shot server event happened before the display connected. In
+    // 1.21.1 the client needs it after login/respawn to leave Loading terrain
+    // as soon as its chunk is ready, rather than waiting for a 30s timeout.
+    send('game_state_change', { reason: 13, gameMode: 0 })
     for (const p of cache.players.values()) {
       const { actions, ...d } = p
       send('player_info', { action: actions, data: [d] })
