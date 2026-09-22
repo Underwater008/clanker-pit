@@ -121,7 +121,15 @@ test('a turn ends on timeout and an idle guest frees the slot', () => {
   advance(20_000)
   const { spawn } = queue.tick()
   queue.markSpawned('Ada')
-  // No input ever arrives: idle end fires before the hard cap.
+  // Camera startup does not count as idling, even if it takes a while.
+  advance(46_000)
+  assert.equal(queue.tick().end, undefined)
+  queue.markCameraReady('wrong-token')
+  assert.equal(queue.active.cameraReadyAt, undefined)
+  queue.markCameraReady(spawn.token)
+  assert.equal(queue.active.cameraReadyAt, queue.active.lastInputAt)
+  assert.equal(queue.tick().end, undefined)
+  // Once the camera connects, no input frees the slot before the hard cap.
   advance(46_000)
   const idle = queue.tick()
   assert.equal(idle.end.reason, 'idle')

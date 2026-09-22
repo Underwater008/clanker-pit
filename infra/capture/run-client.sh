@@ -24,6 +24,15 @@ ROOT=/workspace/arena/client
 GDIR=/workspace/arena/cameras/$NAME
 mkdir -p "$GDIR"
 cp -n /workspace/arena/capture/options.txt "$GDIR/options.txt" 2>/dev/null || true
+if [ "$NAME" = ViewGuest ]; then
+  # Only the human guest camera hides Minecraft's survival HUD. The website
+  # supplies the turn timer, BOOM control, and aiming mark.
+  if grep -q '^hideGui:' "$GDIR/options.txt"; then
+    sed -i 's/^hideGui:.*/hideGui:true/' "$GDIR/options.txt"
+  else
+    printf 'hideGui:true\n' >> "$GDIR/options.txt"
+  fi
+fi
 
 META=$(cat "$ROOT/meta.json")
 VERSION=$(echo "$META" | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])")

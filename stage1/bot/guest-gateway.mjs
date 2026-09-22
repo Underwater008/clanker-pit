@@ -105,15 +105,17 @@ function writeGuestState() {
 function publicStatus() {
   let mirrorState = null
   try { mirrorState = JSON.parse(readFileSync(MIRROR_STATE, 'utf8')) } catch {}
+  const camera = guestCameraStatus({
+    active: Boolean(queue.active),
+    attachedAt: guestBot ? guestMirrorAttachedAt : null,
+    mirror: mirrorState,
+  })
+  if (camera.ready) queue.markCameraReady(queue.active?.token)
   return {
     ...queue.status(),
     feed: 'guest',
     gateReady: Boolean(anatomy),
-    camera: guestCameraStatus({
-      active: Boolean(queue.active),
-      attachedAt: guestBot ? guestMirrorAttachedAt : null,
-      mirror: mirrorState,
-    }),
+    camera,
   }
 }
 
@@ -211,23 +213,21 @@ async function placeAtGate(botName) {
   )
 }
 
-async function wearCreeperHead(bot) {
-  const item = bot.registry.itemsByName.creeper_head
-  if (!item) return
-  const response = await withRcon((client) =>
-    client.send(`give ${bot.username} minecraft:creeper_head 1`),
-  )
-  if (response == null) {
-    log('costume_failed', { bot: bot.username })
-    return
-  }
-  for (let i = 0; i < 20; i++) {
-    const head = bot.inventory.items().find((it) => it.name === 'creeper_head')
-    if (head) {
-      await bot.equip(head, 'head').catch((e) => log('equip_failed', { error: String(e) }))
-      return
-    }
-    await sleep(250)
+async function wearCreeperCostume(bot) {
+  // A vanilla player remains a player entity; green armor hides the default
+  // body skin while the creeper head makes the guest recognizable on camera.
+  const slots = [
+    ['head', 'minecraft:creeper_head'],
+    ['chest', 'minecraft:leather_chestplate[minecraft:dyed_color={rgb:5614165}]'],
+    ['legs', 'minecraft:leather_leggings[minecraft:dyed_color={rgb:5614165}]'],
+    ['feet', 'minecraft:leather_boots[minecraft:dyed_color={rgb:5614165}]'],
+  ]
+  for (const [slot, item] of slots) {
+    const response = await withRcon((client) =>
+      client.send(`item replace entity ${bot.username} armor.${slot} with ${item} 1`),
+    )
+    if (!response || /no entity|error|invalid|unknown/i.test(response))
+      log('costume_failed', { bot: bot.username, slot, response: response ?? null })
   }
 }
 
@@ -326,7 +326,7 @@ function spawnGuest(entry) {
       finish('left')
       return
     }
-    await wearCreeperHead(bot)
+    await wearCreeperCostume(bot)
     if (ended || queue.active?.token !== entry.token) return
     emitChat('gate', `${entry.nickname} became a creeper near the front gate.`)
     writeGuestState()

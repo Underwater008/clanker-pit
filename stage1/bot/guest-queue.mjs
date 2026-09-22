@@ -168,7 +168,7 @@ export class GuestQueue {
         return { end: { entry, reason: 'timeout' } }
       }
       if (
-        this.active.spawned &&
+        this.active.cameraReadyAt &&
         now - (this.active.lastInputAt ?? this.active.startedAt) > this.idleEndMs
       ) {
         const entry = this.active
@@ -197,6 +197,15 @@ export class GuestQueue {
     if (!this.active || (token && this.active.token !== token)) return
     this.active.botName = botName
     this.active.spawned = true
+  }
+
+  /** Camera startup is not player idling. Start the idle clock when the
+   * guest can first see and control the game. */
+  markCameraReady(token = null) {
+    if (!this.active || (token && this.active.token !== token)) return
+    if (this.active.cameraReadyAt) return
+    this.active.cameraReadyAt = this.now()
+    this.active.lastInputAt = this.active.cameraReadyAt
   }
 
   /** Explicit turn end: boom, death, or the human disconnected. */

@@ -97,7 +97,11 @@
       overlay(true, 'SIGNAL', 'Tuning the feed…', false);
       setLive(false);
       if (window.Hls && Hls.isSupported()) {
-        inst.hls = new Hls({
+        inst.hls = new Hls(feed === 'guest' ? {
+          lowLatencyMode: true, liveSyncDurationCount: 1,
+          liveMaxLatencyDurationCount: 3, maxBufferLength: 3, backBufferLength: 2,
+          maxLiveSyncPlaybackRate: 1.5
+        } : {
           lowLatencyMode: true, liveSyncDurationCount: 3,
           liveMaxLatencyDurationCount: 10, maxBufferLength: 8, backBufferLength: 4
         });
@@ -749,6 +753,7 @@
     yaw: null, pitch: 0,
     dirty: true,
     lastSend: 0,
+    inputInFlight: false,
     boomed: false,
     wasActive: false,
     touch: 'ontouchstart' in window,
@@ -766,18 +771,21 @@
     }
   };
 
-  function guestPost(path, payload) {
+  function guestPost(path, payload, timeoutMs) {
+    var controller = timeoutMs && window.AbortController ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs) : null;
     return fetch(API_BASE + path, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload || {})
+      body: JSON.stringify(payload || {}),
+      signal: controller ? controller.signal : undefined
     }).then(function (r) {
       return r.json().catch(function () { return { error: 'bad response' }; })
         .then(function (body) {
           if (!r.ok) throw body || { error: r.status };
           return body;
         });
-    });
+    }).finally(function () { if (timer) clearTimeout(timer); });
   }
 
   function guestStatus() {
@@ -843,6 +851,7 @@
     $('touchPad').hidden = !(controlsReady && guest.touch);
     $('clickCatch').hidden = !(controlsReady && !guest.touch && document.pointerLockElement !== singleVideo);
     $('guestCameraOverlay').hidden = !turn || cameraReady;
+    $('guestCrosshair').hidden = !controlsReady;
     $('playHelp').hidden = !turn;
     $('boomBtn').disabled = guest.boomed || !cameraReady;
     $('boomBtn').hidden = !cameraReady;
@@ -937,6 +946,15 @@
       guest.yaw = (guest.yaw === null ? 0 : guest.yaw) - e.movementX * LOOK_SENS;
       guest.pitch = clampPitch(guest.pitch - e.movementY * LOOK_SENS);
       guest.dirty = true;
+    }
+  });
+  document.addEventListener('mousedown', function (e) {
+    // Pointer lock hides the cursor, so the visible BOOM button cannot be
+    // clicked while steering. A deliberate left click then fires the same
+    // one-shot action; the first click that acquires lock does not fire it.
+    if (e.button === 0 && document.pointerLockElement === singleVideo && guest.canControl()) {
+      e.preventDefault();
+      sendBoom();
     }
   });
   function clampPitch(p) { return Math.max(-MAX_PITCH, Math.min(MAX_PITCH, p)); }
@@ -1034,12 +1052,13 @@
   }
 
   setInterval(function () {
-    if (!guest.turnLive() || !guest.token) return;
+    if (!guest.canControl() || !guest.token || guest.inputInFlight || guest.boomed) return;
     var now = Date.now();
     var wantSend = guest.dirty || now - guest.lastSend > 500;
     if (!wantSend || now - guest.lastSend < 80) return;
     guest.lastSend = now;
     guest.dirty = false;
+    guest.inputInFlight = true;
     // Normalize yaw before sending: the gateway bounds it at ±8π and the
     // browser accumulates without limit while dragging.
     var yaw = guest.yaw;
@@ -1048,7 +1067,7 @@
       token: guest.token,
       keys: snapshotKeys(),
       look: guest.cameraReady() ? { yaw: yaw === null ? undefined : yaw, pitch: guest.pitch } : undefined
-    }).catch(function () {});
+    }, 2500).catch(function () {}).finally(function () { guest.inputInFlight = false; });
   }, 40);
 
   // ---------- QR chip ----------
