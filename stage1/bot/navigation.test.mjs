@@ -449,3 +449,18 @@ test('a clanker already on an open outdoor bank clears stale underground recover
     boundingBox: p.y < 64 ? 'block' : 'empty' })
   assert.equal(skills.candidates(skills.observation()).escape_upward, undefined)
 })
+
+test('a drowned behind a solid wall does not keep villagers fleeing', () => {
+  const { bot, skills, state } = fixture({ village: {
+    flag: new Vec3(0, 63, 0), lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false,
+  } })
+  state.role = 'farmer'
+  bot.entities[2] = { id: 2, name: 'drowned', position: new Vec3(5.5, 64, 0.5) }
+  const original = bot.blockAt.bind(bot)
+  bot.blockAt = (p) => p.floored().equals(new Vec3(2, 65, 0))
+    ? { position: p.floored(), name: 'stone', boundingBox: 'block' }
+    : original(p)
+  assert.equal(skills.emergency(), null)
+  bot.blockAt = original
+  assert.equal(skills.emergency(), 'flee')
+})

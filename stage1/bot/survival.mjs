@@ -442,7 +442,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     if (!bot.entity || bot.health <= 0) return null
     // A guard buried below stone cannot fight a spider overhead. Do not let
     // that unreachable target starve escape; contact/recent damage still wins.
-    const danger = (entity) => !escapeTarget() || Date.now() - lastHurtAt < 2500 ||
+    const danger = (entity) => Date.now() - lastHurtAt < 2500 ||
       entity.position.distanceTo(bot.entity.position) < 2 || sightToThreat(bot, entity)
     const visibleThreats = threats().filter(danger)
     const closeThreats = visibleThreats.filter(
@@ -1123,6 +1123,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       ...Object.values(bot.entities).filter(
         (e) =>
           hostiles.has(e.name) &&
+          (e.position.distanceTo(bot.entity.position) < 2 || sightToThreat(bot, e)) &&
           (e.position.distanceTo(bot.entity.position) < 12 ||
             e.position.distanceTo(villageCtx.flag) < 12),
       ),
