@@ -89,6 +89,9 @@ export function wallReinforcementBlueprint(flag) {
     for (let z = -R; z <= R; z++) {
       if (Math.abs(x) !== R && Math.abs(z) !== R) continue
       if (z === R && Math.abs(x) <= GATE_HALF_WIDTH) continue
+      // The south-east corner is a one-block service pocket. Building into it
+      // after the neighboring runs are up leaves no reachable placement face.
+      if (x === R && z === R) continue
       for (let h = 1; h <= WALL_HEIGHT; h++)
         if (!reserved.has(`${f.x + x},${f.y + h},${f.z + z}`))
           positions.push(plus(flag, x, h, z))

@@ -87,6 +87,9 @@ test('the finite wall upgrade uses graded ground without sealing homes or the ga
   for (const p of reinforcement)
     if (p.z === flag.z + WALL_RADIUS - 1)
       assert.ok(Math.abs(p.x - flag.x) > GATE_HALF_WIDTH, `inner gate blocked at ${p}`)
+  assert.ok(!reinforcement.some((p) =>
+    p.x === flag.x + WALL_RADIUS - 1 && p.z === flag.z + WALL_RADIUS - 1),
+  'south-east service pocket stays open for placement access')
 })
 
 test('torch spots sit on reachable wall tops including beside the gate, without duplicates', () => {
