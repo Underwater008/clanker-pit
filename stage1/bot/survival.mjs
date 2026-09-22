@@ -966,9 +966,15 @@ export function installSurvival(bot, state, log, opts = {}) {
   async function tendFarm() {
     const plot = layout.farm.find((p) => {
       const { ground, crop } = farmStage(p)
-      return ['grass_block', 'dirt'].includes(ground?.name) && crop?.name === 'air'
+      return ['grass_block', 'dirt'].includes(ground?.name) &&
+        ['air', 'short_grass', 'tall_grass'].includes(crop?.name)
     })
     if (!plot) throw new Error('No untilled clear plot in the planned farm')
+    await reach(bot.blockAt(plot))
+    const grass = bot.blockAt(plot.offset(0, 1, 0))
+    if (grass?.name !== 'air') await dig(grass)
+    if (bot.blockAt(plot.offset(0, 1, 0))?.name !== 'air')
+      throw new Error('Farm plot still has an obstruction')
     return { ...await useToolOnGround(plot, '_hoe', 'farmland'), farm: true }
   }
   async function sowWheat() {
@@ -996,8 +1002,13 @@ export function installSurvival(bot, state, log, opts = {}) {
   async function paveRoad() {
     const spot = layout.roads.find((p) =>
       ['grass_block', 'dirt'].includes(bot.blockAt(p)?.name) &&
-      bot.blockAt(p.offset(0, 1, 0))?.name === 'air')
+      ['air', 'short_grass', 'tall_grass'].includes(bot.blockAt(p.offset(0, 1, 0))?.name))
     if (!spot) throw new Error('No unpaved clear lane in the village plan')
+    await reach(bot.blockAt(spot))
+    const grass = bot.blockAt(spot.offset(0, 1, 0))
+    if (grass?.name !== 'air') await dig(grass)
+    if (bot.blockAt(spot.offset(0, 1, 0))?.name !== 'air')
+      throw new Error('Road spot still has an obstruction')
     return { ...await useToolOnGround(spot, '_shovel', 'dirt_path'), road: true }
   }
   const oreNearby = () => nearbyBlock((b) => ironOreNames.has(b.name), 16)

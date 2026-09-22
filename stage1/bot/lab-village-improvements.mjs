@@ -47,6 +47,8 @@ try {
   await sleep(1000)
 
   const plot = farmPlots(flag)[0]
+  await command(`setblock ${plot.x} ${plot.y + 1} ${plot.z} short_grass`)
+  await sleep(300)
   console.log('LAB_STAGE till')
   assert.ok(skills.candidates(skills.observation()).till_farm, 'farm must be offered')
   assert.equal((await skills.execute('till_farm')).changed, 'farmland')
@@ -60,6 +62,8 @@ try {
     'mature wheat must reach inventory')
 
   const road = roadSpots(flag)[0]
+  await command(`setblock ${road.x} ${road.y + 1} ${road.z} short_grass`)
+  await sleep(300)
   console.log('LAB_STAGE road')
   assert.equal((await skills.execute('pave_road')).changed, 'dirt_path')
   await assertBlock(road, 'dirt_path')
