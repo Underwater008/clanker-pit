@@ -179,7 +179,7 @@ const mirror = createNativeMirror({
   port: MIRROR_PORT,
   name: 'Guest',
   statePath: join(DATA_DIR, 'mirror-Guest.json'),
-  log: (event, data) => log('mirror', event, data),
+  log: (event, data) => log(event, { component: 'guest_mirror', ...data }),
 })
 let guestBot = null
 let boomLatched = false
@@ -271,6 +271,9 @@ function spawnGuest(entry) {
     checkTimeoutInterval: 60000,
     viewDistance: 6,
   })
+  // Attach before login/configuration packets and the first spawn event.
+  // Attaching inside spawn misses both the initial cache and ready transition.
+  mirror.attach(bot)
   guestBot = bot
   let ended = false
   const finish = (reason) => {
@@ -285,7 +288,6 @@ function spawnGuest(entry) {
       return
     }
     queue.markSpawned(botName, entry.token)
-    mirror.attach(bot)
     log('guest_spawned', { nickname: entry.nickname, botName, position: bot.entity.position })
     // Place the guest at the front gate, verified. The bot spawns at world
     // spawn (outside the gate by round design), but an unverified teleport

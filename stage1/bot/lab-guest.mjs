@@ -56,6 +56,12 @@ async function arrive(nickname) {
   assert.equal(joined.status, 200)
   const token = joined.body.token
   await until(async () => (await request('input', { token, keys: {} })).status === 200, 40000)
+  const mirror = await until(() => {
+    const state = JSON.parse(readFileSync(join(data, 'mirror-Guest.json'), 'utf8'))
+    return state.ready && state.port === 25694 ? state : null
+  }, 15000)
+  assert.equal(mirror.name, 'Guest')
+  assert.equal(mirror.ready, true, 'Guest mirror must be ready during an active turn')
   return token
 }
 try {
@@ -85,7 +91,7 @@ try {
   assert.equal((await request('status')).body.active, null)
   await until(async () => !(await rcon.send('list')).includes('GuestLeaveLab'))
   console.log(JSON.stringify({ event: 'GUEST_LAB_PASS', movement: true, confirmedExplosions: 1,
-    repeatRejected: true, persistedAcrossRestart: true, activeLeave: true }))
+    repeatRejected: true, persistedAcrossRestart: true, activeLeave: true, nativeMirrorReady: true }))
 } catch (error) {
   console.error(logs.join('').slice(-14000))
   throw error
