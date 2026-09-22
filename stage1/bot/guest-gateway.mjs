@@ -557,11 +557,16 @@ setInterval(() => {
 // every feed genuinely consume the bot's water.
 setInterval(() => {
   if (!anatomy) return
-  void withRcon((client) =>
-    client.send(
-      `execute if block ${anatomy.deposit.x} ${anatomy.deposit.y} ${anatomy.deposit.z} minecraft:water_cauldron[level=3] run setblock ${anatomy.deposit.x} ${anatomy.deposit.y} ${anatomy.deposit.z} minecraft:cauldron`,
-    ),
-  )
+  void withRcon(async (client) => {
+    const deposit = `${anatomy.deposit.x} ${anatomy.deposit.y} ${anatomy.deposit.z}`
+    const base = `${anatomy.depositBase.x} ${anatomy.depositBase.y} ${anatomy.depositBase.z}`
+    // Rain can leave a partial cauldron too; empty any water level. If a
+    // creeper destroyed the fixture, restore only missing blocks.
+    await client.send(`execute if block ${deposit} minecraft:water_cauldron run setblock ${deposit} minecraft:cauldron`)
+    await client.send(`execute if block ${base} minecraft:air run setblock ${base} minecraft:stone`)
+    const repaired = await client.send(`execute if block ${deposit} minecraft:air if block ${base} minecraft:stone run setblock ${deposit} minecraft:cauldron`)
+    if (/^Changed the block/.test(repaired)) log('deposit_repaired', { position: anatomy.deposit })
+  })
 }, 20000)
 
 function stop() {

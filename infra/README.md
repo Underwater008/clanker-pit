@@ -272,7 +272,8 @@ round at a fresh site.
 The cast spawns around the Server, builds the wall/gate/homes from blueprints
 in `village.mjs` (standing ON the graded ground), feeds coolant (a
 server-confirmed water-bucket deposit into the cauldron; the water is genuinely consumed and the
-guest gateway empties the cauldron on the Server's behalf ~20 s later — a
+guest gateway empties the cauldron on the Server's behalf within 20 s and
+restores the deposit if a blast removed it — a
 labeled match-controller mechanic that doubles as the visible "server
 drinks" moment), and every `FLAG_WATER_TARGET` buckets boots one new
 villager from `VILLAGER_POOL` (cap `MAX_POPULATION`, restored after
