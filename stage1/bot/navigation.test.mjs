@@ -203,6 +203,20 @@ test('navigation preserves both current and archived shelter blocks, including d
   assert.equal(forbidden({ name: 'dirt', position: new Vec3(20, 64, 20) }), 0)
 })
 
+test('village navigation does not excavate the graded floor or trample planned farmland', () => {
+  const flag = new Vec3(0, 64, 0)
+  const { bot } = fixture({ village: {
+    flag, lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false,
+  } })
+  bot.emit('spawn')
+  const movements = bot.pathfinder.movements
+  const forbidden = movements.exclusionAreasBreak[0]
+  assert.equal(forbidden({ name: 'dirt', position: flag.offset(1, 0, 5) }), 100)
+  assert.equal(forbidden({ name: 'dirt', position: flag.offset(0, 0, 12) }), 100)
+  assert.equal(forbidden({ name: 'dirt', position: flag.offset(20, 0, 20) }), 0)
+  assert.equal(movements.exclusionAreasStep[0]({ name: 'farmland', position: flag.offset(2, 0, 12) }), 100)
+})
+
 test('resource scans preserve construction logs but still see a workbench built into a shelter', () => {
   const table = new Vec3(4, 65, 4)
   const { skills } = fixture({

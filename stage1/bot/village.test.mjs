@@ -14,6 +14,9 @@ import {
   homeExtensionBlueprint,
   serverAnatomy,
   patrolNodes,
+  farmPlots,
+  roadSpots,
+  blastHoleTargets,
   rotateXZ,
   blueprintProgress,
   createVillageState,
@@ -28,6 +31,48 @@ import {
 
 const flag = new Vec3(100, 64, -200)
 const key = (p) => `${p.x},${p.y},${p.z}`
+
+test('farm and paths fit the graded village and avoid fixtures', () => {
+  const plots = farmPlots(flag), roads = roadSpots(flag), a = serverAnatomy(flag)
+  assert.equal(plots.length, 8)
+  assert.equal(roads.length, 16)
+  assert.equal(new Set([...plots, ...roads].map(key)).size, 24)
+  const fixtures = new Set([flag, ...a.spring, a.basinFloor].map(key))
+  const occupied = new Set(HOME_LOTS.flatMap((_, i) => [
+    ...homeBlueprint(homeLot(flag, i), flag), ...homeExtensionBlueprint(flag, i),
+  ]).filter((p) => p.y === flag.y + 1).map((p) => `${p.x},${p.z}`))
+  for (const p of [...plots, ...roads]) {
+    assert.ok(!fixtures.has(key(p)))
+    assert.ok(!occupied.has(`${p.x},${p.z}`), `route or plot under home at ${p}`)
+    assert.ok(p.z <= flag.z + WALL_RADIUS + 6)
+    if (p.z > flag.z + WALL_RADIUS) assert.ok(Math.abs(p.x - flag.x) <= 2)
+  }
+  for (const p of plots)
+    assert.ok(a.spring.some((s) => Math.max(Math.abs(s.x - p.x), Math.abs(s.z - p.z)) <= 4),
+      `plot ${p} needs coolant-spring irrigation`)
+})
+
+test('blast repair finds shallow dry openings and leaves deep caves and fixtures alone', () => {
+  const holes = new Set([
+    key(flag.offset(0, 0, 4)), key(flag.offset(0, -1, 4)),
+    key(flag.offset(0, 0, 5)), key(flag.offset(0, -1, 5)),
+    key(flag.offset(0, -2, 5)), key(flag.offset(2, 0, 12)),
+    key(flag.offset(0, 0, 6)), key(flag.offset(0, -1, 6)),
+    key(flag.offset(0, -2, 6)), key(flag.offset(0, -3, 6)),
+    key(flag.offset(0, -4, 6)),
+  ])
+  const water = new Set(serverAnatomy(flag).spring.map(key))
+  const blockAt = (p) => ({
+    name: water.has(key(p)) ? 'water' : holes.has(key(p)) ? 'air' : p.y > flag.y ? 'air' : 'dirt',
+    boundingBox: p.y > flag.y || holes.has(key(p)) || water.has(key(p)) ? 'empty' : 'block',
+  })
+  const targets = blastHoleTargets(flag, blockAt).map(key)
+  assert.ok(targets.includes(key(flag.offset(0, -1, 4))))
+  assert.ok(targets.includes(key(flag.offset(0, -2, 5))))
+  assert.ok(targets.includes(key(flag.offset(2, 0, 12)))) // farm soil can be repaired
+  assert.ok(!targets.includes(key(flag.offset(0, -4, 6)))) // too deep
+  assert.ok(!targets.some((p) => water.has(p)))
+})
 
 test('wall ring stands on the ground, has no duplicates, and leaves a gate gap', () => {
   const wall = wallBlueprint(flag)

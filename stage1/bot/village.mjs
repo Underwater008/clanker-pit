@@ -27,10 +27,10 @@ export const COUNCIL_INTERVAL = Math.max(
 export const ROLES = ['guard', 'builder', 'smith', 'coolant', 'farmer']
 export const ROLE_LABELS = {
   guard: 'Guard — patrol the wall, intercept creepers and hostile players near the Server',
-  builder: 'Builder — raise and reinforce the wall, enlarge homes on safe lots, and repair blast damage',
+  builder: 'Builder — raise and reinforce the wall, enlarge homes, repair blast holes, and pave finite roads',
   smith: 'Smith — keep tools, weapons, torches, and buckets in supply',
   coolant: 'Coolant Engineer — fetch water and feed the Server so it can boot villagers',
-  farmer: 'Farmer — keep everyone fed; hunt, gather, and replant',
+  farmer: 'Farmer — tend the spring-fed wheat plots, harvest bread, and keep everyone fed',
 }
 
 // Names for villagers the Server boots. Initial cast comes from BOT_NAMES.
@@ -264,6 +264,54 @@ export function patrolNodes(flag) {
     [R, R - 1], [R - 1, -R], [-R, -R + 1], [-R + 1, R - 1], [0, R - 1],
   ]
   return points.map(([x, z]) => plus(flag, x, 0, z))
+}
+
+/** Eight irrigated plots on the graded verge beside the coolant spring. The
+ * center lane remains clear for guests and villagers; no new water is needed. */
+export function farmPlots(flag) {
+  return [-2, 2].flatMap((x) => [11, 12, 13, 14].map((z) => plus(flag, x, 0, z)))
+}
+
+/** A small, fixed set of dirt paths. These never consume land indefinitely. */
+export function roadSpots(flag) {
+  const offsets = [
+    ...Array.from({ length: 10 }, (_, i) => [0, i + 1]),
+    ...Array.from({ length: 4 }, (_, i) => [0, -i - 1]),
+    [-1, 0], [-2, 0],
+  ]
+  return offsets.map(([x, z]) => plus(flag, x, 0, z))
+}
+
+/** Inspect only the locally loaded graded floor. Return bottom-up fill cells
+ * for shallow dry holes; leave homes, fixtures, water, and deep caves alone. */
+export function blastHoleTargets(flag, blockAt) {
+  const f = v(flag), anatomy = serverAnatomy(f)
+  const reserved = new Set([
+    f, anatomy.basinFloor, ...anatomy.spring,
+    ...HOME_LOTS.flatMap((_, i) => {
+      const lot = homeLot(f, i)
+      return [lot, ...homeBlueprint(lot, f), ...homeExtensionBlueprint(f, i)]
+    }),
+  ].map((p) => `${p.x},${p.z}`))
+  const out = []
+  for (let z = -WALL_RADIUS; z <= WALL_RADIUS + 6; z++)
+    for (let x = -WALL_RADIUS; x <= WALL_RADIUS; x++) {
+      if (z > WALL_RADIUS && Math.abs(x) > 2) continue
+      if (reserved.has(`${f.x + x},${f.z + z}`)) continue
+      const top = plus(f, x, 0, z)
+      const above = blockAt(top.offset(0, 1, 0))
+      if (!above || above.boundingBox === 'block') continue
+      if (blockAt(top)?.name !== 'air') continue
+      let bottom = null, unsafe = false
+      for (let depth = 1; depth <= 4; depth++) {
+        const p = top.offset(0, -depth, 0), block = blockAt(p)
+        if (!block || ['water', 'lava'].includes(block.name)) { unsafe = true; break }
+        if (block.boundingBox === 'block') { bottom = p.offset(0, 1, 0); break }
+        if (block.name !== 'air') { unsafe = true; break }
+      }
+      if (!unsafe && bottom) out.push(bottom)
+    }
+  return out
 }
 
 /** Build progress helper: how many blueprint positions are already solid. */

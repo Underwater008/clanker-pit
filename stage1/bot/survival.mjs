@@ -13,6 +13,10 @@ import {
   HOME_LOTS,
   serverAnatomy,
   patrolNodes,
+  farmPlots,
+  roadSpots,
+  blastHoleTargets,
+  WALL_RADIUS,
   isBuildMaterial,
 } from './village.mjs'
 
@@ -42,7 +46,7 @@ export const GOALS = {
   build_village:
     'Raise the wall, gate, torches, and your own home around the Server.',
   improve_village:
-    'Once the essentials stand, reinforce the wall on safe inner ground and enlarge your home where its lot permits. Use the finished structures and repair damage; do not expand beyond the planned footprint.',
+    'Repair shallow blast holes, tend spring-fed wheat, pave the planned lanes, reinforce the wall, and enlarge homes only within their lots.',
   stockpile_defense:
     'Prepare stone swords, torches, raw iron and buckets so the village can defend itself.',
 }
@@ -314,6 +318,8 @@ export function installSurvival(bot, state, log, opts = {}) {
         gate: gateBlueprint(villageCtx.flag),
         torches: torchSpots(villageCtx.flag),
         patrol: patrolNodes(villageCtx.flag),
+        farm: farmPlots(villageCtx.flag),
+        roads: roadSpots(villageCtx.flag),
         home: homeBlueprint(homeLot(villageCtx.flag, villageCtx.lotIndex), villageCtx.flag),
         homeUpgrade: homeExtensionBlueprint(villageCtx.flag, villageCtx.lotIndex),
       }
@@ -327,6 +333,8 @@ export function installSurvival(bot, state, log, opts = {}) {
           homeLot(villageCtx.flag, index), villageCtx.flag,
         )),
         ...HOME_LOTS.flatMap((_, index) => homeExtensionBlueprint(villageCtx.flag, index)),
+        ...layout.farm,
+        ...layout.roads,
       ].map((p) => p.toString())
     : [])
   let protectedShelter = null, protectedHistoryLength = -1
@@ -342,6 +350,11 @@ export function installSurvival(bot, state, log, opts = {}) {
           .flatMap((site) => shelterBlueprint(new Vec3(site.x, site.y, site.z)))
           .map((p) => p.toString()),
       )
+    }
+    if (layout && position.y === layout.flag.y) {
+      const x = position.x - layout.flag.x, z = position.z - layout.flag.z
+      if (Math.abs(x) <= WALL_RADIUS && Math.abs(z) <= WALL_RADIUS ||
+          z > WALL_RADIUS && z <= WALL_RADIUS + 6 && Math.abs(x) <= 2) return true
     }
     const key = position.toString()
     return villageConstruction.has(key) || shelterConstruction.has(key)
@@ -374,6 +387,11 @@ export function installSurvival(bot, state, log, opts = {}) {
         ) && bot.inventory.items().some((i) => isPick(i.name))
       return soft || rock ? 0 : 100 // Preserve workbenches, furnaces and built shelters.
     })
+    if (layout) {
+      const plots = new Set(layout.farm.map((p) => p.toString()))
+      moves.exclusionAreasStep.push((block) =>
+        block?.name === 'farmland' && plots.has(block.position.toString()) ? 100 : 0)
+    }
     moves.allow1by1towers = false
     moves.allowParkour = false
     moves.maxDropDown = 2
@@ -763,7 +781,16 @@ export function installSurvival(bot, state, log, opts = {}) {
       (visible(node) || visible(node, 1))
     if (!goal.isEnd(bot.entity.position.floored())) await walk(goal, 15000)
     await sleep(200) // Let the last movement tick settle before placing.
-    await bot.equip(item, 'hand')
+    const available = bot.inventory.items().find((held) => held.name === item?.name && held.count > 0)
+    if (!available) throw new Error(`Placement material ${item?.name ?? 'unknown'} is no longer in inventory`)
+    await bot.equip(available, 'hand')
+    if (bot.heldItem?.name !== available.name) {
+      await sleep(100)
+      const retry = bot.inventory.items().find((held) => held.name === available.name && held.count > 0)
+      if (retry) await bot.equip(retry, 'hand')
+    }
+    if (bot.heldItem?.name !== available.name)
+      throw new Error(`Could not equip ${available.name} for placement`)
     let hit = goal.getFaceAndRef(
       bot.entity.position.offset(0, bot.entity.eyeHeight, 0),
     )
@@ -847,6 +874,89 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (result.placed && ++placed === perAction) break
     }
     return { placed }
+  }
+  const farmStage = (p) => {
+    const ground = bot.blockAt(p), crop = bot.blockAt(p.offset(0, 1, 0))
+    return { ground, crop, mature: crop?.name === 'wheat' && Number(crop.getProperties()?.age) >= 7 }
+  }
+  const holeTargets = () => blastHoleTargets(layout.flag, (p) => bot.blockAt(p))
+  async function awaitBlock(position, expected) {
+    const deadline = Date.now() + 1800
+    while (Date.now() < deadline) {
+      const block = bot.blockAt(position)
+      if (expected(block)) return block
+      await sleep(75)
+    }
+    throw new Error(`Server did not confirm block update at ${position}`)
+  }
+  async function useToolOnGround(position, toolSuffix, expectedName) {
+    const block = bot.blockAt(position)
+    if (!block) throw new Error('Ground is not loaded')
+    const tool = bot.inventory.items().find((i) => i.name.endsWith(toolSuffix))
+    if (!tool) throw new Error(`No ${toolSuffix.slice(1)} in inventory`)
+    await reach(block)
+    await bot.equip(tool, 'hand')
+    await bot.activateBlock(bot.blockAt(position))
+    await awaitBlock(position, (b) => b?.name === expectedName)
+    return { changed: expectedName, position }
+  }
+  async function repairBlastHole() {
+    const target = holeTargets().sort((a, b) =>
+      a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0]
+    if (!target) throw new Error('No shallow dry blast hole on the village floor')
+    const item = bot.inventory.items().find((i) => ['dirt', 'cobblestone', 'stone'].includes(i.name))
+    if (!item) throw new Error('No dirt or stone to fill the hole')
+    await walk(new goals.GoalNear(target.x, target.y + 1, target.z, 2), 9000)
+    const support = bot.blockAt(target.offset(0, -1, 0))
+    if (!solid(support) || bot.blockAt(target)?.name !== 'air')
+      throw new Error('Blast-hole support changed before repair')
+    if (bot.entity.position.distanceTo(support.position.offset(0.5, 1, 0.5)) > 4.4)
+      throw new Error('Blast-hole support is out of placement reach')
+    const available = bot.inventory.items().find((i) => i.name === item.name && i.count > 0)
+    if (!available) throw new Error('Repair material left inventory')
+    await bot.equip(available, 'hand')
+    if (bot.heldItem?.name !== available.name) throw new Error('Repair material is not held')
+    await bounded(() => bot._placeBlockWithOptions(support, new Vec3(0, 1, 0),
+      { forceLook: true, swingArm: 'right' }), 7000)
+    await awaitBlock(target, (b) => b?.name === available.name)
+    return { placed: available.name, position: target, repairedHole: true }
+  }
+  async function tendFarm() {
+    const plot = layout.farm.find((p) => {
+      const { ground, crop } = farmStage(p)
+      return ['grass_block', 'dirt'].includes(ground?.name) && crop?.name === 'air'
+    })
+    if (!plot) throw new Error('No untilled clear plot in the planned farm')
+    return { ...await useToolOnGround(plot, '_hoe', 'farmland'), farm: true }
+  }
+  async function sowWheat() {
+    const plot = layout.farm.find((p) => {
+      const { ground, crop } = farmStage(p)
+      return ground?.name === 'farmland' && crop?.name === 'air'
+    })
+    const seeds = bot.inventory.items().find((i) => i.name === 'wheat_seeds')
+    if (!plot || !seeds) throw new Error('No clear farmland or wheat seeds')
+    await reach(bot.blockAt(plot))
+    await bot.equip(seeds, 'hand')
+    await bot.activateBlock(bot.blockAt(plot))
+    await awaitBlock(plot.offset(0, 1, 0), (b) => b?.name === 'wheat')
+    return { planted: 'wheat', position: plot }
+  }
+  async function harvestWheat() {
+    const plot = layout.farm.find((p) => farmStage(p).mature)
+    if (!plot) throw new Error('No mature wheat in the farm')
+    const crop = bot.blockAt(plot.offset(0, 1, 0))
+    const result = await dig(crop)
+    if (bot.blockAt(crop.position)?.name === 'wheat')
+      throw new Error('Wheat harvest was not confirmed')
+    return { harvested: 'wheat', position: crop.position, collected: result.collected }
+  }
+  async function paveRoad() {
+    const spot = layout.roads.find((p) =>
+      ['grass_block', 'dirt'].includes(bot.blockAt(p)?.name) &&
+      bot.blockAt(p.offset(0, 1, 0))?.name === 'air')
+    if (!spot) throw new Error('No unpaved clear lane in the village plan')
+    return { ...await useToolOnGround(spot, '_shovel', 'dirt_path'), road: true }
   }
   const oreNearby = () => nearbyBlock((b) => ironOreNames.has(b.name), 16)
   const furnaceNearby = () => nearbyBlock((b) => b.name === 'furnace', 16)
@@ -1158,6 +1268,17 @@ export function installSurvival(bot, state, log, opts = {}) {
                 wall: progress(layout.wall),
                 wall_upgrade: progress(layout.wallUpgrade),
                 gate: progress(layout.gate),
+                blast_holes: holeTargets().length,
+                farm: {
+                  plots: layout.farm.length,
+                  tilled: layout.farm.filter((p) => farmStage(p).ground?.name === 'farmland').length,
+                  growing: layout.farm.filter((p) => farmStage(p).crop?.name === 'wheat').length,
+                  ready: layout.farm.filter((p) => farmStage(p).mature).length,
+                },
+                roads: {
+                  paved: layout.roads.filter((p) => bot.blockAt(p)?.name === 'dirt_path').length,
+                  total: layout.roads.length,
+                },
                 torches_lit: layout.torches.filter(
                   (p) => bot.blockAt(p)?.name === 'torch',
                 ).length,
@@ -1281,6 +1402,8 @@ export function installSurvival(bot, state, log, opts = {}) {
         if ((state.cooldowns[key] ?? 0) < Date.now()) vo[key] = description
       }
       const materials = buildMaterialCount(Boolean(obs.resources.workbench))
+      if (nearVillage && V.blast_holes > 0 && n((name) => ['dirt', 'cobblestone', 'stone'].includes(name)) > 0)
+        vadd('repair_blast_hole', 'Fill one shallow, dry blast hole in the village floor from the bottom up.')
       if (nearVillage && materials >= 2 && !V.wall?.complete)
         vadd(
           'build_wall',
@@ -1309,6 +1432,25 @@ export function installSurvival(bot, state, log, opts = {}) {
           'place_torch',
           'Place a torch on the wall to keep monsters out of the village.',
         )
+      if (nearVillage && V.farm?.ready > 0)
+        vadd('harvest_wheat', 'Harvest mature wheat from the spring-fed village farm.')
+      if (nearVillage && V.farm?.tilled < V.farm?.plots && n((name) => name.endsWith('_hoe')) > 0)
+        vadd('till_farm', 'Till one clear plot beside the spring; the farm has eight fixed plots.')
+      if (nearVillage && V.farm?.growing < V.farm?.tilled && n('wheat_seeds') > 0)
+        vadd('plant_wheat', 'Sow wheat seeds in one empty irrigated plot.')
+      if (nearVillage && V.farm?.growing < V.farm?.plots && n('wheat_seeds') === 0 &&
+          nearbyBlock((b) => b.name === 'short_grass', 24))
+        vadd('gather_wheat_seeds', 'Cut nearby wild grass for wheat seeds; a cut may yield none.')
+      if (nearVillage && V.roads?.paved < V.roads?.total && n((name) => name.endsWith('_shovel')) > 0)
+        vadd('pave_road', 'Turn one clear block of the finite village lanes into a dirt path.')
+      if (obs.resources.workbench && n('cobblestone') >= 2 && n('stick') >= 2 &&
+          !n((name) => name.endsWith('_hoe')) && V.farm?.tilled < V.farm?.plots)
+        vadd('craft_stone_hoe', 'Craft a hoe for the spring-fed village farm.')
+      if (obs.resources.workbench && n('cobblestone') >= 1 && n('stick') >= 2 &&
+          !n((name) => name.endsWith('_shovel')) && V.roads?.paved < V.roads?.total)
+        vadd('craft_stone_shovel', 'Craft a shovel to make the village paths.')
+      if (obs.resources.workbench && n('wheat') >= 3 && n('bread') < 4)
+        vadd('craft_bread', 'Bake harvested wheat into bread for food.')
       if (
         obs.resources.workbench &&
         n('cobblestone') >= 2 &&
@@ -1361,11 +1503,11 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (!nearVillage)
         vadd('return_to_post', 'Head back toward the Server and the village.')
       const preferred = {
-        guard: ['patrol', 'attack_threat', 'build_gate', 'build_wall', 'reinforce_wall', 'place_torch', 'return_to_post'],
-        builder: ['build_wall', 'build_gate', 'build_home', 'reinforce_wall', 'expand_home', 'place_torch', 'return_to_post'],
+        guard: ['repair_blast_hole', 'patrol', 'attack_threat', 'build_gate', 'build_wall', 'reinforce_wall', 'place_torch', 'return_to_post'],
+        builder: ['repair_blast_hole', 'build_wall', 'build_gate', 'build_home', 'reinforce_wall', 'expand_home', 'pave_road', 'craft_stone_shovel', 'place_torch', 'return_to_post'],
         smith: ['craft_stone_sword', 'craft_torch', 'craft_bucket', 'smelt_iron', 'mine_iron_ore', 'return_to_post'],
         coolant: ['scoop_water', 'feed_server', 'craft_bucket', 'mine_iron_ore', 'smelt_iron', 'return_to_post'],
-        farmer: ['hunt_food', 'plant_tree', 'return_to_post'],
+        farmer: ['harvest_wheat', 'plant_wheat', 'till_farm', 'craft_stone_hoe', 'gather_wheat_seeds', 'craft_bread', 'hunt_food', 'plant_tree', 'return_to_post'],
       }[state.role ?? ''] ?? ['build_wall', 'build_home', 'reinforce_wall', 'expand_home', 'feed_server', 'scoop_water']
       const ordered = {}
       const toolPrerequisites = !n(isPick) || !obs.resources.workbench || state.plan.goal === 'equip_tools'
@@ -1601,6 +1743,17 @@ export function installSurvival(bot, state, log, opts = {}) {
       throw lastError
     }
     if (villageCtx) {
+      if (action === 'repair_blast_hole') return repairBlastHole()
+      if (action === 'till_farm') return tendFarm()
+      if (action === 'plant_wheat') return sowWheat()
+      if (action === 'harvest_wheat') return harvestWheat()
+      if (action === 'pave_road') return paveRoad()
+      if (action === 'gather_wheat_seeds') {
+        const grass = nearbyBlock((b) => b.name === 'short_grass', 24)
+        if (!grass) throw new Error('No nearby wild grass for seeds')
+        const result = await dig(grass)
+        return { cutGrass: grass.position, collected: result.collected }
+      }
       if (action === 'build_wall') {
         const result = await buildFrom(layout.wall)
         return { ...result, structure: 'wall' }
@@ -1657,7 +1810,9 @@ export function installSurvival(bot, state, log, opts = {}) {
         'plant_tree', 'collect_drops', 'return_to_camp', 'explore', 'escape_upward',
         ...(villageCtx
           ? ['build_wall', 'build_gate', 'build_home', 'reinforce_wall',
-              'expand_home', 'place_torch',
+              'expand_home', 'repair_blast_hole', 'till_farm', 'plant_wheat',
+              'harvest_wheat', 'gather_wheat_seeds', 'pave_road',
+              'craft_stone_hoe', 'craft_stone_shovel', 'craft_bread', 'place_torch',
               'craft_stone_sword', 'craft_torch', 'craft_bucket', 'mine_iron_ore',
               'smelt_iron', 'scoop_water', 'feed_server', 'patrol',
               'return_to_post', 'attack_threat']
