@@ -342,6 +342,20 @@ test('village fallback protects starter wood and prioritizes the actual tool pre
   assert.equal(woodForTools([{ name: 'birch_planks', count: 4 }], false), 9)
 })
 
+test('builders can start a finite earth wall while continuing to seek home timber', () => {
+  const village = { flag: new Vec3(0, 63, 0), lotIndex: 0, summary: () => ({ wall: { complete: false } }) }
+  const tree = { position: new Vec3(12, 64, 0), name: 'oak_log', boundingBox: 'block' }
+  const b = fixture({ village, blocks: [tree] })
+  b.state.role = 'builder'
+  const options = b.skills.candidates(b.skills.observation())
+  assert.ok(options.gather_wall_earth)
+  assert.ok(options.gather_wood)
+  assert.ok(Object.keys(options).indexOf('gather_wood') < Object.keys(options).indexOf('gather_wall_earth'))
+  const withEarth = fixture({ village, blocks: [tree], inventory: [{ name: 'dirt', count: 1 }] })
+  withEarth.state.role = 'builder'
+  assert.ok(withEarth.skills.candidates(withEarth.skills.observation()).build_wall)
+})
+
 test('damage preempts ordinary work but does not cancel an active short water escape', async () => {
   const { bot, skills } = fixture()
   bot.entity.isInWater = true

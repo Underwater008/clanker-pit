@@ -269,6 +269,7 @@ export function shelterBlueprint(origin) {
 export function installSurvival(bot, state, log, opts = {}) {
   bot.loadPlugin(pathfinder)
   const blocked = new Map()
+  const failedTrees = []
   let scoutStep = 0
   let failedScouts = 0
   let fleeTurn = 0
@@ -279,6 +280,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   let escaping = false
   let lastHurtAt = 0
   let skillRevision = 0
+  let movements = null
   const claimOwner = Symbol(bot.username)
   const resourceScope = () => opts.resourceScope ?? [
     bot._client?.socket?.remoteAddress ?? process.env.MC_HOST ?? 'local',
@@ -369,6 +371,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     blockedRoutes = 0
     escapeSession = null
     const moves = new Movements(bot)
+    movements = moves
     moves.canDig = true
     moves.digCost = 2 // Prefer going around; clear ordinary terrain when needed.
     moves.exclusionAreasBreak.push((block) => {
@@ -512,6 +515,9 @@ export function installSurvival(bot, state, log, opts = {}) {
   }
   function usable(b) {
     return b &&
+      !(isLog(b.name) && failedTrees.some((tree) =>
+        tree.until > Date.now() &&
+        Math.hypot(b.position.x - tree.x, b.position.z - tree.z) < 3)) &&
       !((isLog(b.name) || stoneNames.has(b.name) || ironOreNames.has(b.name)) &&
         (constructionBlock(b.position) || resourceBusy(b.position))) &&
       (blocked.get(b.position.toString()) ?? 0) < Date.now() &&
@@ -664,16 +670,22 @@ export function installSurvival(bot, state, log, opts = {}) {
     return { escapedUpward: true, cleared, rose, position: bot.entity.position.clone() }
   }
   async function reach(block) {
-    if (
-      bot.entity.position.distanceTo(block.position.offset(0.5, 0.5, 0.5)) > 3.8
-    )
-      await walk(
-        new goals.GoalGetToBlock(
-          block.position.x,
-          block.position.y,
-          block.position.z,
-        ),
-      )
+    const target = block.position.offset(0.5, 0.5, 0.5)
+    if (bot.entity.position.distanceTo(target) > 3.8) {
+      const goal = new goals.GoalGetToBlock(block.position.x, block.position.y, block.position.z)
+      // Surface resources usually have a clear route. Searching routes that
+      // may dig every nearby block is expensive with a full village cast.
+      const activeMoves = movements
+      if (activeMoves) activeMoves.canDig = false
+      try {
+        await walkOnce(goal, 4000)
+      } catch (error) {
+        log('resource_clear_route_failed', { target: block.position, error: String(error) })
+      } finally {
+        if (activeMoves) activeMoves.canDig = true
+      }
+      if (bot.entity.position.distanceTo(target) > 3.8) await walk(goal)
+    }
     if (
       bot.entity.position.distanceTo(block.position.offset(0.5, 0.5, 0.5)) > 4.5
     )
@@ -726,10 +738,13 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
   }
   async function dig(block, toolSuffix) {
-    const resource = isLog(block.name) || stoneNames.has(block.name) || ironOreNames.has(block.name)
+    const resource = isLog(block.name) || stoneNames.has(block.name) ||
+      ironOreNames.has(block.name) || ['grass_block', 'dirt'].includes(block.name)
     const release = resource ? claimResource(block) : () => {}
     const before = bot.inventory.items().map((item) => ({ name: item.name, count: item.count }))
     try {
+      if (resource) log('resource_approach', { block: block.name, target: block.position,
+        from: bot.entity.position, distance: Math.round(bot.entity.position.distanceTo(block.position)) })
       await reach(block)
       if (bot.blockAt(block.position)?.name !== block.name)
         throw new Error('Resource changed before gathering began')
@@ -752,7 +767,8 @@ export function installSurvival(bot, state, log, opts = {}) {
       const expected = isLog(block.name) ? block.name
         : block.name === 'coal_ore' ? 'coal'
           : ironOreNames.has(block.name) ? 'raw_iron'
-            : stoneNames.has(block.name) ? 'cobblestone' : null
+            : stoneNames.has(block.name) ? 'cobblestone'
+              : ['grass_block', 'dirt'].includes(block.name) ? 'dirt' : null
       if (resource && !gained.some((item) => item.name === expected)) {
         log('gather_uncollected', { block: block.name, position: block.position, gained,
           error: pickupError ? String(pickupError) : 'No matching item reached inventory' })
@@ -761,6 +777,10 @@ export function installSurvival(bot, state, log, opts = {}) {
       return { block: block.name, position: block.position, collected: gained }
     } catch (e) {
       blocked.set(block.position.toString(), Date.now() + 120000)
+      if (isLog(block.name) && /path|deadline|GoalChanged|Navigation/i.test(String(e))) {
+        failedTrees.push({ x: block.position.x, z: block.position.z, until: Date.now() + 30000 })
+        while (failedTrees.length > 20) failedTrees.shift()
+      }
       throw e
     } finally {
       release()
@@ -794,7 +814,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       throw new Error(`Crafting incomplete: server confirmed ${gained} ${name}`)
     return { crafted: name, times }
   }
-  async function place(position, item) {
+  async function place(position, item, { minOffset = 2 } = {}) {
     if (solid(bot.blockAt(position))) return { alreadyPresent: true }
     // Range is measured from the eyes to an exposed face. A nearby support
     // block can still be occluded or below reach on a hillside.
@@ -817,7 +837,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       )
     goal.isEnd = (node) =>
       Math.max(Math.abs(node.x - position.x), Math.abs(node.z - position.z)) >=
-        2 &&
+        minOffset &&
       (visible(node) || visible(node, 1))
     if (!goal.isEnd(bot.entity.position.floored())) await walk(goal, 15000)
     await sleep(200) // Let the last movement tick settle before placing.
@@ -881,7 +901,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     return { placed: item.name, position }
   }
   // ---- village construction and coolant skills ----------------------------
-  function constructionMaterials(hasWorkbench = Boolean(table())) {
+  function constructionMaterials(hasWorkbench = Boolean(table()), allowDirt = false) {
     const items = bot.inventory.items()
     const planks = countItems(items, isPlank)
     const reserved = woodForTools(items, hasWorkbench)
@@ -893,26 +913,37 @@ export function installSurvival(bot, state, log, opts = {}) {
     const mineral = items.filter((item) => isBuildMaterial(item.name) && !isPlank(item.name) && !isLog(item.name))
     const planksItem = usablePlanks > 0 ? items.find((item) => isPlank(item.name)) : null
     const logItem = usableLogs > 0 ? items.find((item) => isLog(item.name) && isBuildMaterial(item.name)) : null
+    const dirt = allowDirt ? items.find((item) => item.name === 'dirt') : null
     return {
-      count: countItems(mineral, () => true) + usablePlanks + (logItem ? usableLogs : 0),
-      first: mineral[0] ?? planksItem ?? logItem,
+      count: countItems(mineral, () => true) + usablePlanks + (logItem ? usableLogs : 0) + (dirt?.count ?? 0),
+      first: mineral[0] ?? planksItem ?? logItem ?? dirt,
     }
   }
   const buildMaterialCount = (hasWorkbench) => constructionMaterials(hasWorkbench).count
-  const firstBuildMaterial = () => constructionMaterials().first
-  /** Place up to `perAction` missing blocks of a blueprint, in order. */
-  async function buildFrom(blueprint, perAction = 2) {
+  const firstBuildMaterial = (allowDirt = false) => constructionMaterials(undefined, allowDirt).first
+  /** Place up to `perAction` missing blueprint blocks; the wall starts nearby. */
+  async function buildFrom(blueprint, perAction = 2, { allowDirt = false, nearest = false } = {}) {
     let placed = 0
-    for (const p of blueprint) {
+    let lastError, failed = 0
+    const positions = nearest ? blueprint.slice().sort((a, b) =>
+      a.y - b.y || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position)) : blueprint
+    for (const p of positions) {
       if (solid(bot.blockAt(p))) continue
       const occupant = bot.blockAt(p)
       if (['short_grass', 'tall_grass'].includes(occupant?.name))
         await dig(occupant, '_axe').catch(() => {})
-      const material = firstBuildMaterial()
+      const material = firstBuildMaterial(allowDirt)
       if (!material) break
-      const result = await place(p, material)
-      if (result.placed && ++placed === perAction) break
+      try {
+        const result = await place(p, material, { minOffset: nearest ? 1 : 2 })
+        if (result.placed && ++placed === perAction) break
+      } catch (error) {
+        if (!nearest) throw error
+        lastError = error
+        if (++failed >= 3) break
+      }
     }
+    if (!placed && lastError) throw lastError
     return { placed }
   }
   const farmStage = (p) => {
@@ -1036,6 +1067,17 @@ export function installSurvival(bot, state, log, opts = {}) {
     return { ...await useToolOnGround(spot, '_shovel', 'dirt_path'), road: true }
   }
   const oreNearby = () => nearbyBlock((b) => ironOreNames.has(b.name), 16)
+  const wallEarthNearby = () => bot.findBlocks({
+    matching: (b) => ['grass_block', 'dirt'].includes(b.name) &&
+      !constructionBlock(b.position) &&
+      Math.hypot(b.position.x + 0.5 - bot.entity.position.x,
+        b.position.z + 0.5 - bot.entity.position.z) >= 2,
+    maxDistance: 22,
+    count: 12,
+    useExtraInfo: true,
+  }).map((p) => bot.blockAt(p)).filter(usable)
+    .sort((a, b) => a.position.distanceTo(bot.entity.position) -
+      b.position.distanceTo(bot.entity.position))[0]
   const furnaceNearby = () => nearbyBlock((b) => b.name === 'furnace', 16)
   async function smeltIron() {
     const run = async () => {
@@ -1486,20 +1528,25 @@ export function installSurvival(bot, state, log, opts = {}) {
         if ((state.cooldowns[key] ?? 0) < Date.now()) vo[key] = description
       }
       const materials = buildMaterialCount(Boolean(obs.resources.workbench))
+      const wallMaterials = materials + n('dirt')
       if (nearVillage && ['guard', 'builder'].includes(state.role) &&
           V.repairable_blast_holes > 0 && n((name) => ['dirt', 'cobblestone', 'stone'].includes(name)) > 0)
         vadd('repair_blast_hole', 'Fill one shallow, dry blast hole in the village floor from the bottom up.')
-      if (nearVillage && materials >= 2 && !V.wall?.complete)
+      if (nearVillage && wallMaterials >= 1 && !V.wall?.complete)
         vadd(
           'build_wall',
-          'Place two blocks of the perimeter wall that protects the Server.',
+          'Raise up to two blocks of the perimeter wall; use gathered earth as a first barricade when stone or wood is scarce.',
         )
-      if (nearVillage && materials >= 2 && !V.gate?.complete)
+      if (nearVillage && (state.role ?? null) === 'builder' &&
+          wallMaterials < 1 && !V.wall?.complete)
+        vadd('gather_wall_earth',
+          'Gather one dirt block outside the village footprint for the finite perimeter wall.')
+      if (nearVillage && materials >= 1 && !V.gate?.complete)
         vadd(
           'build_gate',
           'Raise the front gate pillars and lintel on the south road.',
         )
-      if (nearVillage && materials >= 2 && !V.my_home?.complete)
+      if (nearVillage && materials >= 1 && !V.my_home?.complete)
         vadd('build_home', 'Place two blocks of your own house on your lot.')
       if (nearVillage && materials >= 2 && V.wall?.complete && V.gate?.complete &&
           !V.wall_upgrade?.complete)
@@ -1589,7 +1636,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         vadd('return_to_post', 'Head back toward the Server and the village.')
       const preferred = {
         guard: ['repair_blast_hole', 'patrol', 'attack_threat', 'build_gate', 'build_wall', 'reinforce_wall', 'place_torch', 'return_to_post'],
-        builder: ['repair_blast_hole', 'build_wall', 'build_gate', 'build_home', 'reinforce_wall', 'expand_home', 'pave_road', 'craft_stone_shovel', 'place_torch', 'return_to_post'],
+        builder: ['repair_blast_hole', 'build_home', 'build_wall', 'gather_wood', 'gather_wall_earth', 'build_gate', 'reinforce_wall', 'expand_home', 'pave_road', 'craft_stone_shovel', 'place_torch', 'return_to_post'],
         smith: ['craft_stone_sword', 'craft_torch', 'craft_bucket', 'smelt_iron', 'mine_iron_ore', 'return_to_post'],
         coolant: ['scoop_water', 'feed_server', 'craft_bucket', 'mine_iron_ore', 'smelt_iron', 'return_to_post'],
         farmer: ['harvest_wheat', 'plant_wheat', 'till_farm', 'craft_stone_hoe', 'gather_wheat_seeds', 'craft_bread', 'hunt_food', 'plant_tree', 'return_to_post'],
@@ -1601,7 +1648,8 @@ export function installSurvival(bot, state, log, opts = {}) {
           'craft_stone_axe', 'craft_sticks', 'craft_planks'])
           if (options[key]) ordered[key] = options[key]
       }
-      for (const key of preferred) if (vo[key]) ordered[key] = vo[key]
+      for (const key of preferred)
+        if (vo[key] || options[key]) ordered[key] = vo[key] ?? options[key]
       for (const [key, description] of Object.entries(vo))
         if (!ordered[key]) ordered[key] = description
       const merged = { ...ordered, ...options }
@@ -1840,8 +1888,13 @@ export function installSurvival(bot, state, log, opts = {}) {
         return { cutGrass: grass.position, collected: result.collected }
       }
       if (action === 'build_wall') {
-        const result = await buildFrom(layout.wall)
+        const result = await buildFrom(layout.wall, 2, { allowDirt: true, nearest: true })
         return { ...result, structure: 'wall' }
+      }
+      if (action === 'gather_wall_earth') {
+        const ground = wallEarthNearby()
+        if (!ground) throw new Error('No safe exterior earth nearby')
+        return dig(ground, '_shovel')
       }
       if (action === 'reinforce_wall') {
         const result = await buildFrom(layout.wallUpgrade)
@@ -1894,7 +1947,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         'craft_stone_axe', 'craft_furnace', 'place_furnace', 'hunt_food',
         'plant_tree', 'collect_drops', 'return_to_camp', 'explore', 'escape_upward',
         ...(villageCtx
-          ? ['build_wall', 'build_gate', 'build_home', 'reinforce_wall',
+          ? ['build_wall', 'gather_wall_earth', 'build_gate', 'build_home', 'reinforce_wall',
               'expand_home', 'repair_blast_hole', 'till_farm', 'plant_wheat',
               'harvest_wheat', 'gather_wheat_seeds', 'pave_road',
               'craft_stone_hoe', 'craft_stone_shovel', 'craft_bread', 'place_torch',

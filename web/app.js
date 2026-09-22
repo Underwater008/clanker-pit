@@ -33,6 +33,14 @@
     s = s % 60;
     return m + ':' + (s < 10 ? '0' : '') + s;
   }
+  function fmtRoundTime(ms) {
+    var seconds = Math.floor(Math.max(0, ms) / 1000);
+    var hours = Math.floor(seconds / 3600);
+    var minutes = Math.floor(seconds / 60) % 60;
+    var remaining = seconds % 60;
+    var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+    return hours + ':' + pad(minutes) + ':' + pad(remaining);
+  }
   function timeAgo(iso) {
     var t = Date.parse(iso);
     if (!isFinite(t)) return '';
@@ -607,6 +615,8 @@
     $('coolantFill').style.width = (v.water ? v.water.pct : 0) + '%';
     $('wallText').textContent = v.wall ? (v.wall.complete ? 'DONE' : v.wall.done + '/' + v.wall.total) : '—';
     $('gateText').textContent = v.gate ? (v.gate.complete ? 'DONE' : v.gate.done + '/' + v.gate.total) : '—';
+    $('bedsText').textContent = v.beds ? v.beds.done + '/' + v.beds.total : '—';
+    renderRoundTimer();
     var chips = $('castChips');
     clear(chips);
     population().forEach(function (name) {
@@ -625,6 +635,12 @@
         ? 'The Server is drinking. A villager is booting…'
         : 'The Server hums at ' + v.water.pct + '% coolant.';
     }
+  }
+  function renderRoundTimer() {
+    var startedAt = telemetry && telemetry.village && telemetry.village.startedAt;
+    var time = Date.parse(startedAt);
+    $('roundTimer').textContent = isFinite(time) ? fmtRoundTime(Date.now() - time) : '—';
+    if (isFinite(time)) $('roundTimer').dateTime = startedAt;
   }
 
   // ---------- chat ----------
@@ -1239,6 +1255,7 @@
       .finally(function () { pollBusy = false; });
   }
   setInterval(renderTelemetryStatus, 2000);
+  setInterval(renderRoundTimer, 1000);
   // Keep the labels in step with each video frame without recreating buttons.
   setInterval(function () { if (state.mode === 'arena') renderArenaNameplates(); }, 50);
   window.addEventListener('resize', renderArenaNameplates);

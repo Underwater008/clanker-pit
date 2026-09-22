@@ -32,6 +32,7 @@ import {
   wallBlueprint,
   wallReinforcementBlueprint,
   gateBlueprint,
+  homeBed,
   blueprintProgress,
 } from './village.mjs'
 import { runCouncil } from './council.mjs'
@@ -170,7 +171,7 @@ const villageFile = join(DATA_DIR, 'village.json')
 const VILLAGE_OWNED_KEYS = [
   'waterFed', 'population', 'founders', 'bootedVillagers', 'fallenVillagers',
   'homeLots', 'homes', 'homeUpgrades',
-  'wall', 'wallUpgrade', 'gate',
+  'wall', 'wallUpgrade', 'gate', 'beds',
   'roles', 'processedGuestEvents', 'lastBoomAt', 'lastFedBy',
 ]
 const village = createVillageState({
@@ -299,10 +300,19 @@ function refreshVillageStructures() {
     return b && b.boundingBox === 'block' && !['magma_block', 'cactus'].includes(b.name)
   }
   const flag = village.flag()
+  const founders = village.raw.founders ?? []
+  const installedBeds = founders.filter((name) => {
+    const lot = village.raw.homeLots[name]
+    if (!Number.isInteger(lot)) return false
+    const { foot, head } = homeBed(flag, lot)
+    return reader.bot.blockAt(foot)?.name === 'red_bed' &&
+      reader.bot.blockAt(head)?.name === 'red_bed'
+  }).length
   village.setStructures({
     wall: blueprintProgress(wallBlueprint(flag), blockAt),
     wallUpgrade: blueprintProgress(wallReinforcementBlueprint(flag), blockAt),
     gate: blueprintProgress(gateBlueprint(flag), blockAt),
+    beds: { done: installedBeds, total: founders.length },
   })
 }
 

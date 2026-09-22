@@ -316,12 +316,15 @@ test('coolant economy: feeds count, booms overheat, booting resets the meter', (
   village.setRoles(roles)
   village.setHome('A', { done: 23, total: 23, complete: true })
   village.setHomeUpgrade('A', { done: 7, total: 7, complete: true })
-  village.setStructures({ wallUpgrade: { done: 12, total: 40, complete: false } })
+  village.setStructures({ wallUpgrade: { done: 12, total: 40, complete: false },
+    beds: { done: 4, total: 4 } })
   const reloaded = createVillageState({ path: join(dir, 'village.json') })
   assert.deepEqual(reloaded.raw.roles, roles)
   assert.equal(reloaded.raw.homes.A.complete, true)
   assert.equal(reloaded.snapshot().homeUpgrades.A.complete, true)
   assert.equal(reloaded.snapshot().wallUpgrade.done, 12)
+  assert.equal(reloaded.snapshot().beds.done, 4)
+  assert.equal(reloaded.snapshot().startedAt, village.raw.createdAt)
   assert.equal(reloaded.raw.waterFed, village.raw.waterTarget)
 })
 

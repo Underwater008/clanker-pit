@@ -374,6 +374,7 @@ export function createVillageState({
     wall: null, // {done,total,complete} refreshed from world observations
     wallUpgrade: null, // progress of the finite inner reinforcement layer
     gate: null,
+    beds: null, // founding respawn beds confirmed from loaded world blocks
     roles: {}, // name -> role
     lastBoomAt: 0,
     processedGuestEvents: [],
@@ -456,6 +457,7 @@ export function createVillageState({
     anatomy: () => (state.flag ? serverAnatomy(state.flag) : null),
     save,
     snapshot: () => ({
+      startedAt: state.createdAt,
       flag: state.flag,
       water: {
         fed: state.waterFed,
@@ -475,6 +477,7 @@ export function createVillageState({
       wall: state.wall,
       wallUpgrade: state.wallUpgrade,
       gate: state.gate,
+      beds: state.beds,
       roles: { ...state.roles },
       atCapacity: state.population.length >= Math.min(MAX_POPULATION, HOME_LOTS.length),
     }),
@@ -573,10 +576,11 @@ export function createVillageState({
       state.homeUpgrades[name] = progress
       save()
     },
-    setStructures({ wall, gate, wallUpgrade } = {}) {
+    setStructures({ wall, gate, wallUpgrade, beds } = {}) {
       if (wall) state.wall = wall
       if (gate) state.gate = gate
       if (wallUpgrade) state.wallUpgrade = wallUpgrade
+      if (beds) state.beds = beds
       save()
     },
     sawGuestEvent(id) {

@@ -74,6 +74,7 @@ header {
 .vb-block { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; }
 .vb-label { color: var(--ash); }
 .vb-value { color: var(--bone); font-weight: 600; }
+#roundTimer { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .vb-meter {
   width: 90px; height: 8px; background: var(--panel); border: 1px solid var(--panel-edge);
   border-radius: 4px; overflow: hidden; display: inline-block;

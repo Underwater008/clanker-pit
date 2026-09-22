@@ -158,6 +158,27 @@ try {
   assert.equal(fed2.fedCoolant, true, 'second feed cycle must also verify')
 
   // ---- wall, gate, home and torches.
+  // A builder with only gathered dirt can raise a first barricade. Later
+  // stone construction still uses the finite wall blueprint.
+  await rconOk(`tp VillageLab ${FLAG.x + 10.5} ${FLAG.y + 1} ${FLAG.z + 2.5}`)
+  await sleep(400)
+  const gatheredEarth = await act('gather_wall_earth')
+  assert.ok(gatheredEarth.collected.some((item) => item.name === 'dirt'),
+    'wall earth must come from a server-confirmed exterior block')
+  assert.ok(Math.abs(gatheredEarth.position.x - FLAG.x) > 8 ||
+    Math.abs(gatheredEarth.position.z - FLAG.z) > 8,
+  'earth gathering must leave the protected village footprint intact')
+  assert.ok(Math.hypot(gatheredEarth.position.x + 0.5 - (FLAG.x + 10.5),
+    gatheredEarth.position.z + 0.5 - (FLAG.z + 2.5)) >= 2,
+  'earth gathering must not remove the block beneath the clanker')
+  await rconOk(`tp VillageLab ${FLAG.x + 0.5} ${FLAG.y + 1} ${FLAG.z + 2.5}`)
+  await sleep(400)
+  const earth = await act('build_wall')
+  assert.ok(earth.placed > 0, 'gathered dirt must begin the wall')
+  const earthBlocks = wallBlueprint(FLAG).filter((p) => bot.blockAt(p)?.name === 'dirt')
+  assert.equal(earthBlocks.length, earth.placed)
+  for (const p of earthBlocks) await rconOk(`setblock ${p.x} ${p.y} ${p.z} air`)
+  await rconOk('clear VillageLab minecraft:dirt')
   await rconOk('give VillageLab minecraft:cobblestone 256')
   await sleep(1200)
   for (let i = 0; i < 80; i++) {
@@ -203,7 +224,9 @@ try {
 
   // ---- iron chain: mine fixture ore, smelt, craft a bucket at a table.
   await rconOk('give VillageLab minecraft:stone_pickaxe 1')
-  await rconOk(`setblock ${FLAG.x + 3} ${FLAG.y} ${FLAG.z + 3} iron_ore`)
+  // Resource blocks inside the village footprint are protected from mining.
+  await rconOk(`tp VillageLab ${FLAG.x + 9.5} ${FLAG.y + 1} ${FLAG.z + 3.5}`)
+  await rconOk(`setblock ${FLAG.x + 10} ${FLAG.y} ${FLAG.z + 3} iron_ore`)
   await sleep(400)
   const mined = await act('mine_iron_ore')
   assert.ok(mined.block === 'iron_ore', 'mine_iron_ore must take the fixture ore')
@@ -211,6 +234,7 @@ try {
     bot.inventory.items().some((i) => i.name === 'raw_iron'),
     'iron ore must drop raw iron',
   )
+  await rconOk(`tp VillageLab ${FLAG.x + 0.5} ${FLAG.y + 1} ${FLAG.z + 2.5}`)
   await rconOk(`setblock ${FLAG.x - 3} ${FLAG.y + 1} ${FLAG.z} furnace`)
   await rconOk(`setblock ${FLAG.x - 3} ${FLAG.y + 1} ${FLAG.z - 1} crafting_table`)
   await rconOk('give VillageLab minecraft:coal 4')
