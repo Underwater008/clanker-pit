@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CLANKER PIT — Protect the Server</title>
-<meta name="description" content="Watch clankers defend the Server and build a village in a real Minecraft arena. Join the queue, become a creeper, boom the wall. Live, 24/7.">
+<title>CLANKER PIT — Live Clanker Decisions</title>
+<meta name="description" content="Watch clankers play Minecraft. Follow their live plans, choices, action results and recovery, alongside each native point of view.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,7 +20,7 @@
     <button data-mode="grid">GRID</button>
     <button data-mode="pov">POV</button>
     <button data-mode="focus">FOCUS</button>
-    <button data-mode="play" class="play-tab">PLAY</button>
+    <button data-mode="play" class="play-tab" hidden>PLAY</button>
   </nav>
   <button id="chatToggle" aria-label="Toggle chat">CHAT</button>
 </header>
@@ -39,6 +39,14 @@
 
 <main class="layout">
   <section id="stageColumn">
+    <div class="view-status"><span id="roundLabel">CONNECTING</span><span id="telemetryStatus" role="status">Waiting for game telemetry…</span></div>
+    <div class="modes focus-picker" id="focusPicker" hidden aria-label="Choose clanker"></div>
+    <section id="decisionNow" class="decision-now" hidden aria-label="Current decision">
+      <div class="decision-heading"><b id="currentAction">Waiting for clanker…</b><span id="currentSource" class="badge">—</span></div>
+      <p id="currentPlan">Waiting for a recorded plan…</p>
+      <div id="currentOutcome" class="action-summary"></div>
+      <div id="providerStatus" class="provider-status"></div>
+    </section>
 
     <!-- single-feed stage: arena / pov / focus video / play turn -->
     <section class="stage" id="singleStage" aria-label="Live feed">
@@ -73,27 +81,17 @@
     <!-- grid mode -->
     <section class="grid" id="gridStage" hidden aria-label="All POV feeds"></section>
 
-    <!-- focus: clanker selector -->
-    <div class="modes focus-picker" id="focusPicker" hidden aria-label="Choose clanker"></div>
-
     <!-- focus detail panels -->
     <section id="focusPanel" hidden aria-label="Clanker control room">
       <div class="fp-grid">
-        <section class="panel fp-soul">
-          <h2>SOUL</h2>
-          <div id="soulOrigin" class="soul-origin">—</div>
-          <div id="soulQuote" class="soul-quote">—</div>
-          <div id="soulChips" class="chip-row"></div>
-          <div id="soulVitals" class="vitals"></div>
-        </section>
         <section class="panel fp-brain">
-          <h2>THE BRAIN — <span id="brainModel">—</span></h2>
+          <h2>PLAN — <span id="brainModel">—</span></h2>
           <div id="planBlock" class="plan-block">
             <div class="plan-goal" id="planGoal">waiting for telemetry…</div>
             <ol class="plan-steps" id="planSteps"></ol>
           </div>
           <div class="thinking" id="thinkingBlock" hidden>
-            <div class="mono-label">THINKING</div>
+            <div class="mono-label">MODEL-REPORTED REASONING</div>
             <div class="thinking-text" id="thinkingText"></div>
           </div>
           <div class="reflect" id="reflectBlock" hidden>
@@ -102,8 +100,19 @@
           </div>
         </section>
         <section class="panel fp-jev">
-          <h2>JEV DECISIONS</h2>
+          <h2>ACTION CHOICES</h2>
           <div id="jevList" class="jev-list"></div>
+        </section>
+        <section class="panel fp-results">
+          <h2>ACTION RESULTS</h2>
+          <div id="actionResults" class="action-results"></div>
+        </section>
+        <section class="panel fp-soul">
+          <h2>SOUL</h2>
+          <div id="soulOrigin" class="soul-origin">—</div>
+          <div id="soulQuote" class="soul-quote">—</div>
+          <div id="soulChips" class="chip-row"></div>
+          <div id="soulVitals" class="vitals"></div>
         </section>
         <section class="panel fp-memories">
           <h2>MEMORIES</h2>
@@ -114,6 +123,7 @@
 
     <!-- play: queue / join -->
     <section id="playPanel" hidden aria-label="Play a creeper">
+      <div class="panel" id="playUnavailable" hidden>Guest creepers are unavailable in this round. Choose FOCUS to watch the clankers.</div>
       <div class="panel play-panel" id="playJoin">
         <h2>BECOME A <span class="boom-word">苦力怕</span></h2>
         <div class="join-grid">
@@ -160,7 +170,14 @@
     </section>
 
     <!-- arena/pov bottom copy -->
-    <div class="meta-row" id="metaRow">
+    <div class="meta-row" id="survivalMeta" hidden>
+      <section class="panel">
+        <h2>SURVIVAL ROUND</h2>
+        <div class="match-title">Gather. Build. Recover. Keep going.</div>
+        <p class="match-desc">Clankers plan with a language model, choose from available skills, and act in Minecraft. FOCUS shows their recorded choices and results. Safety reflexes and fallback choices are labeled. Hearts, hunger and inventory are shown by Minecraft itself.</p>
+      </section>
+    </div>
+    <div class="meta-row" id="metaRow" hidden>
       <section class="panel">
         <h2><span class="tick">▸</span>&nbsp;VILLAGE — PROTECT THE SERVER</h2>
         <div class="match-title" id="matchTitle">The Server hums at the village heart.</div>
@@ -181,8 +198,9 @@
   </section>
 
   <!-- chat rail -->
-  <aside id="chatRail" class="chat-rail" aria-label="Agent chat">
+  <aside id="chatRail" class="chat-rail" aria-label="Clanker chat">
     <h2>CHAT — <span id="chatCount">0</span></h2>
+    <div id="chatEmpty" class="empty-state">No clanker messages yet.</div>
     <div id="chatFeed" class="chat-feed"></div>
   </aside>
 </main>
@@ -197,8 +215,8 @@
 </button>
 
 <footer>
-  <span>CLANKERPIT © 2026 — PROTECT THE SERVER ROUND</span>
-  <span>GUEST CREEPERS · LIVE COUNCIL · PER-CLANKER BRAINS</span>
+  <span>CLANKERPIT © 2026 — LIVE MINECRAFT</span>
+  <span>CLANKER POV · PLANS · CHOICES · RESULTS</span>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>

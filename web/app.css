@@ -6,7 +6,7 @@
   --ember: #ff5c1f;
   --ember-dim: #b23c10;
   --bone: #e8e6e1;
-  --ash: #8b8880;
+  --ash: #aba89f;
   --creeper: #58c472;
   --creeper-dim: #2c7a44;
   --cyan: #6fd7c7;
@@ -15,6 +15,7 @@
   --mono: 'IBM Plex Mono', ui-monospace, monospace;
   --sans: 'Space Grotesk', system-ui, sans-serif;
 }
+[hidden] { display: none !important; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { background: var(--void); }
 body {
@@ -194,7 +195,7 @@ video { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
 .cell .hud { padding: 7px 11px; font-size: 10px; }
 
 /* ---------- focus picker + panels ---------- */
-.focus-picker { margin-top: 12px; }
+.focus-picker { margin-bottom: 10px; flex-wrap: wrap; }
 .focus-picker button { text-transform: none; letter-spacing: 0.08em; }
 .panel {
   background: var(--panel); border: 1px solid var(--panel-edge);
@@ -207,8 +208,34 @@ video { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
 .panel h2 .tick { color: var(--ember); }
 .mono-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em; color: var(--ash); margin-bottom: 8px; }
 #focusPanel { margin-top: 12px; }
-.fp-grid { display: grid; grid-template-columns: 1fr 1.6fr 1.6fr; gap: 12px; }
-@media (max-width: 1100px) { .fp-grid { grid-template-columns: 1fr; } }
+.fp-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.fp-grid > * { min-width: 0; }
+.fp-results { grid-column: 1 / -1; }
+.view-status { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; font-family: var(--mono); font-size: 10px; letter-spacing: .08em; color: var(--ash); }
+#telemetryStatus.stale { color: var(--amber); }
+.decision-now { border: 1px solid var(--ember-dim); background: var(--panel); border-radius: 6px; padding: 12px 15px; margin-bottom: 12px; }
+.decision-heading { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-family: var(--mono); font-size: 12px; }
+.decision-heading b { color: var(--ember); }
+#currentPlan { font-size: 14px; line-height: 1.5; margin-top: 7px; }
+.action-summary, .provider-status { color: var(--ash); font-size: 11px; line-height: 1.5; margin-top: 6px; overflow-wrap: anywhere; }
+.action-summary.failed, .provider-status.error { color: var(--amber); }
+.action-results { display: grid; gap: 10px; }
+.action-result { border-left: 2px solid var(--creeper); padding-left: 10px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.action-result.failed { border-color: var(--amber); }
+.action-result p { color: var(--ash); margin-top: 3px; }
+.action-result .badge { margin-left: 8px; }
+.empty-state { font-size: 12px; color: var(--ash); line-height: 1.6; }
+.jev-reason { font-size: 11px; color: var(--amber); line-height: 1.5; overflow-wrap: anywhere; margin-bottom: 8px; }
+@media (max-width: 640px) {
+  header { padding: 10px 12px; gap: 8px; }
+  .modes button { padding: 7px 8px; font-size: 10px; letter-spacing: .06em; }
+  .layout { padding: 12px 12px 30px; }
+  .panel { padding: 14px; }
+  .hud { font-size: 9px; letter-spacing: .06em; }
+  .view-status { flex-wrap: wrap; }
+  .jev-head { flex-wrap: wrap; }
+}
+@media (max-width: 720px) { .fp-grid { grid-template-columns: 1fr; } }
 .fp-soul .soul-origin { font-size: 14px; line-height: 1.6; color: var(--bone); margin-bottom: 10px; }
 .fp-soul .soul-quote {
   font-size: 13px; color: var(--ember); font-style: italic; margin-bottom: 12px;

@@ -44,10 +44,12 @@
   }
 
   // ---------- state ----------
-  var state = { mode: 'pov', clanker: 'mira' };
+  var state = { mode: 'focus', clanker: 'mira' };
   var live = { instances: [], attached: null };
   var telemetry = null;
   var lastChatId = 0;
+  var lastStateReceivedAt = 0;
+  var pollBusy = false;
 
   // ---------- hls ----------
   function feedUrl(feed) { return VIDEO_BASE + '/' + feed + '/index.m3u8'; }
@@ -58,25 +60,38 @@
   }
 
   function attach(video, overlayEls, hudEl, feed) {
-    var failures = 0, MAX = 6;
+    var failures = 0, MAX = 6, disposed = false, watchProgress = false;
+    var lastTime = -1, lastProgress = Date.now();
     var inst = { hls: null, retryTimer: null };
     function setLive(on) { if (hudEl) hudEl.classList.toggle('live', on); }
     function overlay(show, code, msg, retry) {
-      if (!show) { overlayEls.root.classList.add('hidden'); return; }
-      overlayEls.root.classList.remove('hidden');
+      overlayEls.root.classList.toggle('hidden', !show);
+      if (!show) return;
       overlayEls.code.textContent = code;
       overlayEls.msg.textContent = msg;
       overlayEls.retry.style.display = retry ? 'block' : 'none';
     }
-    function destroy() {
+    function stopPlayer() {
       if (inst.retryTimer) clearTimeout(inst.retryTimer);
+      inst.retryTimer = null;
       if (inst.hls) inst.hls.destroy();
+      inst.hls = null;
       video.removeAttribute('src');
       video.load();
     }
-    function start() {
-      destroy();
+    function playing() {
+      lastProgress = Date.now();
       failures = 0;
+      overlay(false);
+      setLive(true);
+    }
+    function start() {
+      if (disposed) return;
+      stopPlayer();
+      failures = 0;
+      watchProgress = true;
+      lastTime = -1;
+      lastProgress = Date.now();
       overlay(true, 'SIGNAL', 'Tuning the feed…', false);
       setLive(false);
       if (window.Hls && Hls.isSupported()) {
@@ -87,38 +102,63 @@
         inst.hls.loadSource(feedUrl(feed));
         inst.hls.attachMedia(video);
         inst.hls.on(Hls.Events.MANIFEST_PARSED, function () {
-          overlay(false); setLive(true);
-          video.play().catch(function () {});
+          video.play().catch(function () {
+            overlay(true, 'PAUSED', 'Tap reconnect to start the feed.', true);
+          });
         });
         inst.hls.on(Hls.Events.ERROR, function (_, data) {
-          if (!data.fatal) return;
+          if (disposed || !data.fatal) return;
           failures++;
+          setLive(false);
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR && failures <= MAX) {
-            setLive(false);
-            overlay(true, 'SIGNAL LOST', 'Reacquiring… (' + failures + ')', false);
-            inst.retryTimer = setTimeout(function () { inst.hls.startLoad(); }, 1500);
+            overlay(true, 'SIGNAL LOST', 'Reacquiring… (' + failures + ')', true);
+            inst.retryTimer = setTimeout(function () { if (inst.hls) inst.hls.startLoad(); }, 1500);
           } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && failures <= MAX) {
+            overlay(true, 'BUFFERING', 'Recovering video playback…', true);
             inst.hls.recoverMediaError();
           } else {
-            setLive(false);
+            watchProgress = false;
             overlay(true, 'OFF AIR', 'This camera is unreachable.', true);
           }
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = feedUrl(feed);
-        video.addEventListener('loadedmetadata', function () {
-          overlay(false); setLive(true);
-          video.play().catch(function () {});
-        }, { once: true });
-        video.addEventListener('error', function () {
-          setLive(false); overlay(true, 'OFF AIR', 'This camera is unreachable.', true);
-        }, { once: true });
+        video.play().catch(function () {
+          overlay(true, 'PAUSED', 'Tap reconnect to start the feed.', true);
+        });
       } else {
+        watchProgress = false;
         overlay(true, 'UNSUPPORTED', 'This browser cannot play the feed.', false);
       }
     }
-    overlayEls.retry.addEventListener('click', start);
-    inst.destroy = destroy;
+    function videoError() {
+      watchProgress = false;
+      setLive(false);
+      overlay(true, 'OFF AIR', 'This camera is unreachable.', true);
+    }
+    function retry(event) { event.stopPropagation(); start(); }
+    video.addEventListener('playing', playing);
+    video.addEventListener('error', videoError);
+    overlayEls.retry.addEventListener('click', retry);
+    var watchdog = setInterval(function () {
+      if (!watchProgress) return;
+      if (video.currentTime > lastTime && video.readyState >= 2) {
+        lastTime = video.currentTime;
+        lastProgress = Date.now();
+        overlay(false); setLive(true);
+      } else if (Date.now() - lastProgress > 12000) {
+        setLive(false);
+        overlay(true, 'BUFFERING', 'Video has stopped advancing. Reconnect the camera.', true);
+      }
+    }, 2000);
+    inst.destroy = function () {
+      disposed = true;
+      clearInterval(watchdog);
+      video.removeEventListener('playing', playing);
+      video.removeEventListener('error', videoError);
+      overlayEls.retry.removeEventListener('click', retry);
+      stopPlayer();
+    };
     inst.start = start;
     start();
     return inst;
@@ -131,7 +171,7 @@
     msg: $('singleMsg'), retry: $('singleRetry')
   };
   var singleSub = document.querySelector('#singleHud .sub');
-  var attachedFeed = null;
+  var attachedFeed = undefined;
 
   function showSingle(feed, label, sub, offlineMsg) {
     $('gridStage').hidden = true;
@@ -208,6 +248,7 @@
     else if (mode === 'focus' || FOUNDING.indexOf(mode) !== -1) {
       state.mode = 'focus';
       if (clanker) state.clanker = clanker;
+      else if (FOUNDING.indexOf(mode) !== -1) state.clanker = mode;
     } else { // pov feed by name
       state.mode = 'pov';
       if (mode && FOUNDING.indexOf(mode) !== -1) state.clanker = mode;
@@ -230,24 +271,31 @@
     Array.prototype.forEach.call(modeButtons, function (b) {
       b.classList.toggle('active', b.dataset.mode === (mode === 'pov' ? 'pov' : mode));
     });
-    $('focusPicker').hidden = mode !== 'focus';
+    $('focusPicker').hidden = mode !== 'focus' && mode !== 'pov';
+    $('decisionNow').hidden = mode !== 'focus';
     $('focusPanel').hidden = mode !== 'focus';
     $('playPanel').hidden = mode !== 'play';
-    $('metaRow').hidden = mode === 'focus' || mode === 'play' || mode === 'grid';
-    $('joinChip').hidden = mode === 'play';
+    renderAvailability();
     var help = $('playHelp');
     help.hidden = !(mode === 'play' && guest.turnLive());
+    if (mode !== 'play') {
+      $('turnHud').hidden = true;
+      $('touchPad').hidden = true;
+      $('clickCatch').hidden = true;
+    }
     if (mode === 'arena') showSingle('arena', 'ARENA 01 / WIDE', 'CAM 01 · SPECTATOR FEED');
     else if (mode === 'grid') showGrid();
     else if (mode === 'pov') {
       var feed = state.clanker;
       showSingle(feed, feed.toUpperCase() + ' / POV', 'SPECTATING ' + feed.toUpperCase());
+      renderFocusPicker();
     } else if (mode === 'focus') {
       var b = bot(state.clanker);
+      var hasFeed = b ? b.nativeView : FOUNDING.indexOf(state.clanker) !== -1;
       showSingle(
-        b && b.nativeView ? state.clanker : null,
+        hasFeed ? state.clanker : null,
         state.clanker.toUpperCase() + ' / FOCUS',
-        b && b.nativeView ? 'CONTROL ROOM · ' + state.clanker.toUpperCase() : 'CONTROL ROOM'
+        hasFeed ? 'POV + DECISIONS' : 'CONTROL ROOM'
       );
       renderFocus();
     } else if (mode === 'play') {
@@ -266,6 +314,76 @@
     var v = telemetry && telemetry.village;
     if (v && v.population && v.population.length) return v.population;
     return ['Cinder', 'Vex', 'Mira', 'Tally'];
+  }
+
+  function guestAvailable() {
+    return Boolean(telemetry && telemetry.village && telemetry.guest);
+  }
+  function renderAvailability() {
+    var village = Boolean(telemetry && telemetry.village);
+    var guestOn = guestAvailable();
+    document.querySelector('[data-mode="play"]').hidden = !guestOn;
+    $('joinChip').hidden = !guestOn || state.mode === 'play';
+    var showMeta = state.mode === 'pov' || state.mode === 'arena';
+    $('metaRow').hidden = !showMeta || !village;
+    $('survivalMeta').hidden = !showMeta || !telemetry || village;
+    $('roundLabel').textContent = !telemetry ? 'CONNECTING' : village ? 'VILLAGE ROUND' : 'SURVIVAL ROUND';
+    renderTelemetryStatus();
+  }
+  function renderTelemetryStatus() {
+    var at = telemetry && Date.parse(telemetry.updated);
+    var age = at ? Date.now() - at : Infinity;
+    var stale = age > 12000 || Date.now() - lastStateReceivedAt > 12000;
+    $('telemetryStatus').classList.toggle('stale', Boolean(telemetry && stale));
+    $('telemetryStatus').textContent = !telemetry ? 'Waiting for game telemetry…'
+      : stale ? 'Telemetry delayed · last update ' + timeAgo(telemetry.updated) + ' ago'
+      : 'Game telemetry · live';
+  }
+  function sourceLabel(source) {
+    return { jev: 'JEV MODEL', fallback: 'FALLBACK POLICY', safety_reflex: 'SAFETY REFLEX', test_policy: 'SCRIPTED TEST' }[source] || (source ? String(source).toUpperCase() : 'SOURCE UNAVAILABLE');
+  }
+  function resultText(result) {
+    if (result === undefined || result === null) return '';
+    return typeof result === 'string' ? result : JSON.stringify(result);
+  }
+  function outcomeText(outcome) {
+    var status = outcome.ok === false || outcome.status === 'failed' ? 'failed' : 'completed';
+    return (outcome.action || 'action') + ' ' + status + (outcome.error ? ': ' + outcome.error : resultText(outcome.result) ? ': ' + resultText(outcome.result) : '');
+  }
+  function renderCurrent(b) {
+    var brain = b.brain || {};
+    var action = brain.action || {};
+    var recent = (b.recent || []).filter(function (r) { return r.action; });
+    var latest = recent[recent.length - 1];
+    var running = action.status === 'running';
+    var elapsed = running && action.startedAt ? ' · ' + fmtClock(Date.now() - Date.parse(action.startedAt)) : '';
+    $('currentAction').textContent = b.offline ? state.clanker.toUpperCase() + ' · OFFLINE' : (running ? action.action : b.activity || 'Waiting for action').replace(/_/g, ' ').toUpperCase() + elapsed;
+    $('currentSource').textContent = sourceLabel(action.source);
+    $('currentSource').className = 'badge ' + (action.source === 'fallback' ? 'policy' : action.source === 'safety_reflex' ? 'reflex' : '');
+    $('currentPlan').textContent = (brain.think && brain.think.intention) || b.goal || 'Waiting for a recorded plan…';
+    var outcome = action.status === 'failed' || action.status === 'succeeded' ? action : latest;
+    $('currentOutcome').textContent = outcome ? 'Last result · ' + outcomeText(outcome) : 'No completed action recorded yet.';
+    $('currentOutcome').classList.toggle('failed', Boolean(outcome && (outcome.ok === false || outcome.status === 'failed')));
+    var providerBits = [];
+    ['planner', 'decision'].forEach(function (key) {
+      var provider = brain[key];
+      if (!provider) return;
+      var label = key === 'planner' ? 'Planner' : 'Action selector';
+      providerBits.push(label + ': ' + (provider.status || 'unknown') + (provider.error ? ' — ' + provider.error : ''));
+    });
+    $('providerStatus').textContent = providerBits.join(' · ');
+    $('providerStatus').classList.toggle('error', Boolean((brain.planner && brain.planner.error) || (brain.decision && brain.decision.error)));
+    var results = $('actionResults');
+    clear(results);
+    recent.slice().reverse().forEach(function (r) {
+      var row = el('div', 'action-result' + (r.ok === false ? ' failed' : ''));
+      row.appendChild(el('b', null, (r.action || '').replace(/_/g, ' ') + (r.ok === false ? ' · FAILED' : ' · COMPLETED')));
+      if (r.source) row.appendChild(el('span', 'badge', sourceLabel(r.source)));
+      row.appendChild(el('p', null, r.error || resultText(r.result) || 'No result detail recorded.'));
+      row.appendChild(el('div', 'jev-meta', timeAgo(r.at) + (typeof r.durationMs === 'number' ? ' · ' + (r.durationMs / 1000).toFixed(1) + 's' : '')));
+      results.appendChild(row);
+    });
+    if (!recent.length) results.appendChild(el('div', 'empty-state', 'No completed actions recorded yet.'));
   }
 
   // ---------- village bar + cast ----------
@@ -302,7 +420,11 @@
     var feedEl = $('chatFeed');
     if (!telemetry || !Array.isArray(telemetry.chat)) return;
     var chat = telemetry.chat;
+    $('chatEmpty').hidden = chat.length > 0;
+    // Controller restarts begin a fresh sequence.
+    if (chat.length && chat[chat.length - 1].id < lastChatId) { lastChatId = 0; clear(feedEl); }
     var fresh = chat.filter(function (m) { return m.id > lastChatId; });
+    if (!chat.length) { lastChatId = 0; clear(feedEl); $('chatCount').textContent = '0'; }
     if (!fresh.length) return;
     var autoscroll = feedEl.scrollHeight - feedEl.scrollTop - feedEl.clientHeight < 80;
     fresh.forEach(function (m) {
@@ -336,8 +458,7 @@
         b.textContent = name.toUpperCase();
         b.dataset.name = name.toLowerCase();
         b.addEventListener('click', function () {
-          state.clanker = name.toLowerCase();
-          render();
+          setMode(state.mode, name.toLowerCase());
         });
         picker.appendChild(b);
       });
@@ -355,7 +476,22 @@
     renderFocusPicker();
     var name = state.clanker;
     var b = bot(name);
-    if (!b) return;
+    if (!b) {
+      $('currentAction').textContent = state.clanker.toUpperCase() + ' · WAITING FOR TELEMETRY';
+      $('currentPlan').textContent = 'Waiting for a recorded plan…';
+      $('currentSource').textContent = 'SOURCE UNAVAILABLE';
+      $('currentOutcome').textContent = '';
+      $('providerStatus').textContent = '';
+      $('brainModel').textContent = 'waiting';
+      $('planGoal').textContent = 'Waiting for this clanker’s telemetry…';
+      $('soulOrigin').textContent = '—';
+      $('soulQuote').textContent = '';
+      ['planSteps', 'soulChips', 'soulVitals', 'jevList', 'actionResults', 'memoryList'].forEach(function (id) { clear($(id)); });
+      $('thinkingBlock').hidden = true;
+      $('reflectBlock').hidden = true;
+      return;
+    }
+    renderCurrent(b);
     var model = b.model || {};
     $('brainModel').textContent = (model.provider || 'llm') + ' / ' + (model.model || '?');
     $('soulOrigin').textContent = b.soul ? (b.soul.origin || '—') : '—';
@@ -369,8 +505,6 @@
     chips.appendChild(el('span', 'model-chip', (model.provider || '?') + ' ' + (model.model || '')));
     var vitals = $('soulVitals');
     clear(vitals);
-    vitals.appendChild(vital('HEALTH', Math.round(b.health || 0) + '/20'));
-    vitals.appendChild(vital('FOOD', Math.round(b.food || 0) + '/20'));
     vitals.appendChild(vital('ACTIVITY', b.activity || '—'));
     vitals.appendChild(vital('MOTIVE', b.soul && b.soul.motive ? String(b.soul.motive).slice(0, 42) : '—'));
 
@@ -380,7 +514,8 @@
       : (b.goal || (b.plan && b.plan.intention) || 'waiting for telemetry…');
     var steps = $('planSteps');
     clear(steps);
-    if (think && think.steps) think.steps.forEach(function (s) { steps.appendChild(el('li', null, s)); });
+    var planSteps = think && think.steps || (b.plan && b.plan.steps) || [];
+    planSteps.forEach(function (s) { steps.appendChild(el('li', null, s)); });
 
     var thinking = $('thinkingBlock');
     thinking.hidden = !(think && think.thinking);
@@ -446,7 +581,7 @@
     var head = el('div', 'jev-head');
     var choice = el('span', 'choice' + (d.source === 'jev' ? ' model-choice' : ''), d.choice || '?');
     head.appendChild(choice);
-    var badge = el('span', 'badge ' + (d.source === 'fallback' ? 'policy' : d.source === 'safety_reflex' ? 'reflex' : ''), (d.source || '').toUpperCase());
+    var badge = el('span', 'badge ' + (d.source === 'fallback' ? 'policy' : d.source === 'safety_reflex' ? 'reflex' : ''), sourceLabel(d.source));
     head.appendChild(badge);
     var metaBits = [];
     if (typeof d.confidence === 'number') metaBits.push(Math.round(d.confidence * 100) + '%');
@@ -455,6 +590,7 @@
     metaBits.push(timeAgo(d.t));
     head.appendChild(el('span', 'jev-meta', metaBits.join(' · ')));
     entry.appendChild(head);
+    if (d.reason || d.error || d.requestPending) entry.appendChild(el('div', 'jev-reason', d.reason || d.error || 'Model request pending; using a fallback choice.'));
     var options = d.options || {};
     var keys = Object.keys(options);
     if (!keys.length) {
@@ -468,7 +604,7 @@
       row.appendChild(el('span', 'name', key));
       var bar = el('span', 'bar');
       var fill = el('i');
-      var p = typeof opt.p === 'number' ? Math.max(0, Math.min(1, opt.p)) : (chosen ? 0.5 : 0);
+      var p = typeof opt.p === 'number' ? Math.max(0, Math.min(1, opt.p)) : 0;
       fill.style.width = (p * 100).toFixed(1) + '%';
       bar.appendChild(fill);
       row.appendChild(bar);
@@ -562,7 +698,9 @@
 
   function renderPlay() {
     var g = telemetry && telemetry.guest;
-    var turn = guest.turnLive();
+    var available = guestAvailable();
+    $('playUnavailable').hidden = available;
+    var turn = available && guest.turnLive();
     var showJoin = $('playJoin'), showQueued = $('playQueued'), showDone = $('playDone');
     showJoin.hidden = true; showQueued.hidden = true; showDone.hidden = true;
     $('turnHud').hidden = !turn;
@@ -570,12 +708,17 @@
     $('clickCatch').hidden = !(turn && !guest.touch && document.pointerLockElement !== singleVideo);
     $('playHelp').hidden = !turn;
     $('boomBtn').disabled = guest.boomed;
+    if (!available) {
+      showSingle('arena', 'ARENA / WATCH', 'GUEST PLAY UNAVAILABLE');
+      return;
+    }
     if (turn) {
       guest.wasActive = true;
       showSingle('guest', 'PIPER CAM / YOUR TURN', 'CREEPER FEED');
       $('turnTimer').textContent = g && g.active ? fmtClock(g.active.remainingMs) : '0:00';
       return;
     }
+    showSingle('arena', 'ARENA / QUEUE', 'WAITING FOR CREEPER TURN');
     if (guest.wasActive) {
       guest.wasActive = false;
       showDone.hidden = false;
@@ -791,8 +934,8 @@
 
   function renderChip() {
     var g = telemetry && telemetry.guest;
-    if (state.mode === 'play') return;
-    $('joinChip').hidden = false;
+    $('joinChip').hidden = state.mode === 'play' || !guestAvailable();
+    if ($('joinChip').hidden) return;
     if (g && g.active) {
       $('chipSub').textContent = g.active.nickname + ' is playing · next slot in ' + fmtClock(g.nextTurnInMs);
     } else if (g) {
@@ -816,6 +959,8 @@
     });
   }
   function pollState() {
+    if (pollBusy) return;
+    pollBusy = true;
     fetchJson(API_BASE + '/arena/state.json')
       .catch(function () { return fetchJson(STATE_FALLBACK); })
       .then(function (data) {
@@ -830,20 +975,26 @@
         ) {
           data.guest = telemetry.guest;
         }
+        if (!data || !data.bots || !data.updated) throw new Error('Invalid game telemetry');
         telemetry = data;
+        lastStateReceivedAt = Date.now();
+        renderAvailability();
         renderVillageBar();
         renderChat();
         renderChip();
-        if (state.mode === 'focus') renderFocus();
+        if (state.mode === 'focus') render();
+        else if (state.mode === 'pov') renderFocusPicker();
         if (state.mode === 'play') renderPlay();
       })
-      .catch(function () {});
+      .catch(function () { renderTelemetryStatus(); })
+      .finally(function () { pollBusy = false; });
   }
+  setInterval(renderTelemetryStatus, 2000);
   setInterval(pollState, 2000);
   pollState();
 
   setInterval(function () {
-    if (!guest.token && state.mode !== 'play') return;
+    if (!guestAvailable() || (!guest.token && state.mode !== 'play')) return;
     guestStatus().then(function (s) {
       if (!s) return;
       lastGuestStatusAt = Date.now();
@@ -875,6 +1026,6 @@
   var c = params.get('c');
   if (v === 'grid' || v === 'arena' || v === 'play' || v === 'focus') setMode(v, c ? c.toLowerCase() : 'cinder');
   else if (v && FOUNDING.indexOf(v) !== -1) setMode('pov', v);
-  else setMode('pov', 'mira');
+  else setMode('focus', 'mira');
   drawQr();
 })();
