@@ -1165,6 +1165,11 @@
     if (!guestAvailable() || (!guest.token && state.mode !== 'play')) return;
     guestStatus().then(function (s) {
       if (!s) return;
+      // A tab reopened after its turn ended still has the old token in
+      // localStorage. An empty queue and a different active guest prove that
+      // token is no longer waiting or playing.
+      if (guest.token && !guest.wasActive && s.queueLength === 0 &&
+          (!s.active || s.active.nickname !== guest.nickname)) clearGuest();
       lastGuestStatusAt = Date.now();
       if (telemetry && telemetry.guest && telemetry.guest.queueLength !== undefined) {
         telemetry.guest.queuePreview = s.queuePreview || telemetry.guest.queuePreview;
