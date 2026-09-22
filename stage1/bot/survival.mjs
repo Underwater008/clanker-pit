@@ -1191,44 +1191,33 @@ export function installSurvival(bot, state, log, opts = {}) {
     throw new Error('Bucket did not fill at the spring')
   }
   /**
-   * Feed the Server one bucket of coolant. The pour is server-confirmed by
-   * the water block appearing in the basin. The Server drinks on its own
-   * schedule (the guest gateway drains the basin via RCON — a match-
-   * controller mechanic, labeled): until it does, the basin stays full and
-   * further feeds wait. The water is genuinely consumed — the bot walks back
-   * to the spring for every bucket. The whole cycle runs through the shared
-   * basin lock so pours can never interleave between clankers.
+   * Feed the Server one bucket through its cauldron deposit. Both the filled
+   * cauldron and the emptied bucket must be confirmed by the server. The
+   * match controller empties the deposit later so the next feed can start.
    */
   async function feedServer() {
     const cycle = async () => {
-      const { basinFloor, basinHole } = layout.anatomy
-      // The rim can occlude the basin floor from ground level. Find an actual
-      // visible top face before using the bucket, even if this means stepping
-      // onto the rim; distance alone does not guarantee the pour destination.
-      const pourGoal = new goals.GoalPlaceBlock(basinHole, bot.world, {
-        range: 4.25, LOS: true, faces: [new Vec3(0, -1, 0)],
-      })
-      await walk(pourGoal)
-      const floorBlock = bot.blockAt(basinFloor)
-      if (!solid(floorBlock)) throw new Error('Server basin floor is missing')
-      if (bot.blockAt(basinHole)?.name === 'water')
+      const { deposit } = layout.anatomy
+      await walk(new goals.GoalLookAtBlock(deposit, bot.world, { reach: 4.25 }))
+      const block = bot.blockAt(deposit)
+      if (block?.name === 'water_cauldron')
         throw new Error('The Server is still drinking the last bucket')
+      if (block?.name !== 'cauldron') throw new Error('Server coolant deposit is missing')
       const full = bot.inventory.items().find((i) => i.name === 'water_bucket')
       if (!full) throw new Error('No water bucket to feed the Server')
       const fullBefore = countItems(bot.inventory.items(), 'water_bucket')
       const emptyBefore = countItems(bot.inventory.items(), 'bucket')
       await bot.equip(full, 'hand')
-      await bot.lookAt(basinFloor.offset(0.5, 1, 0.5), true)
-      bot.activateItem()
+      await bot.activateBlock(block)
       const deadline = Date.now() + 5000
       while (Date.now() < deadline) {
-        if (bot.blockAt(basinHole)?.name === 'water' &&
+        if (bot.blockAt(deposit)?.name === 'water_cauldron' &&
             countItems(bot.inventory.items(), 'water_bucket') < fullBefore &&
             countItems(bot.inventory.items(), 'bucket') > emptyBefore)
           return { fedCoolant: true }
         await sleep(50)
       }
-      throw new Error('Server basin pour was not confirmed by water and an emptied bucket')
+      throw new Error('Server deposit was not confirmed filled with an emptied bucket')
     }
     if (villageCtx?.withBasin) return villageCtx.withBasin(cycle)
     return cycle()

@@ -247,20 +247,16 @@ export function homeExtensionBlueprint(flag, index) {
   return []
 }
 
-/** The Server monument core (top lantern) and coolant basin positions. */
+/** The Server monument core (top lantern) and coolant deposit positions. */
 export function serverAnatomy(flag) {
   const f = v(flag)
   return {
     base: f,
     core: [1, 2].map((h) => f.offset(0, h, 0)), // iron blocks
     lantern: f.offset(0, 3, 0),
-    // Coolant basin: a one-block basin east of the rack. Water is placed on
-    // the floor block's top face and held by the rim.
-    basinFloor: plus(f, 2, 0, 0),
-    basinHole: plus(f, 2, 1, 0),
-    basinRim: [
-      [1, 0], [3, 0], [2, 1], [2, -1], [1, 1], [3, 1], [1, -1], [3, -1],
-    ].map(([x, z]) => plus(f, x, 1, z)),
+    // A cauldron beside the rack accepts one bucket at a time.
+    depositBase: plus(f, 2, 0, 0),
+    deposit: plus(f, 2, 1, 0),
     // Coolant spring: a 2x2 infinite water source south of the gate.
     spring: [
       [0, 12], [1, 12], [0, 13], [1, 13],
@@ -302,7 +298,7 @@ export function roadSpots(flag) {
 export function blastHoleTargets(flag, blockAt) {
   const f = v(flag), anatomy = serverAnatomy(f)
   const reserved = new Set([
-    f, anatomy.basinFloor, ...anatomy.spring,
+    f, anatomy.depositBase, ...anatomy.spring,
     ...HOME_LOTS.flatMap((_, i) => {
       const lot = homeLot(f, i)
       return [lot, ...homeBlueprint(lot, f), ...homeExtensionBlueprint(f, i)]

@@ -209,8 +209,8 @@ const isEnemyPlayer = (username) => {
   if (/^(Cam[A-Z]|View)/.test(username)) return false
   return true
 }
-/* One coolant basin, one pour at a time: every feed_server call runs through
- * this shared chain so pours and drinks cannot interleave between clankers. */
+/* One coolant deposit, one bucket at a time: every feed_server call runs through
+ * this shared chain so deposits cannot interleave between clankers. */
 let basinChain = Promise.resolve()
 function withBasin(fn) {
   const run = basinChain.then(fn, fn)
@@ -459,7 +459,7 @@ function actor(name, index) {
         lotIndex: Number.isInteger(state.homeLot) ? state.homeLot : index,
         summary: () => village.snapshot(),
         isEnemyPlayer,
-        // The coolant basin is a one-at-a-time ritual: serialize pour/drink
+        // The coolant deposit is a one-at-a-time ritual: serialize feed/drink
         // cycles across all clankers (they share this process) so two
         // coolant engineers can never interleave pours and double-credit.
         withBasin,
@@ -1060,7 +1060,7 @@ if (villageEnabled)
   chat(
     'system',
     'round',
-    'Round setup placed the Server monument, coolant basin + spring, starter chest, plaza world spawn and keepInventory (fixture). The village must keep the Server alive.',
+    'Round setup placed the Server monument, coolant deposit + spring, starter chest, plaza world spawn and keepInventory (fixture). The village must keep the Server alive.',
   )
 log('director', 'survival_start', {
   cast: foundingNames,

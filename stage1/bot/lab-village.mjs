@@ -71,7 +71,7 @@ async function assertBlock(position, name, what) {
 
 try {
   await once(bot, 'spawn')
-  // ---- fixture: a graded village green with the Server, spring and basin.
+  // ---- fixture: a graded village green with the Server, spring and deposit.
   for (const command of [
     'gamerule doDaylightCycle false',
     'time set noon',
@@ -82,14 +82,11 @@ try {
     `setblock ${FLAG.x} ${FLAG.y + 1} ${FLAG.z} iron_block`,
     `setblock ${FLAG.x} ${FLAG.y + 2} ${FLAG.z} iron_block`,
     `setblock ${FLAG.x} ${FLAG.y + 3} ${FLAG.z} sea_lantern`,
-    `setblock ${anatomy.basinFloor.x} ${anatomy.basinFloor.y} ${anatomy.basinFloor.z} stone`,
+    `setblock ${anatomy.depositBase.x} ${anatomy.depositBase.y} ${anatomy.depositBase.z} stone`,
+    `setblock ${anatomy.deposit.x} ${anatomy.deposit.y} ${anatomy.deposit.z} cauldron`,
   ]) {
     await rconOk(command)
     await sleep(120)
-  }
-  for (const rim of anatomy.basinRim) {
-    await rconOk(`setblock ${rim.x} ${rim.y} ${rim.z} stone`)
-    await sleep(80)
   }
   for (const cell of anatomy.spring) {
     await rconOk(`setblock ${cell.x} ${cell.y} ${cell.z} water`)
@@ -111,7 +108,7 @@ try {
     return result
   }
 
-  // ---- coolant loop: scoop at the spring, pour into the basin (consumed).
+  // ---- coolant loop: scoop at the spring, deposit into the cauldron.
   await act('scoop_water')
   assert.ok(
     bot.inventory.items().some((i) => i.name === 'water_bucket'),
@@ -119,27 +116,27 @@ try {
   )
   const fed = await act('feed_server')
   assert.equal(fed.fedCoolant, true, 'feed_server must report a server-confirmed feed')
-  // The pour leaves the water in the basin: the Server "drinks" it on its
+  // The deposit leaves the water in the cauldron: the Server "drinks" it on its
   // own schedule (the guest gateway drains it via RCON). The lab simulates
   // the drink, then feeds again from a fresh scoop.
-  await assertBlock(anatomy.basinHole, 'water', 'the poured coolant waits in the basin')
+  await assertBlock(anatomy.deposit, 'water_cauldron', 'the coolant waits in the deposit')
   assert.ok(
     bot.inventory.items().some((i) => i.name === 'bucket'),
     'the bucket must be empty after the pour — real consumption',
   )
   assert.ok(
     !bot.inventory.items().some((i) => i.name === 'water_bucket'),
-    'no free refills: the water stayed in the basin',
+    'no free refills: the water stayed in the deposit',
   )
   await rconOk(
-    `setblock ${anatomy.basinHole.x} ${anatomy.basinHole.y} ${anatomy.basinHole.z} air`,
+    `setblock ${anatomy.deposit.x} ${anatomy.deposit.y} ${anatomy.deposit.z} cauldron`,
   )
   await sleep(600)
-  await assertBlock(anatomy.basinHole, 'air', 'the Server drank the coolant')
+  await assertBlock(anatomy.deposit, 'cauldron', 'the Server drank the coolant')
   // A feed while the Server is still drinking must be refused (verify the
-  // guard), then succeed after a fresh scoop once the basin is drained.
+  // guard), then succeed after a fresh scoop once the deposit is drained.
   await rconOk(
-    `setblock ${anatomy.basinHole.x} ${anatomy.basinHole.y} ${anatomy.basinHole.z} water`,
+    `setblock ${anatomy.deposit.x} ${anatomy.deposit.y} ${anatomy.deposit.z} water_cauldron[level=3]`,
   )
   await sleep(400)
   await act('scoop_water')
@@ -151,7 +148,7 @@ try {
   }
   assert.ok(refused, 'feeding while the Server is still drinking must be refused')
   await rconOk(
-    `setblock ${anatomy.basinHole.x} ${anatomy.basinHole.y} ${anatomy.basinHole.z} air`,
+    `setblock ${anatomy.deposit.x} ${anatomy.deposit.y} ${anatomy.deposit.z} cauldron`,
   )
   await sleep(400)
   const fed2 = await act('feed_server')

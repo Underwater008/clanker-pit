@@ -38,7 +38,7 @@ test('farm and paths fit the graded village and avoid fixtures', () => {
   assert.equal(plots.length, 8)
   assert.equal(roads.length, 16)
   assert.equal(new Set([...plots, ...roads].map(key)).size, 24)
-  const fixtures = new Set([flag, ...a.spring, a.basinFloor].map(key))
+  const fixtures = new Set([flag, ...a.spring, a.depositBase].map(key))
   const occupied = new Set(HOME_LOTS.flatMap((_, i) => [
     ...homeBlueprint(homeLot(flag, i), flag), ...homeExtensionBlueprint(flag, i),
   ]).filter((p) => p.y === flag.y + 1).map((p) => `${p.x},${p.z}`))
@@ -253,21 +253,12 @@ test('rotateXZ turns clockwise seen from above', () => {
   assert.deepEqual(rotateXZ(2, -3, 4), [2, -3])
 })
 
-test('server anatomy: basin is contained, spring is a 2x2 south of the gate', () => {
+test('server anatomy: deposit is beside the monument, spring is south of the gate', () => {
   const a = serverAnatomy(flag)
   assert.equal(a.core.length, 2)
   assert.deepEqual(a.lantern, flag.offset(0, 3, 0))
-  // The basin hole is fully surrounded by rim + the rack column.
-  const rim = new Set(a.basinRim.map(key))
-  for (const [dx, dz] of [
-    [1, 0], [-1, 0], [0, 1], [0, -1],
-  ]) {
-    const neighbor = a.basinHole.offset(dx, 0, dz)
-    const held =
-      rim.has(key(neighbor)) ||
-      (neighbor.x === a.core[0].x && neighbor.z === a.core[0].z)
-    assert.ok(held, `basin leaks toward ${dx},${dz}`)
-  }
+  assert.deepEqual(a.deposit, flag.offset(2, 1, 0))
+  assert.deepEqual(a.depositBase, flag.offset(2, 0, 0))
   assert.equal(a.spring.length, 4)
   for (const cell of a.spring) {
     assert.ok(cell.z > flag.z + WALL_RADIUS, 'spring must sit outside the wall')

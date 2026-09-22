@@ -553,13 +553,13 @@ setInterval(() => {
   writeGuestState()
 }, 500)
 // The Server drinks its coolant (labeled match-controller mechanic): a poured
-// bucket sits visibly in the basin until this drains it, which is what makes
+// bucket sits visibly in the cauldron until this drains it, which is what makes
 // every feed genuinely consume the bot's water.
 setInterval(() => {
   if (!anatomy) return
   void withRcon((client) =>
     client.send(
-      `execute if block ${anatomy.basinHole.x} ${anatomy.basinHole.y} ${anatomy.basinHole.z} water run setblock ${anatomy.basinHole.x} ${anatomy.basinHole.y} ${anatomy.basinHole.z} air`,
+      `execute if block ${anatomy.deposit.x} ${anatomy.deposit.y} ${anatomy.deposit.z} minecraft:water_cauldron[level=3] run setblock ${anatomy.deposit.x} ${anatomy.deposit.y} ${anatomy.deposit.z} minecraft:cauldron`,
     ),
   )
 }, 20000)

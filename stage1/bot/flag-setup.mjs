@@ -5,7 +5,7 @@
 //
 // It connects a probe bot, picks a flat site near world spawn, then via RCON:
 // grades a village green, raises the Server monument (obsidian base, iron
-// core, sea lantern), digs the coolant basin and a 2x2 infinite spring south
+// core, sea lantern), places the coolant deposit and a 2x2 infinite spring south
 // of the future gate, stocks a starter chest (buckets/bread/torches), hands
 // Cinder two starter buckets, and sets world spawn inside the plaza so every
 // clanker and booted villager spawns around the Server.
@@ -186,10 +186,9 @@ try {
   await run(`setblock ${flag.x} ${flag.y + 1} ${flag.z} iron_block`)
   await run(`setblock ${flag.x} ${flag.y + 2} ${flag.z} iron_block`)
   await run(`setblock ${flag.x} ${flag.y + 3} ${flag.z} sea_lantern`)
-  // Coolant basin east of the rack.
-  await run(`setblock ${a.basinFloor.x} ${a.basinFloor.y} ${a.basinFloor.z} stone`)
-  for (const rim of a.basinRim)
-    await run(`setblock ${rim.x} ${rim.y} ${rim.z} stone`)
+  // Coolant cauldron east of the rack.
+  await run(`setblock ${a.depositBase.x} ${a.depositBase.y} ${a.depositBase.z} stone`)
+  await run(`setblock ${a.deposit.x} ${a.deposit.y} ${a.deposit.z} cauldron`)
   // 2x2 infinite coolant spring south of the future gate.
   for (const cell of a.spring)
     await run(`setblock ${cell.x} ${cell.y} ${cell.z} water`)
@@ -213,7 +212,8 @@ try {
   // Verify authoritative block state before recording the fixture as ready.
   for (const [position, block] of [
     [a.base, 'obsidian'], ...a.core.map((p) => [p, 'iron_block']),
-    [a.lantern, 'sea_lantern'], [a.basinFloor, 'stone'],
+    [a.lantern, 'sea_lantern'], [a.depositBase, 'stone'],
+    [a.deposit, 'cauldron'],
     ...a.spring.map((p) => [p, 'water[level=0]']),
   ]) {
     const response = await run(`execute if block ${position.x} ${position.y} ${position.z} minecraft:${block}`)
@@ -223,7 +223,7 @@ try {
   if ((chestItems.match(/minecraft:water_bucket/g) ?? []).length !== 2)
     throw new Error('Starter chest does not contain both water buckets')
   await run(
-    'say [Round setup] The Server stands at the village heart. Fixtures placed: monument, coolant basin + spring, starter chest, gate-side world spawn, keepInventory on.',
+    'say [Round setup] The Server stands at the village heart. Fixtures placed: monument, coolant deposit + spring, starter chest, gate-side world spawn, keepInventory on.',
   )
   built = true
   log('fixture_built', { flag: flag.toString() })

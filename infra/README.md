@@ -232,9 +232,9 @@ through RCON. Placement keeps the player clear of the destination and requires
 an exposed face; elevated faces use a bounded jump with a confirmed placement.
 
 `lab-village.mjs` is the village-round regression for the same isolated lab:
-it fixtures a Server + spring + basin with RCON, then verifies the whole
+it fixtures a Server + spring + cauldron deposit with RCON, then verifies the whole
 server-confirmed mechanics chain — infinite spring refill, `scoop_water`,
-`feed_server` (pour + drink, twice), complete wall/gate blueprints with the
+`feed_server` (deposit + drink, twice), complete wall/gate blueprints with the
 gate passage open, home completion, torch placement, `mine_iron_ore` →
 `smelt_iron` → `craft_bucket`, and patrol staying near the village.
 `lab-village-improvements.mjs` is a shorter isolated check for wheat
@@ -259,7 +259,7 @@ use only Minecraft 25566/RCON 25576 and require the isolated lab above.
 `flag-setup.mjs` is the idempotent round fixture, run once before the cast: a
 probe bot picks a flat dry site near world spawn, then RCON grades a village
 green, raises the Server monument (obsidian base, iron core, sea lantern), digs
-the coolant basin and a 2x2 infinite spring south of the future gate, stocks a
+the coolant cauldron and a 2x2 infinite spring south of the future gate, stocks a
 starter chest, and sets world spawn inside the plaza. `fixture-grant.mjs` runs
 ~75 s later (pod-bootstrap schedules it) and waits for Cinder to join before
 handing over two starter water buckets; the grant is recorded in
@@ -271,8 +271,8 @@ round at a fresh site.
 
 The cast spawns around the Server, builds the wall/gate/homes from blueprints
 in `village.mjs` (standing ON the graded ground), feeds coolant (a
-server-confirmed pour into the basin; the water is genuinely consumed and the
-guest gateway drains the basin on the Server's behalf ~20 s later — a
+server-confirmed water-bucket deposit into the cauldron; the water is genuinely consumed and the
+guest gateway empties the cauldron on the Server's behalf ~20 s later — a
 labeled match-controller mechanic that doubles as the visible "server
 drinks" moment), and every `FLAG_WATER_TARGET` buckets boots one new
 villager from `VILLAGER_POOL` (cap `MAX_POPULATION`, restored after
