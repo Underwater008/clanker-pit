@@ -1,4 +1,4 @@
-// No-pickaxe stone-pit recovery on the isolated vanilla lab only.
+// No-pickaxe stone/ore pit recovery on the isolated vanilla lab only.
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -16,7 +16,10 @@ try {
   for (const command of [
     'gamemode survival UndergroundLab', 'clear UndergroundLab',
     'fill -5 -61 -5 9 -53 5 air', 'fill -4 -61 -4 8 -58 4 stone',
-    'fill 0 -60 0 0 -59 0 air', 'tp UndergroundLab 0.5 -60 0.5',
+    'fill 0 -60 0 0 -59 0 air',
+    // At the first stair landing this overhead ore used to suppress every
+    // next-step candidate and let ordinary tasks walk the clanker back down.
+    'setblock 1 -57 0 copper_ore', 'tp UndergroundLab 0.5 -60 0.5',
   ]) await rcon.send(command)
   await sleep(1000)
   await assert.rejects(skills.execute('explore'), /No path|NoPath|goal|deadline/i)

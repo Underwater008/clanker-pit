@@ -11,6 +11,7 @@ import {
   installSurvival,
   localShelter,
   localEscapePlans,
+  escapeDigBudget,
   navigationReached,
   navigationGoalSummary,
   navigateWithRecovery,
@@ -44,6 +45,7 @@ function fixture({ inventory = [], shelter = null, blocks = [], village = null }
     loadPlugin() {},
     clearControlStates() {},
     stopDigging() {},
+    digTime: () => 7500,
     blockAt(position) {
       const p = position.floored()
       const defined = blocks.find((b) => b.position.equals(p))
@@ -395,4 +397,26 @@ test('stop during authoritative escape clearing cannot continue to another block
   assert.equal(dug, 1)
   assert.equal(bot.entity.position.y, 64)
   assert.equal(bot._client.listenerCount('block_change'), 0)
+})
+
+test('ordinary copper ore above a staircase is clearable within a bounded hand-dig budget', () => {
+  const { bot } = fixture()
+  bot.blockAt = (p) => ({ position: p.floored(), name: p.y === 66 ? 'copper_ore' : 'stone', boundingBox: 'block' })
+  assert.ok(localEscapePlans(bot, new Vec3(4, 70, 0)).length)
+  assert.equal(escapeDigBudget(15000), 17000)
+  assert.equal(escapeDigBudget(16000), 18000)
+  assert.throws(() => escapeDigBudget(22500), /too long/)
+  assert.throws(() => escapeDigBudget(Infinity), /too long/)
+})
+
+test('a latched recovery never offers patrol or building merely because its next stair is blocked', async () => {
+  const { bot, skills, state } = fixture({ village: { flag: new Vec3(0, 70, 0), lotIndex: 0, summary: () => ({}) } })
+  state.role = 'guard'
+  bot.blockAt = (p) => ({ position: p.floored(), name: 'stone', boundingBox: 'block' })
+  bot.pathfinder.goto = async () => { throw new Error('NoPath') }
+  await assert.rejects(skills.execute('explore'), /NoPath/)
+  assert.deepEqual(Object.keys(skills.candidates(skills.observation())), ['escape_upward'])
+  bot.blockAt = (p) => ({ position: p.floored(), name: 'bedrock', boundingBox: 'block' })
+  assert.equal(localEscapePlans(bot, new Vec3(0, 71, 0)).length, 0)
+  assert.deepEqual(Object.keys(skills.candidates(skills.observation())), ['escape_upward'])
 })

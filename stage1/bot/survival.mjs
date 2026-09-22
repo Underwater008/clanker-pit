@@ -100,7 +100,16 @@ export function inventoryGains(before, after) {
     .filter((item) => item.count > 0)
 }
 
-const escapeTerrain = new Set(['stone', 'andesite', 'diorite', 'granite', 'dirt', 'grass_block', 'clay'])
+const escapeTerrain = new Set([
+  'stone', 'andesite', 'diorite', 'granite', 'dirt', 'grass_block', 'clay',
+  'coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'redstone_ore',
+  'lapis_ore', 'diamond_ore', 'emerald_ore',
+])
+export function escapeDigBudget(digTime) {
+  if (!Number.isFinite(digTime) || digTime < 0 || digTime > 16000)
+    throw new Error('Escape block would take too long to clear safely')
+  return Math.max(2500, digTime + 2000) // Ordinary ore by hand takes 15s; cap work at 18s.
+}
 export function localEscapePlans(bot, target, protectedBlock = () => false) {
   const origin = bot.entity.position.floored()
   const hazards = new Set(['water', 'lava', 'sand', 'red_sand', 'gravel'])
@@ -539,7 +548,11 @@ export function installSurvival(bot, state, log, opts = {}) {
     if (!target) throw new Error('No blocked underground route to recover')
     const protectedBlock = (position) => constructionBlock(position) || resourceBusy(position)
     const plan = localEscapePlans(bot, target, protectedBlock)[0]
-    if (!plan) throw new Error('No safe local staircase step')
+    if (!plan) {
+      log('escape_blocked', { position: bot.entity.position, target, reason: 'No inspected safe staircase step' })
+      await sleep(1500)
+      throw new Error('No safe local staircase step; holding recovery position')
+    }
     const before = bot.entity.position.clone()
     bot.pathfinder.setGoal(null)
     bot.clearControlStates()
@@ -555,6 +568,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       const block = bot.blockAt(position)
       if (!solid(block)) continue
       if (!bot.canDigBlock(block)) throw new Error('Escape block is out of reach')
+      const digBudget = escapeDigBudget(bot.digTime(block))
       let confirmed = false
       const update = (packet) => {
         if (new Vec3(packet.location.x, packet.location.y, packet.location.z).equals(position) &&
@@ -562,8 +576,8 @@ export function installSurvival(bot, state, log, opts = {}) {
       }
       bot._client.on('block_change', update)
       try {
-        log('escape_clearing', { position, block: block.name, byHand: !pick, destination: plan.destination })
-        await bounded(() => bot.dig(block, true), 11000, () => bot.stopDigging())
+        log('escape_clearing', { position, block: block.name, byHand: !pick, destination: plan.destination, digBudget })
+        await bounded(() => bot.dig(block, true), digBudget, () => bot.stopDigging())
         const deadline = Date.now() + 1500
         while (!confirmed && Date.now() < deadline) await sleep(50)
         if (!confirmed) throw new Error('Escape clearing was not confirmed by the server')
@@ -1164,7 +1178,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     const add = (key, description) => {
       if ((state.cooldowns[key] ?? 0) < Date.now()) options[key] = description
     }
-    if (escapeTarget() && localEscapePlans(bot, escapeTarget(), (p) => constructionBlock(p) || resourceBusy(p)).length)
+    if (escapeTarget())
       return { escape_upward: 'Recover from the blocked underground route: clear one inspected natural-terrain staircase step and climb toward the remembered surface. Bare hands may clear stone slowly; preserve construction and avoid fluid or falling terrain.' }
     if (bot.food < 19 && n((name) => edible.has(name)))
       add('eat', 'Eat available food now to restore hunger and allow healing.')
