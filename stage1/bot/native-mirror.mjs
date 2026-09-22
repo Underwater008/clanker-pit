@@ -43,6 +43,43 @@ const excluded = new Set([
 const angleByte = (radians) =>
   ((Math.round(((Math.PI - radians) * 128) / Math.PI) + 128) & 255) - 128
 
+// Camera smoothing helpers. The bot's raw entity orientation snaps to each
+// new look target within one tick, while mineflayer rate-limits the rotation
+// it actually sends the server to 3 rad/s (prismarine-physics yawSpeed and
+// pitchSpeed). Native views apply the same limit and interpolate the 20 Hz
+// physics samples so their cameras pan like the wide camera instead of
+// frame-jumping on every look() call.
+export function wrapAngle(delta) {
+  let d = delta % (Math.PI * 2)
+  if (d > Math.PI) d -= Math.PI * 2
+  else if (d < -Math.PI) d += Math.PI * 2
+  return d
+}
+
+export function chaseAngle(current, target, maxStep) {
+  const d = wrapAngle(target - current)
+  return current + Math.max(-maxStep, Math.min(maxStep, d))
+}
+
+export function interpolatePositionAt(samples, at) {
+  if (samples.length === 0) return null
+  for (let i = samples.length - 1; i >= 0; i--) {
+    const s = samples[i]
+    if (s.t <= at) {
+      const n = samples[i + 1]
+      if (!n) return s
+      const span = n.t - s.t
+      const f = span > 0 ? Math.min(1, (at - s.t) / span) : 1
+      return {
+        x: s.x + (n.x - s.x) * f,
+        y: s.y + (n.y - s.y) * f,
+        z: s.z + (n.z - s.z) * f,
+      }
+    }
+  }
+  return samples[0]
+}
+
 export class MirrorCache {
   constructor() {
     this.base = new Map()
@@ -186,18 +223,84 @@ export function createNativeMirror({ port, name, statePath, log = () => {} }) {
       viewer = null
     }
   }
+  const TURN_SPEED = 3 // rad/s, matches prismarine-physics yawSpeed/pitchSpeed
+  const CAMERA_HZ = 60
+  const INTERP_DELAY_MS = 80 // one-sample lookahead over the 50 ms sample grid
+  const TELEPORT_DISTANCE = 12 // blocks; larger sample gaps are real teleports
+  const cameraSamples = []
+  let camYaw = null,
+    camPitch = null,
+    camChaseAt = 0
+
+  const finiteEntity = (e) =>
+    [e.position.x, e.position.y, e.position.z, e.yaw, e.pitch].every(
+      Number.isFinite,
+    )
+
+  function resetCamera() {
+    cameraSamples.length = 0
+    camYaw = null
+    camPitch = null
+  }
+
+  function sampleCamera() {
+    const e = bot?.entity
+    if (!e || !finiteEntity(e)) return
+    const s = cameraSamples[cameraSamples.length - 1]
+    if (
+      s &&
+      (s.x - e.position.x) ** 2 +
+        (s.y - e.position.y) ** 2 +
+        (s.z - e.position.z) ** 2 >
+        TELEPORT_DISTANCE ** 2
+    )
+      resetCamera() // real teleport: never interpolate or pan across it
+    cameraSamples.push({
+      t: Date.now(),
+      x: e.position.x,
+      y: e.position.y,
+      z: e.position.z,
+      yaw: e.yaw,
+      pitch: e.pitch,
+    })
+    if (cameraSamples.length > 12) cameraSamples.shift()
+  }
+
+  function cameraTick() {
+    if (!ready || cameraSamples.length === 0) return
+    const now = Date.now()
+    const p = interpolatePositionAt(cameraSamples, now - INTERP_DELAY_MS)
+    const target = cameraSamples[cameraSamples.length - 1]
+    if (camYaw === null || camPitch === null) {
+      camYaw = target.yaw
+      camPitch = target.pitch
+      camChaseAt = now
+    } else {
+      const dt = Math.min(0.25, Math.max(0, (now - camChaseAt) / 1000))
+      camChaseAt = now
+      const max = TURN_SPEED * dt
+      camYaw = chaseAngle(camYaw, target.yaw, max)
+      camPitch = chaseAngle(camPitch, target.pitch, max)
+    }
+    send('position', {
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      yaw: 180 - (camYaw * 180) / Math.PI,
+      pitch: (-camPitch * 180) / Math.PI,
+      flags: {},
+      teleportId: ++teleportId,
+    })
+  }
+
   function position() {
     const e = bot?.entity
-    if (
-      !ready ||
-      !e ||
-      ![e.position.x, e.position.y, e.position.z, e.yaw, e.pitch].every(
-        Number.isFinite,
-      )
-    )
-      return
+    if (!ready || !e || !finiteEntity(e)) return
+    resetCamera() // a joining viewer lands on the true state, not an interpolation
     send('position', {
-      ...e.position,
+      x: e.position.x,
+      y: e.position.y,
+      z: e.position.z,
       yaw: 180 - (e.yaw * 180) / Math.PI,
       pitch: (-e.pitch * 180) / Math.PI,
       flags: {},
@@ -269,7 +372,8 @@ export function createNativeMirror({ port, name, statePath, log = () => {} }) {
   server.on('error', (error) =>
     log('mirror_server_error', { error: String(error) }),
   )
-  const posTimer = setInterval(position, 50)
+  const sampleTimer = setInterval(sampleCamera, 50)
+  const cameraTimer = setInterval(cameraTick, Math.round(1000 / CAMERA_HZ))
   const invTimer = setInterval(inventory, 500)
   const stateTimer = setInterval(publish, 2000)
   let dig = null,
@@ -311,6 +415,7 @@ export function createNativeMirror({ port, name, statePath, log = () => {} }) {
       ready = false
       generation = Date.now()
       dig = null
+      resetCamera()
       for (const key of Object.keys(registryCodec)) delete registryCodec[key]
       const thisCache = cache
       bot._client.on('packet', (data, meta) => {
@@ -342,6 +447,7 @@ export function createNativeMirror({ port, name, statePath, log = () => {} }) {
       bot.on('spawn', () => {
         if (bot === nextBot) {
           ready = true
+          resetCamera()
           publish()
         }
       })
@@ -356,7 +462,7 @@ export function createNativeMirror({ port, name, statePath, log = () => {} }) {
       publish()
     },
     close() {
-      for (const t of [posTimer, invTimer, stateTimer, digTimer])
+      for (const t of [sampleTimer, cameraTimer, invTimer, stateTimer, digTimer])
         clearInterval(t)
       viewer?.end('Display stopped')
       server.close()
