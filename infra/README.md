@@ -154,3 +154,8 @@ dry cherry-grove spawn near (-113, 117, -1225). The old `world` directory and
 `backups/round-20260921-native` are retained. Bootstrap preserves existing
 `server.properties` so it cannot silently switch back to the old beach world.
 Player POV is the website default; `?v=arena` explicitly selects the wide camera.
+
+`lab-placement.mjs` is another isolated-server regression: the bot must place
+the complete 23-block shelter from an uneven approach, with every block checked
+through RCON. Placement keeps the player clear of the destination and requires
+an exposed face; elevated faces use a bounded jump with a confirmed placement.

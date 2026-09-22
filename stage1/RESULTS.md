@@ -141,3 +141,13 @@ deterministic motor-skill test, separate from live model decisions.
 The pod has a 4.25-core CPU quota. Concurrent renderer startup caused tick lag
 and false watchdog reconnects. Camera startup is now staggered until each
 native viewer joins; heartbeat and bot timeout tolerances cover cold starts.
+
+The extended live run confirmed stone mining, stone pickaxes and axes, plus a
+crafted/placed furnace. It also exposed shelter placement failures: proximity to
+a support did not ensure an exposed face, and pathfinding sometimes stopped
+with the player's body overlapping the destination. Placement now keeps clear
+of the target, checks exposed faces with a margin, and performs bounded jump
+placement for elevated faces. The roof centre is supported early while its face
+is reachable. `lab-placement.mjs`, starting on uneven terrain, completed the
+entire hut: RCON verified all 23 planks and 9 remained from the 32-item fixture.
+That lab uses test-only materials; the live bots gather and craft their own.

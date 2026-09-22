@@ -67,17 +67,17 @@ export function shelterBlueprint(origin) {
         if (x === 0 && z === -1) continue // entrance stays clear
         blocks.push(new Vec3(origin.x + x, origin.y + y, origin.z + z))
       }
-  // Perimeter before the middle so every roof block has an adjacent support.
+  // Support the middle early, while its placement face is still exposed.
   for (const [x, z] of [
     [-1, -1],
     [-1, 0],
+    [0, 0],
     [-1, 1],
     [0, 1],
     [1, 1],
     [1, 0],
     [1, -1],
     [0, -1],
-    [0, 0],
   ])
     blocks.push(new Vec3(origin.x + x, origin.y + 2, origin.z + z))
   return blocks
@@ -297,32 +297,76 @@ export function installSurvival(bot, state, log) {
   }
   async function place(position, item) {
     if (solid(bot.blockAt(position))) return { alreadyPresent: true }
-    if (bot.entity.position.distanceTo(position.offset(0.5, 0, 0.5)) < 1.1) {
-      await walk(
-        new goals.GoalNear(position.x + 3, position.y, position.z - 2, 1),
+    // Range is measured from the eyes to an exposed face. A nearby support
+    // block can still be occluded or below reach on a hillside.
+    const goal = new goals.GoalPlaceBlock(position, bot.world, {
+      range: 4.25,
+      LOS: true,
+    })
+    // Pathfinder evaluates block centres, but actual feet can stop a few cm
+    // away. Reject routes that only see the face by grazing a block corner.
+    const visible = (node, jumpHeight = 0) =>
+      [
+        [0.35, 0.35],
+        [0.65, 0.35],
+        [0.35, 0.65],
+        [0.65, 0.65],
+      ].every(([x, z]) =>
+        goal.getFaceAndRef(
+          node.offset(x, bot.entity.eyeHeight + jumpHeight, z),
+        ),
       )
-    }
-    const faces = [
-      new Vec3(0, 1, 0),
-      new Vec3(1, 0, 0),
-      new Vec3(-1, 0, 0),
-      new Vec3(0, 0, 1),
-      new Vec3(0, 0, -1),
-      new Vec3(0, -1, 0),
-    ]
-    const face = faces.find((f) => solid(bot.blockAt(position.minus(f))))
-    if (!face) throw new Error('No adjacent support for placement')
-    const reference = bot.blockAt(position.minus(face))
-    await reach(reference)
+    goal.isEnd = (node) =>
+      Math.max(Math.abs(node.x - position.x), Math.abs(node.z - position.z)) >=
+        2 &&
+      (visible(node) || visible(node, 1))
+    if (!goal.isEnd(bot.entity.position.floored())) await walk(goal, 15000)
+    await sleep(200) // Let the last movement tick settle before placing.
     await bot.equip(item, 'hand')
+    let hit = goal.getFaceAndRef(
+      bot.entity.position.offset(0, bot.entity.eyeHeight, 0),
+    )
+    if (!hit && bot.entity.onGround) {
+      bot.setControlState('jump', true)
+      const deadline = Date.now() + 1000
+      while (!hit && Date.now() < deadline) {
+        await sleep(25)
+        hit = goal.getFaceAndRef(
+          bot.entity.position.offset(0, bot.entity.eyeHeight, 0),
+        )
+      }
+    }
+    if (!hit) {
+      bot.setControlState('jump', false)
+      throw new Error('No exposed placement face within reach')
+    }
+    const face = hit.face.scaled(-1)
+    const reference = bot.blockAt(hit.ref)
     const crouch = ['crafting_table', 'furnace', 'chest'].includes(
       reference.name,
     )
     bot.setControlState('sneak', crouch)
     try {
-      await bounded(() => bot.placeBlock(reference, face), 7000)
+      await bounded(
+        () =>
+          bot._placeBlockWithOptions(reference, face, {
+            forceLook: true,
+            swingArm: 'right',
+          }),
+        7000,
+      )
+    } catch (error) {
+      log('placement_rejected', {
+        position: bot.entity.position,
+        target: position,
+        reference: reference.position,
+        face,
+        held: bot.heldItem?.name,
+      })
+      throw error
     } finally {
       bot.setControlState('sneak', false)
+      bot.setControlState('jump', false)
     }
     return { placed: item.name, position }
   }
