@@ -18,9 +18,15 @@ launch() { # name x y session
   echo "launched $1 at ($2,$3)"
   sleep 10
 }
-launch CamMira 0 0 cammira
-launch CamTally 1280 0 camtally
+native() { # contestant port x y session
+  mkdir -p "/workspace/arena/cameras/View$1"
+  cp -f /workspace/arena/capture/options.txt "/workspace/arena/cameras/View$1/options.txt"
+  tmux new-session -d -s "$5" "python3 /workspace/arena/capture/run-native-view.py $1 $2 $3 $4 2>&1 | tee /workspace/arena/logs/client-View$1.log"
+  sleep 8
+}
+native Mira 25582 0 0 cammira
+native Tally 25583 1280 0 camtally
 launch ClankerCam 2560 0 camarena
-launch CamCinder 0 720 camcinder
-launch CamVex 1280 720 camvex
+native Cinder 25580 0 720 camcinder
+native Vex 25581 1280 720 camvex
 echo "done; clients joining"

@@ -113,7 +113,7 @@ export class Rcon extends EventEmitter {
   async end() { console.log('CLOSED ' + this.number); }
 }
 ''')
-            result = subprocess.run(['node', str(script)], capture_output=True, text=True, timeout=12)
+            result = subprocess.run(['node', str(script)], env=dict(os.environ, NATIVE_MIRRORS='0'), capture_output=True, text=True, timeout=12)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('rcon_reconnecting', result.stdout)
             self.assertIn('CLOSED 1', result.stdout)

@@ -11,6 +11,8 @@ const BINDINGS = [
   ['CamMira', 'Mira'],
   ['CamTally', 'Tally'],
 ]
+// Player feeds now connect to read-only mirrors; only the wide camera is a spectator.
+const nativeViews = process.env.NATIVE_MIRRORS !== '0'
 const HOST = process.env.MC_HOST ?? '127.0.0.1'
 const PASSWORD = process.env.RCON_PASSWORD ?? 'clanker-dev'
 const log = (event, data = {}) => console.log(JSON.stringify({ t: new Date().toISOString(), event, ...data }))
@@ -24,7 +26,7 @@ async function main() {
       log('rcon_connected')
       while (true) {
         await rcon.send('gamemode spectator ClankerCam')
-        for (const [cam, target] of BINDINGS) {
+        for (const [cam, target] of nativeViews ? [] : BINDINGS) {
           await rcon.send(`gamemode spectator ${cam}`)
           await rcon.send(`spectate ${target} ${cam}`)
         }

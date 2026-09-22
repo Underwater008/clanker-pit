@@ -3,7 +3,7 @@
 # Does the whole stack without SSH: Java, Node, MC server, vanilla client,
 # NVIDIA X driver module, GPU Xorg, five tiled camera clients, mediamtx,
 # ambient bots, spectate loop. Idempotent-ish; logs to /workspace/arena/logs.
-# Required env: TYPESAFE_API_KEY (Jev), RUNPOD_API_KEY (Kimi, optional for ambient).
+# Required env: TYPESAFE_API_KEY (Jev), RUNPOD_API_KEY (Kimi).
 set -euo pipefail
 exec > >(tee -a /workspace/bootstrap.log) 2>&1
 echo "=== clankerpit bootstrap $(date -u +%FT%TZ) ==="
@@ -27,9 +27,10 @@ apt-get update -qq
 apt-get install -y -qq openjdk-21-jre curl wget unzip tmux ffmpeg jq python3 ca-certificates \
   xvfb xserver-xorg-core x11-xserver-utils x11-utils xdotool pciutils mesa-utils > /dev/null
 
-wlog "step: node 20"
-if ! command -v node >/dev/null; then
-  curl -fsSL https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-x64.tar.xz -o /tmp/node.tar.xz
+wlog "step: node 22 (required by pinned Minecraft protocol dependencies)"
+if ! command -v node >/dev/null || [ "$(node -p 'Number(process.versions.node.split(".")[0])')" -lt 22 ]; then
+  curl -fsSL https://nodejs.org/dist/v22.23.2/node-v22.23.2-linux-x64.tar.xz -o /tmp/node.tar.xz
+  echo 'd60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307  /tmp/node.tar.xz' | sha256sum -c -
   tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1
 fi
 node -v
@@ -42,6 +43,8 @@ if [ ! -f server.jar ]; then
   wget -q "$(curl -fsSL "$VURL" | jq -r '.downloads.server.url')" -O server.jar
 fi
 echo "eula=true" > eula.txt
+# Keep the selected round and its world settings across pod restarts.
+if [ ! -f server.properties ]; then
 cat > server.properties <<'EOF'
 online-mode=false
 difficulty=normal
@@ -58,6 +61,7 @@ rcon.password=clanker-dev
 allow-flight=true
 max-tick-time=-1
 EOF
+fi
 
 wlog "step: mediamtx"
 cd "$ARENA/stream"
@@ -82,10 +86,10 @@ EOF
 
 wlog "step: fetch capture + bot code from github"
 RAW=https://raw.githubusercontent.com/Underwater008/clanker-pit/main
-for f in run-client.sh run-stream.sh display.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
+for f in run-client.sh run-stream.sh run-native-view.py display.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
   curl -fsSL "$RAW/infra/capture/$f" -o "$ARENA/capture/$f"
 done
-for f in ambient.mjs llm.mjs memory.mjs env.mjs identity.cinder.json package.json; do
+for f in ambient.mjs survival.mjs crafting.mjs native-mirror.mjs llm.mjs memory.mjs env.mjs identity.cinder.json package.json package-lock.json; do
   curl -fsSL "$RAW/stage1/bot/$f" -o "$ARENA/bots/$f"
 done
 cp "$ARENA/capture/spectate-loop.mjs" "$ARENA/bots/"
@@ -157,7 +161,7 @@ EndSection
 EOF
 
 wlog "step: bot deps"
-cd "$ARENA/bots" && npm install --omit=dev > /dev/null 2>&1
+cd "$ARENA/bots" && npm ci --ignore-scripts --omit=dev > /dev/null 2>&1
 
 wlog "step: start minecraft server"
 tmux new-session -d -s mc "cd $ARENA/server && java -Xms2G -Xmx4G -jar server.jar nogui 2>&1 | tee $ARENA/logs/mc.log"
@@ -165,9 +169,10 @@ for i in $(seq 1 90); do grep -q "Done (" "$ARENA/logs/mc.log" 2>/dev/null && br
 grep -q "Done (" "$ARENA/logs/mc.log" && echo "server up" || { echo "SERVER FAILED"; tail -10 "$ARENA/logs/mc.log"; exit 1; }
 
 mc_cmd() { tmux send-keys -t mc "$1" Enter; sleep 1; }
-mc_cmd "gamerule doDaylightCycle false"
-mc_cmd "time set noon"
-mc_cmd "weather clear 999999"
+mc_cmd "gamerule doDaylightCycle true"
+
+wlog "step: launch survival cast and native mirrors"
+tmux new-session -d -s bots "cd $ARENA/bots && node ambient.mjs 2>&1 | tee -a $ARENA/logs/bots.log"
 
 wlog "step: start stream services"
 tmux new-session -d -s mtx "cd $ARENA/capture && $ARENA/stream/mediamtx mediamtx.yml 2>&1 | tee $ARENA/logs/mtx.log"
@@ -200,18 +205,18 @@ if [ "$GPU_OK" != "1" ]; then
   for d in 101 102 103 104 105; do Xvfb :$d -screen 0 1280x720x24 & done
   sleep 2
   launch() { tmux new-session -d -s "$4" "bash $ARENA/capture/run-client.sh $1 $2 2>&1 | tee $ARENA/logs/client-$1.log"; sleep 8; }
-  launch CamMira 101 "" mira
-  launch CamTally 102 "" tally
   launch ClankerCam 103 "" arena
-  launch CamCinder 104 "" cinder
-  launch CamVex 105 "" vex
+  native() { tmux new-session -d -s "$4" "NATIVE_DISPLAY=$2 python3 $ARENA/capture/run-native-view.py $1 $3 0 0 2>&1 | tee -a $ARENA/logs/client-View$1.log"; }
+  native Mira 101 25582 cammira
+  native Tally 102 25583 camtally
+  native Cinder 104 25580 camcinder
+  native Vex 105 25581 camvex
   sleep 60
   capf() { tmux new-session -d -s "cap$1" "bash $ARENA/capture/run-stream.sh $1 $2 2>&1 | tee -a $ARENA/logs/cap-$2.log"; }
   capf 101 mira; capf 102 tally; capf 103 arena; capf 104 cinder; capf 105 vex
 fi
 
-wlog "step: launch ambient cast + spectate loop"
-tmux new-session -d -s bots "cd $ARENA/bots && node ambient.mjs 2>&1 | tee -a $ARENA/logs/bots.log"
+wlog "step: wide spectator camera"
 tmux new-session -d -s spec "cd $ARENA/bots && node spectate-loop.mjs 2>&1 | tee -a $ARENA/logs/spec.log"
 
 wlog "step: HLS check"

@@ -100,3 +100,44 @@ The website's stream and telemetry URLs must target the same current pod.
 | `cam` | ClankerCam spectator client inside Xvfb :99 |
 | `cap` | ffmpeg x11grab → RTMP |
 | `mtx` | mediamtx HLS server |
+
+## Native contestant feeds and survival controller
+
+The four contestant views use an official vanilla 1.21.1 client connected to a
+**loopback-only, read-only protocol mirror** in `stage1/bot/native-mirror.mjs`.
+Mineflayer remains the only controller connected to the real server. Health,
+food, hotbar, equipment, world updates and open containers are rendered by
+Minecraft. Viewer inputs never reach the arena. The wide `ClankerCam` remains
+a spectator. No spectator HUD mod or browser-drawn survival HUD is needed.
+
+Mirrors: Cinder `25580`, Vex `25581`, Mira `25582`, Tally `25583`. These ports
+must remain bound to `127.0.0.1`. `run-native-view.py` watches the matching
+`bot-state/mirror-<name>.json` and restarts its display after bot reconnects.
+The existing Xorg tiles, ffmpeg publishers and public HLS paths are unchanged.
+
+The controller is `stage1/bot/ambient.mjs`: asynchronous Kimi plans (normally at
+most once every five minutes per bot), bounded Jev choices (at least eight
+seconds apart), then verified Mineflayer actions. `survival.mjs` provides wood
+collection, crafting, mining, eating, hunting, sapling planting and a small
+23-block shelter. Plans, camps and recent outcomes persist in `bot-state/`.
+Fallback choices are explicitly logged and must not be called model decisions.
+
+Use Node 22 or newer and `npm ci --ignore-scripts` with the committed lockfile.
+The old Mineflayer 4.25.0 resolved newer packet definitions that encoded velocity
+as a vector; it still read the obsolete `velocityX/Y/Z` fields, producing NaN
+positions after knockback. Increasing server movement tolerance cannot fix NaN.
+The controller now uses compatible pinned versions and rejects non-finite
+outgoing movement as a final guard.
+
+Validation:
+
+- `cd stage1/bot && npm test` — offline protocol/cache/construction regressions.
+- `python3 -B -m unittest discover -s infra -p 'test_*.py'` — infrastructure checks.
+- `MODEL_MODE=off BOT_NAMES=NativeProbe ... node ambient.mjs` — explicit scripted
+  canary; no model calls. Use separate `BOT_DATA_DIR` and `STATE_PATH`.
+- `lab-smoke.mjs` runs only against a separate loopback test server on 25566/RCON
+  25576. It builds fixtures and exercises survival skills. It is not an autonomous
+  model benchmark and must never be aimed at the production arena.
+
+The bots use structured local game state. Their native video is a viewer feed;
+this implementation does not claim the models are playing from screenshots.

@@ -2,11 +2,22 @@
   "name": "clankerpit-stage1",
   "private": true,
   "version": "0.1.0",
-  "description": "Stage 1: character experiment — Cinder (Kimi+Jev) vs scripted Vex",
+  "description": "Kimi/Jev survival contestants with native Minecraft player views",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node ambient.mjs",
+    "test": "node --test *.test.mjs"
+  },
   "dependencies": {
-    "mineflayer": "^4.20.1",
-    "mineflayer-pathfinder": "^2.4.5",
-    "rcon-client": "^4.2.5"
+    "minecraft-data": "3.116.0",
+    "minecraft-protocol": "1.68.0",
+    "mineflayer": "4.39.0",
+    "mineflayer-pathfinder": "2.4.5",
+    "prismarine-item": "1.17.0",
+    "rcon-client": "^4.2.5",
+    "vec3": "0.1.10"
   }
 }

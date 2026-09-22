@@ -1,212 +1,387 @@
-// Ambient cast v2: four contestants living in the arena, now with GOALS.
-// Every GOAL_INTERVAL each bot asks Jev to pick its next activity from a
-// compact, perception-filtered observation (gather wood / collect drops /
-// socialize / explore / rest). Code executes the activity — models pick, code does.
-// Goal changes are logged as `goal` events so the site (and logs) can answer
-// "what is this bot trying to do right now?".
-// Locomotion is steering-only (no pathfinder). Run ON the pod: node ambient.mjs
+// Persistent survival cast: Kimi plans, Jev selects feasible skills, Mineflayer executes.
 import './env.mjs'
 import mineflayer from 'mineflayer'
-import { jevChoose } from './llm.mjs'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
+import { kimiPlan, jevChoose } from './llm.mjs'
+import { GOALS, installSurvival } from './survival.mjs'
+import { createNativeMirror } from './native-mirror.mjs'
 
-// Live telemetry: one shared state file, rewritten every 2 s, served by the
-// bootstrap's python server on :8081 and read by the web HUD overlay.
 const STATE_PATH = process.env.STATE_PATH ?? '/workspace/arena/state.json'
-const STATE = {}
-setInterval(() => {
-  try {
-    writeFileSync(STATE_PATH, JSON.stringify({ updated: new Date().toISOString(), bots: STATE }))
-  } catch {}
-}, 2000)
-
+const DATA_DIR = process.env.BOT_DATA_DIR ?? '/workspace/arena/bot-state'
 const HOST = process.env.MC_HOST ?? '127.0.0.1'
 const PORT = Number(process.env.MC_PORT ?? 25565)
-const GOAL_INTERVAL = Number(process.env.GOAL_INTERVAL_MS ?? 120_000)
-const HOME_RADIUS = 48
-const HOME = { x: 0, z: 0 } // world spawn area
-
+const PLAN_INTERVAL = Math.max(
+  90000,
+  Number(process.env.PLAN_INTERVAL_MS ?? 300000),
+)
+const DECISION_INTERVAL = Math.max(
+  1000,
+  Number(process.env.DECISION_INTERVAL_MS ?? 8000),
+)
+const MODELS = process.env.MODEL_MODE !== 'off'
+const MIRRORS = process.env.NATIVE_MIRRORS !== '0'
+const STATE = {}
+mkdirSync(DATA_DIR, { recursive: true })
+mkdirSync(dirname(STATE_PATH), { recursive: true })
 const IDENTITIES = {
-  Cinder: { name: 'Cinder', dispositions: ['cautious', 'industrious', 'grudge-keeping'], current_goal: 'Stockpile resources and keep the camp in sight.' },
-  Vex: { name: 'Vex', dispositions: ['bold', 'opportunistic', 'restless'], current_goal: 'Get rich quick and be where the action is.' },
-  Mira: { name: 'Mira', dispositions: ['methodical', 'observant', 'independent'], current_goal: 'Map the area and catalog everything useful in it.' },
-  Tally: { name: 'Tally', dispositions: ['social', 'showy', 'easily bored'], current_goal: 'Stay near the others and make everything a contest.' },
+  Cinder: {
+    name: 'Cinder',
+    dispositions: ['cautious', 'industrious', 'grudge-keeping'],
+    current_goal: 'Build a reliable camp and become self-sufficient.',
+  },
+  Vex: {
+    name: 'Vex',
+    dispositions: ['bold', 'opportunistic', 'restless'],
+    current_goal: 'Get good tools and collect the most valuable resources.',
+  },
+  Mira: {
+    name: 'Mira',
+    dispositions: ['methodical', 'observant', 'independent'],
+    current_goal: 'Establish a useful workshop and explore for supplies.',
+  },
+  Tally: {
+    name: 'Tally',
+    dispositions: ['social', 'showy', 'competitive'],
+    current_goal: 'Build something impressive and outwork the others.',
+  },
 }
-
-const ACTIVITIES = {
-  gather_wood: 'Chop nearby trees and collect the logs (visible forest work)',
-  collect_drops: 'Walk to loose items on the ground and pick them up',
-  socialize: 'Approach another contestant and hang around them',
-  explore: 'Scout a new direction, staying within sight of camp',
-  rest: 'Stop, look around, conserve energy',
+const names = (process.env.BOT_NAMES ?? 'Cinder,Vex,Mira,Tally')
+  .split(',')
+  .filter(Boolean)
+const log = (name, event, data = {}) =>
+  console.log(
+    JSON.stringify({ t: new Date().toISOString(), bot: name, event, ...data }),
+  )
+const actors = []
+let stopping = false
+function atomic(path, value) {
+  writeFileSync(`${path}.tmp`, JSON.stringify(value))
+  renameSync(`${path}.tmp`, path)
 }
+const telemetry = setInterval(
+  () => atomic(STATE_PATH, { updated: new Date().toISOString(), bots: STATE }),
+  2000,
+)
 
-const log = (bot, event, data = {}) =>
-  console.log(JSON.stringify({ t: new Date().toISOString(), bot, event, ...data }))
-
-function spawnActor(name) {
-  const identity = IDENTITIES[name]
-  const bot = mineflayer.createBot({ host: HOST, port: PORT, username: name, auth: 'offline', hideErrors: true })
-  let alive = false
-  let activity = 'explore'
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
-  const stopWalking = () => {
-    try {
-      for (const k of ['forward', 'back', 'left', 'right', 'jump', 'sprint']) bot.setControlState(k, false)
-    } catch { /* bot object half-destroyed during a reconnect storm — ignore */ }
+function actor(name, index) {
+  const identity = IDENTITIES[name] ?? { ...IDENTITIES.Cinder, name }
+  const saved = join(DATA_DIR, `${name}.json`)
+  let state
+  try {
+    state = JSON.parse(readFileSync(saved, 'utf8'))
+  } catch {
+    state = {}
   }
-
-  // perception filter: own state + things within 24 blocks, nothing global
-  function observe() {
-    const me = bot.entity
-    const near = (filter) =>
-      Object.values(bot.entities).filter((e) => e !== me && filter(e) && e.position.distanceTo(me.position) < 24)
-    return {
-      health: bot.health,
-      food: bot.food,
-      inventory: bot.inventory.items().map((i) => `${i.count}x ${i.name}`),
-      players_nearby: near((e) => e.username).map((e) => ({ name: e.username, distance: Math.round(e.position.distanceTo(me.position)) })),
-      dropped_items: near((e) => e.name === 'item').length,
-      dist_from_camp: Math.round(Math.hypot(me.position.x - HOME.x, me.position.z - HOME.z)),
-      current_activity: activity,
-    }
+  state = {
+    camp: null,
+    shelter: null,
+    recent: [],
+    cooldowns: {},
+    plan: {
+      goal: 'build_shelter',
+      intention: 'Acquire wood, craft tools and build a small shelter.',
+      steps: [],
+      source: 'bootstrap',
+    },
+    ...state,
   }
-
-  async function pickGoal() {
-    const observation = observe()
-    const r = await jevChoose({ identity, stance: identity.current_goal, observation, questionId: 'ambient_goal', options: ACTIVITIES })
-    if (r.error) {
-      log(name, 'goal_fallback', { error: r.error, kept: activity })
-      return
-    }
-    if (r.choice !== activity) {
-      log(name, 'goal', { from: activity, to: r.choice, confidence: r.confidence, probabilities: r.probabilities })
-      activity = r.choice
-    } else {
-      log(name, 'goal_kept', { activity, confidence: r.confidence })
-    }
+  let bot,
+    skills,
+    connected = false,
+    epoch = 0,
+    planning = false,
+    lastPlan = 0,
+    lastDecision = 0,
+    failures = 0,
+    task = 'connecting',
+    staleRevision = 0
+  const mirror = MIRRORS
+    ? createNativeMirror({
+        port: Number(process.env.MIRROR_PORT_BASE ?? 25580) + index,
+        name,
+        statePath: join(DATA_DIR, `mirror-${name}.json`),
+        log: (e, d) => log(name, e, d),
+      })
+    : null
+  function save() {
+    state.recent = state.recent.slice(-16)
+    atomic(saved, state)
   }
-
-  // ---- locomotion helpers (steering only) ----
-  async function steerToward(pos, seconds, opts = {}) {
-    const until = Date.now() + seconds * 1000
-    bot.setControlState('forward', true)
-    if (opts.sprint) bot.setControlState('sprint', true)
-    while (Date.now() < until && alive) {
-      const d = bot.entity.position.distanceTo(pos)
-      if (d < (opts.stopAt ?? 2)) break
-      await bot.lookAt(pos.offset(0, 1.6, 0), true)
-      bot.setControlState('jump', Boolean(bot.entity?.isCollidedHorizontally))
-      await sleep(120)
-    }
-    stopWalking()
-  }
-
-  function nearestEntity(filter, maxDist = 24) {
-    const me = bot.entity
-    return Object.values(bot.entities)
-      .filter((e) => e !== me && filter(e))
-      .map((e) => ({ e, d: e.position.distanceTo(me.position) }))
-      .filter(({ d }) => d < maxDist)
-      .sort((a, b) => a.d - b.d)[0]?.e ?? null
-  }
-
-  function nearestLog() {
-    if (!bot.findBlock) return null
-    try {
-      return bot.findBlock({ matching: (b) => b.name.endsWith('_log'), maxDistance: 16, count: 1 })
-    } catch { return null }
-  }
-
-  function reportState() {
+  function report() {
     STATE[name] = {
-      health: Math.round((bot.health ?? 0) * 10) / 10,
-      food: bot.food ?? 0,
-      inventory: bot.inventory.items().slice(0, 9).map((i) => ({ name: i.name, count: i.count })),
-      activity,
-      goal: identity.current_goal,
-      position: bot.entity
-        ? { x: Math.round(bot.entity.position.x), y: Math.round(bot.entity.position.y), z: Math.round(bot.entity.position.z) }
-        : null,
+      offline: !connected,
+      health: bot?.health ?? 0,
+      food: bot?.food ?? 0,
+      inventory:
+        bot?.inventory
+          ?.items()
+          .map((i) => ({ name: i.name, count: i.count })) ?? [],
+      activity: task,
+      goal: state.plan.intention,
+      plan: state.plan,
+      position: bot?.entity?.position ?? null,
+      camp: state.camp,
+      shelter: state.shelter,
+      recent: state.recent.slice(-4),
+      nativeView: Boolean(mirror),
     }
   }
-
-  // ---- activities ----
-  async function doGatherWood() {
-    const block = nearestLog()
-    if (!block) { await doExplore(); return }
-    await steerToward(block.position, 6, { stopAt: 2.2 })
-    if (alive && bot.entity.position.distanceTo(block.position) < 3.5) {
+  const reportTimer = setInterval(report, 1000)
+  async function plan() {
+    if (
+      !MODELS ||
+      planning ||
+      !connected ||
+      Date.now() - lastPlan < PLAN_INTERVAL
+    )
+      return
+    planning = true
+    lastPlan = Date.now()
+    const revision = staleRevision
+    const thisEpoch = epoch
+    log(name, 'kimi_request', { goal: state.plan.goal })
+    try {
+      const r = await kimiPlan({
+        identity,
+        observation: skills.observation(),
+        memoryContext: state.recent.slice(-8),
+        goals: GOALS,
+      })
+      if (!connected || epoch !== thisEpoch || revision !== staleRevision) {
+        log(name, 'kimi_stale')
+        return
+      }
+      if (r.error) {
+        log(name, 'kimi_fallback', { error: r.error, kept: state.plan })
+        return
+      }
+      state.plan = { ...r, source: 'kimi' }
+      save()
+      log(name, 'kimi_plan', r)
+    } catch (e) {
+      log(name, 'kimi_error', { error: String(e) })
+    } finally {
+      planning = false
+    }
+  }
+  async function loop(thisEpoch) {
+    while (connected && epoch === thisEpoch && !stopping) {
       try {
-        await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true)
-        await bot.dig(block) // hand-punching a log: slow, visible, changes the world
-        log(name, 'chopped', { block: block.name })
-      } catch (e) { log(name, 'chop_failed', { error: String(e).slice(0, 80) }) }
-    }
-  }
-
-  async function doCollect() {
-    const item = nearestEntity((e) => e.name === 'item')
-    if (!item) { await doExplore(); return }
-    await steerToward(item.position, 6, { stopAt: 0.8 })
-  }
-
-  async function doSocialize() {
-    const other = nearestEntity((e) => e.username && e.username !== name, 32)
-    if (!other) { await doExplore(); return }
-    await steerToward(other.position, 5, { stopAt: 3.5 })
-    await bot.lookAt(other.position.offset(0, 1.6, 0), true)
-    await sleep(1500)
-  }
-
-  async function doExplore() {
-    const me = bot.entity
-    // bias homeward if drifting past the camp boundary
-    const distHome = Math.hypot(me.position.x - HOME.x, me.position.z - HOME.z)
-    let yaw
-    if (distHome > HOME_RADIUS) yaw = Math.atan2(HOME.z - me.position.z, HOME.x - me.position.x) + Math.PI / 2
-    else yaw = me.yaw + (Math.random() - 0.5) * Math.PI
-    const target = me.position.offset(Math.sin(yaw) * 12, 0, Math.cos(yaw) * 12)
-    await steerToward(target, 4, { sprint: Math.random() < 0.2 })
-  }
-
-  async function doRest() {
-    stopWalking()
-    await bot.look(bot.entity.yaw + (Math.random() - 0.5), (Math.random() - 0.5) * 0.3, true)
-    await sleep(2000)
-  }
-
-  const ACTORS = { gather_wood: doGatherWood, collect_drops: doCollect, socialize: doSocialize, explore: doExplore, rest: doRest }
-
-  async function goalLoop() {
-    while (alive) {
-      await pickGoal().catch((e) => log(name, 'goal_error', { error: String(e).slice(0, 120) }))
-      const until = Date.now() + GOAL_INTERVAL
-      while (Date.now() < until && alive) {
-        reportState()
-        const actor = ACTORS[activity] ?? doExplore
-        await actor().catch(() => sleep(1000))
+        void plan()
+        const observation = skills.observation(),
+          options = skills.candidates(observation)
+        let urgent = skills.emergency()
+        let choice = urgent ?? Object.keys(options)[0],
+          source = urgent
+            ? 'safety_reflex'
+            : MODELS
+              ? 'fallback'
+              : 'test_policy'
+        if (
+          !urgent &&
+          MODELS &&
+          Date.now() - lastDecision >= DECISION_INTERVAL
+        ) {
+          lastDecision = Date.now()
+          let response
+          void jevChoose({
+            identity,
+            stance: state.plan,
+            observation,
+            questionId: 'survival_action',
+            options,
+          })
+            .then((r) => {
+              response = r
+            })
+            .catch((e) => {
+              response = { error: String(e) }
+            })
+          while (
+            !response &&
+            connected &&
+            epoch === thisEpoch &&
+            !(urgent = skills.emergency())
+          )
+            await sleep(200)
+          const r = response ?? {
+            error: 'Decision interrupted by immediate danger',
+          }
+          if (!connected || epoch !== thisEpoch) break
+          if (r.error) log(name, 'jev_fallback', { error: r.error, choice })
+          else {
+            choice = r.choice
+            source = 'jev'
+            log(name, 'jev_decision', {
+              choice,
+              durationMs: Date.now() - lastDecision,
+              confidence: r.confidence,
+              model: r.model,
+            })
+          }
+        } else if (!urgent && MODELS) {
+          await sleep(
+            Math.min(
+              250,
+              Math.max(100, DECISION_INTERVAL - (Date.now() - lastDecision)),
+            ),
+          )
+          continue
+        }
+        urgent = skills.emergency()
+        if (urgent) {
+          choice = urgent
+          source = 'safety_reflex'
+        }
+        task = choice
+        report()
+        const before = bot.inventory
+          .items()
+          .map((i) => ({ name: i.name, count: i.count }))
+        const started = Date.now()
+        log(name, 'action_start', {
+          action: choice,
+          source,
+          goal: state.plan.goal,
+        })
+        try {
+          const result = await skills.execute(choice)
+          if (epoch !== thisEpoch || !connected) break
+          failures = 0
+          const outcome = {
+            action: choice,
+            ok: true,
+            result,
+            at: new Date().toISOString(),
+          }
+          state.recent.push(outcome)
+          log(name, 'action_result', {
+            ...outcome,
+            source,
+            durationMs: Date.now() - started,
+            before,
+            after: bot.inventory
+              .items()
+              .map((i) => ({ name: i.name, count: i.count })),
+          })
+        } catch (e) {
+          if (epoch !== thisEpoch || !connected) break
+          failures++
+          state.cooldowns[choice] =
+            Date.now() + Math.min(90000, 15000 * failures)
+          const outcome = {
+            action: choice,
+            ok: false,
+            error: String(e).slice(0, 180),
+            at: new Date().toISOString(),
+          }
+          state.recent.push(outcome)
+          log(name, 'action_result', outcome)
+          if (failures === 3) {
+            lastPlan = Math.min(lastPlan, Date.now() - PLAN_INTERVAL)
+            staleRevision++
+          }
+        }
+        save()
+        report()
+        await sleep(MODELS ? 250 : 600)
+      } catch (e) {
+        log(name, 'loop_error', { error: String(e) })
+        await sleep(2000)
       }
     }
   }
-
-  bot.once('spawn', () => {
-    log(name, 'spawn', { pos: bot.entity.position, identity: identity.current_goal })
-    alive = true
-    activity = 'explore'
-    goalLoop().catch((e) => log(name, 'loop_error', { message: String(e).slice(0, 120) }))
-  })
-  bot.on('kicked', (r) => log(name, 'kicked', { reason: String(r).slice(0, 120) }))
-  bot.on('error', (e) => log(name, 'error', { message: String(e).slice(0, 120) }))
-  bot.on('end', () => {
-    alive = false
-    stopWalking()
-    STATE[name] = { offline: true }
-    log(name, 'end', { rejoinInMs: 5000 })
-    setTimeout(() => spawnActor(name), 5000)
+  function connect() {
+    if (stopping) return
+    const thisEpoch = ++epoch
+    bot = mineflayer.createBot({
+      host: HOST,
+      port: PORT,
+      version: '1.21.1',
+      username: name,
+      auth: 'offline',
+      hideErrors: true,
+      viewDistance: 6,
+    })
+    mirror?.attach(bot)
+    skills = installSurvival(bot, state, (e, d) => log(name, e, d))
+    // Fail closed if a future dependency regression produces non-finite movement.
+    const originalWrite = bot._client.write.bind(bot._client)
+    bot._client.write = (packet, data) => {
+      if (
+        ['position', 'position_look', 'look'].includes(packet) &&
+        Object.values(data).some(
+          (v) => typeof v === 'number' && !Number.isFinite(v),
+        )
+      ) {
+        log(name, 'invalid_movement_blocked', { packet })
+        bot.quit('Invalid physics state')
+        return
+      }
+      return originalWrite(packet, data)
+    }
+    bot.once('spawn', async () => {
+      connected = true
+      failures = 0
+      task = 'orienting'
+      if (!state.camp) {
+        state.camp = { ...bot.entity.position }
+        save()
+      }
+      log(name, 'spawn', {
+        position: bot.entity.position,
+        camp: state.camp,
+        version: bot.version,
+        models: MODELS,
+      })
+      await sleep(2000)
+      if (connected && epoch === thisEpoch) void loop(thisEpoch)
+    })
+    bot.on('death', () => {
+      staleRevision++
+      state.recent.push({ event: 'death', at: new Date().toISOString() })
+      save()
+      log(name, 'death')
+    })
+    bot.on('kicked', (reason) =>
+      log(name, 'kicked', { reason: JSON.stringify(reason).slice(0, 300) }),
+    )
+    bot.on('error', (error) => log(name, 'error', { error: String(error) }))
+    bot.on('end', () => {
+      if (epoch !== thisEpoch) return
+      connected = false
+      task = 'reconnecting'
+      staleRevision++
+      log(name, 'disconnected')
+      report()
+      if (!stopping) setTimeout(connect, 5000)
+    })
+  }
+  connect()
+  actors.push(() => {
+    clearInterval(reportTimer)
+    skills?.stop()
+    bot?.quit('Controller update')
+    mirror?.close()
+    save()
   })
 }
-
-Object.keys(IDENTITIES).forEach((name, i) => setTimeout(() => spawnActor(name), i * 4000))
-log('director', 'ambient_v2_starting', { cast: Object.keys(IDENTITIES), goalIntervalMs: GOAL_INTERVAL })
+names.forEach((name, i) => setTimeout(() => actor(name, i), i * 3000))
+log('director', 'survival_start', {
+  cast: names,
+  models: MODELS,
+  planInterval: PLAN_INTERVAL,
+  decisionInterval: DECISION_INTERVAL,
+  mirrors: MIRRORS,
+})
+function stop() {
+  if (stopping) return
+  stopping = true
+  clearInterval(telemetry)
+  for (const close of actors) close()
+  setTimeout(() => process.exit(0), 1000)
+}
+process.on('SIGTERM', stop)
+process.on('SIGINT', stop)

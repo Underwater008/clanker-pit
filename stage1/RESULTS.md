@@ -88,3 +88,36 @@ the Paper migration** (knockback kicks, finding 3 below) and a chat-pipeline fix
    cover it. `says` is log-only for now; in-world dialogue deferred.
 5. **Kimi reflection latency** observed: 13–53 s (reasoning-token heavy). Fine for
    event-driven reflection; confirms it can't sit in a tick loop.
+
+## Native-view and survival upgrade, September 21, 2026
+
+The ambient controller was separate from the character experiment: it never
+called Kimi and offered Jev only five activities, with no crafting, mining or
+building implementation. Its camp was hardcoded to (0, 0), far from the cast.
+
+A live movement probe reproduced NaN outgoing coordinates immediately after an
+`entity_velocity` packet. The installed Mineflayer 4.25.0 expected separate
+velocity fields while its newer `minecraft-data` dependency returned a vector.
+Pinned Mineflayer 4.39.0 / protocol 1.68.0 / data 3.116.0, running on Node 22,
+completed repeated movement routes without this failure.
+
+The isolated vanilla 1.21.1 lab test (`bot/lab-smoke.mjs`) used placed resource
+fixtures and **scripted skill calls, without model calls**. After fixing pickup
+and inventory synchronization it passed this complete chain: eight logs →
+planks → sticks/workbench → wooden pickaxe → three cobblestone → stone pickaxe
+→ a server-observed 23-block shelter. Vanilla confirmed the resulting inventory
+and blocks. This verifies executable skills, not autonomous model intelligence.
+
+A separate bounded live provider canary returned a `kimi-k3` plan to find trees,
+collect logs and craft tools (818 total tokens in its first plan), and
+`jev-1.13.0` selected and executed scouting actions. No Astra dependency was added.
+
+The native mirror was checked with both a protocol client and the official
+Minecraft client. Raw Xorg capture showed native hearts, hunger, hotbar and hand
+corresponding to the bot. Reconnect testing found and fixed a partial player-info
+update that previously overwrote cached profiles with undefined values.
+
+The main-world starting area was a largely treeless coastline. An operator
+terrain query found forest around (-529, -70), roughly 192 blocks from Cinder.
+Moving the starting camp into that existing forest is arena setup, not a bot
+achievement. No model benchmark claim is based on that setup.

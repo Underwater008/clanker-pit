@@ -36,16 +36,7 @@ DISPLAY=:10 glxinfo -B | grep -i 'OpenGL renderer.*NVIDIA' || { echo "GPU render
 pkill -f "Xvfb :99" 2>/dev/null; for d in 101 102 103 104 105; do pkill -f "Xvfb :$d" 2>/dev/null; done
 
 # 4. Launch the five cameras as tiles on :10
-launch() { # name x y session
-  tmux new-session -d -s "$4" "bash /workspace/arena/capture/run-client.sh $1 10 $2 $3 2>&1 | tee /workspace/arena/logs/client-$1.log"
-  echo "launched $1 at ($2,$3)"
-  sleep 8
-}
-launch CamMira 0 0 cammira
-launch CamTally 1280 0 camtally
-launch ClankerCam 2560 0 camarena
-launch CamCinder 0 720 camcinder
-launch CamVex 1280 720 camvex
+bash /workspace/arena/capture/launch-cameras.sh || exit 1
 
 echo "waiting for clients to join..."
 sleep 70

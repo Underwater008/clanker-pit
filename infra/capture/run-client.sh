@@ -32,30 +32,30 @@ MAIN=$(echo "$META" | python3 -c "import json,sys; print(json.load(sys.stdin)['m
 CP=$(cat "$ROOT/classpath.txt")
 
 export DISPLAY=":$DISP"
-java -Xmx2G -Djava.library.path="$ROOT/natives" -cp "$CP" "$MAIN" \
+java -Xmx2G -XX:ActiveProcessorCount=2 -Djava.library.path="$ROOT/natives" -cp "$CP" "$MAIN" \
   --username "$NAME" \
   --uuid 00000000-0000-4000-8000-$(printf '%012x' "$DISP$RANDOM") \
   --accessToken 0 --clientId 0 --xuid 0 --userType mojang \
   --version "$VERSION" --versionType release \
   --gameDir "$GDIR" --assetsDir "$ROOT/assets" --assetIndex "$ASSET_INDEX" \
-  --quickPlayMultiplayer 127.0.0.1:25565 \
+  --quickPlayMultiplayer "${MC_SERVER:-127.0.0.1:25565}" \
   --width 1280 --height 720 &
 JPID=$!
+trap 'kill "$JPID" 2>/dev/null || true' TERM INT EXIT
 
 # Ignore GLFW's invisible 1x1 helper window; move the visible game window.
 if [ -n "$WIN_X" ] && [ -n "$WIN_Y" ]; then
   (
-    for i in $(seq 1 150); do
+    # Minecraft can recreate/reposition the window when it finishes loading or
+    # joins a world. Keep the tile assigned for the lifetime of this client.
+    while kill -0 "$JPID" 2>/dev/null; do
       kill -0 "$JPID" 2>/dev/null || exit 1
       WID=$(xdotool search --onlyvisible --all --pid "$JPID" --name '^Minecraft' 2>/dev/null | head -1 || true)
       if [ -n "$WID" ]; then
         xdotool windowmove "$WID" "$WIN_X" "$WIN_Y"
-        exit 0
       fi
       sleep 2
     done
-    echo "Timed out positioning $NAME on display :$DISP" >&2
-    exit 1
   ) &
 fi
 

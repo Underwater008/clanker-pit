@@ -49,3 +49,14 @@ bot/
 ```
 
 Runs ON the pod (`/workspace/arena/bots`) — keys live in `.env` there, never committed.
+
+## Current live-controller implementation
+
+`bot/ambient.mjs` supersedes the old five-activity ambient loop. Kimi now plans
+survival goals asynchronously and Jev chooses among feasible actions supplied by
+`bot/survival.mjs`. The native stream renderer is independent of model choice:
+Kimi and Jev do not need to control a graphical desktop.
+
+See [current operations](../infra/README.md#native-contestant-feeds-and-survival-controller)
+for dependency pins, native mirrors, persistence, model cadence and verification.
+The character experiment above remains a separate historical test.
