@@ -10,6 +10,7 @@ import {
   gateBlueprint,
   torchSpots,
   homeLot,
+  homeBed,
   homeBlueprint,
   homeExtensionBlueprint,
   serverAnatomy,
@@ -203,6 +204,24 @@ test('every home doorway faces the Server', () => {
   }
 })
 
+test('founding beds and respawn tiles fit the existing homes without replacing construction', () => {
+  const sites = new Set()
+  for (let index = 0; index < 4; index++) {
+    const bed = homeBed(flag, index)
+    const built = new Set([
+      ...homeBlueprint(homeLot(flag, index), flag),
+      ...homeExtensionBlueprint(flag, index),
+    ].map(key))
+    for (const p of [bed.foot, bed.head, bed.spawn, bed.spawn.offset(0, 1, 0)])
+      assert.ok(!built.has(key(p)), `bed or respawn tile overlaps construction at ${p}`)
+    for (const p of [bed.foot, bed.head]) {
+      assert.ok(!sites.has(key(p)), 'founding beds must not overlap')
+      sites.add(key(p))
+    }
+    assert.ok(['north', 'south', 'east', 'west'].includes(bed.facing))
+  }
+})
+
 test('planned home extensions join the doorway and never consume another lot or fixture', () => {
   const fixed = new Set([
     ...wallBlueprint(flag), ...gateBlueprint(flag),
@@ -304,6 +323,70 @@ test('coolant economy: feeds count, booms overheat, booting resets the meter', (
   assert.equal(reloaded.snapshot().homeUpgrades.A.complete, true)
   assert.equal(reloaded.snapshot().wallUpgrade.done, 12)
   assert.equal(reloaded.raw.waterFed, village.raw.waterTarget)
+})
+
+test('only Server-booted clankers retire, and a new identity inherits the empty home lot', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'village-'))
+  const path = join(dir, 'village.json')
+  const village = createVillageState({ path })
+  village.adopt({ flag: { x: 0, y: 64, z: 0 }, population: ['A', 'B', 'C', 'D'], waterTarget: 1 })
+  village.initializeCast(['A', 'B', 'C', 'D'])
+  assert.deepEqual(village.snapshot().founders, ['A', 'B', 'C', 'D'])
+  assert.deepEqual(village.snapshot().homeLots, { A: 0, B: 1, C: 2, D: 3 })
+  assert.equal(village.retireVillager('A'), null, 'founders must always remain active')
+  village.feedCoolant('A')
+  assert.equal(village.bootVillager(), 'Ember')
+  assert.equal(village.raw.homeLots.Ember, 4)
+  village.setHome('Ember', { done: 23, total: 23, complete: true })
+  village.setHomeUpgrade('Ember', { done: 7, total: 7, complete: true })
+  village.setRoles({ Ember: 'builder', A: 'guard' })
+  assert.deepEqual(village.retireVillager('Ember'), { name: 'Ember', lotIndex: 4 })
+  assert.equal(village.retireVillager('Ember'), null, 'death is idempotent')
+  assert.deepEqual(village.raw.population, ['A', 'B', 'C', 'D'])
+  assert.deepEqual(village.raw.fallenVillagers, ['Ember'])
+  assert.equal(village.raw.homes.Ember, undefined)
+  assert.equal(village.raw.homeUpgrades.Ember, undefined)
+  assert.equal(village.raw.roles.Ember, undefined)
+  const reloaded = createVillageState({ path })
+  reloaded.initializeCast(['A', 'B', 'C', 'D'])
+  assert.ok(!reloaded.raw.population.includes('Ember'), 'restart must not revive the fallen')
+  reloaded.feedCoolant('B')
+  assert.equal(reloaded.bootVillager(), 'Juno')
+  assert.equal(reloaded.raw.homeLots.Juno, 4, 'new clanker inherits the existing house site')
+  assert.equal(reloaded.raw.homeLots.A, 0, 'founding homes remain reserved')
+})
+
+test('the Server can keep booting distinct names after its initial name pool is exhausted', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'village-'))
+  const village = createVillageState({ path: join(dir, 'village.json') })
+  village.initializeCast(['A', 'B', 'C', 'D'])
+  village.raw.waterTarget = 1
+  for (let i = 0; i < 9; i++) {
+    village.feedCoolant('A')
+    const name = village.bootVillager()
+    assert.ok(name)
+    assert.equal(village.raw.homeLots[name], 4)
+    assert.ok(village.retireVillager(name))
+  }
+  assert.equal(village.raw.bootedVillagers[8], 'Clanker9')
+  assert.equal(new Set(village.raw.bootedVillagers).size, 9)
+})
+
+test('failed retirement keeps the clanker and home assigned until it can be saved', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'village-'))
+  const path = join(dir, 'village.json')
+  const village = createVillageState({ path })
+  village.initializeCast(['A', 'B', 'C', 'D'])
+  assert.equal(village.nextVillager(), 'Ember')
+  const blockedTemp = `${path}.${process.pid}.tmp`
+  mkdirSync(blockedTemp)
+  assert.throws(() => village.retireVillager('Ember'), { code: 'VILLAGE_PERSIST_FAILED' })
+  assert.ok(village.raw.population.includes('Ember'))
+  assert.equal(village.raw.homeLots.Ember, 4)
+  assert.deepEqual(village.raw.fallenVillagers, [])
+  rmSync(blockedTemp, { recursive: true })
+  assert.deepEqual(village.retireVillager('Ember'), { name: 'Ember', lotIndex: 4 })
+  assert.equal(createVillageState({ path }).raw.homeLots.Ember, undefined)
 })
 
 test('guest event ids are processed exactly once across restarts', () => {

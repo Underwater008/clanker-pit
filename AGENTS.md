@@ -26,6 +26,9 @@ evidence before relying on historical notes or another agent's claims.
   and periodically play guest creepers near the front gate (move, look, jump,
   and one boom — nothing else). The dome theater and broader competition
   features in [the plan](docs/PLAN.md) remain future product direction.
+- The founding four clankers respawn. Server-booted clankers die permanently;
+  their physical homes remain and the next clanker can inherit the vacant lot.
+  Founders respawn beside the beds in their assigned homes.
 
 ## Current architecture and source map
 
@@ -34,6 +37,7 @@ evidence before relying on historical notes or another agent's claims.
 | Controller | `stage1/bot/ambient.mjs`: cast lifecycle, planning, village scenario, council, chat/brain telemetry, reconnects; `decision.mjs`: overlapped Jev scheduling |
 | Gameplay | `stage1/bot/survival.mjs`: perception, feasible actions, navigation, survival and village skills (build wall/gate/home/torches, iron→bucket, coolant feeding, guard/patrol/attack); `crafting.mjs`: server-confirmed crafting |
 | Village | `stage1/bot/village.mjs`: layout blueprints (wall, front gate, home lots, Server anatomy), shared coolant economy and villager booting; `council.mjs`: role discussion + deterministic assignment; `flag-setup.mjs` + `fixture-grant.mjs`: idempotent round fixtures (labeled, RCON) |
+| Home beds | `stage1/bot/home-beds.mjs`: labeled, idempotent founder bed and respawn-point fixture after the cast joins |
 | Model routing | `stage1/bot/models.mjs` + `llm.mjs`: per-clanker OpenAI-compatible planners (Kimi default), Jev choice client, thinking extraction |
 | Guests | `stage1/bot/guest-gateway.mjs` (match controller): viewer queue, 3-minute creeper turns, guest input (move/look/jump/boom only), guest mirror on 25584; `guest-queue.mjs` handles scheduling, `guest-boom.mjs` verifies a single summon using server explosion packets; public entry is the allowlisted `/guest/*` telemetry proxy |
 | Providers | `stage1/bot/llm.mjs`: generic planner client + Kimi/Jev clients; `env.mjs`: configuration loading |

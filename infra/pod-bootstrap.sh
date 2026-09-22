@@ -93,7 +93,7 @@ RAW=https://raw.githubusercontent.com/Underwater008/clanker-pit/$SOURCE_SHA
 for f in run-client.sh run-stream.sh run-native-view.py display.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
   curl -fsSL "$RAW/infra/capture/$f" -o "$ARENA/capture/$f"
 done
-for f in ambient.mjs survival.mjs crafting.mjs native-mirror.mjs llm.mjs memory.mjs env.mjs decision.mjs village.mjs council.mjs models.mjs guest-queue.mjs guest-boom.mjs guest-camera.mjs guest-gateway.mjs flag-setup.mjs fixture-grant.mjs identity.cinder.json package.json package-lock.json; do
+for f in ambient.mjs survival.mjs crafting.mjs native-mirror.mjs llm.mjs memory.mjs env.mjs decision.mjs village.mjs council.mjs models.mjs guest-queue.mjs guest-boom.mjs guest-camera.mjs guest-gateway.mjs flag-setup.mjs fixture-grant.mjs home-beds.mjs identity.cinder.json package.json package-lock.json; do
   curl -fsSL "$RAW/stage1/bot/$f" -o "$ARENA/bots/$f"
 done
 cp "$ARENA/capture/spectate-loop.mjs" "$ARENA/bots/"
@@ -193,6 +193,11 @@ wlog "step: starter kit fixture grant (waits for the cast, idempotent)"
 ( sleep 75
   cd "$ARENA/bots" && BOT_DATA_DIR="$ARENA/bot-state" RCON_PASSWORD=clanker-dev \
     node fixture-grant.mjs >> "$ARENA/logs/flag-setup.log" 2>&1 || true ) &
+
+wlog "step: founding home beds and respawn points (idempotent fixture)"
+( sleep 75
+  cd "$ARENA/bots" && BOT_DATA_DIR="$ARENA/bot-state" RCON_PASSWORD=clanker-dev \
+    node home-beds.mjs >> "$ARENA/logs/flag-setup.log" 2>&1 || true ) &
 
 wlog "step: guest creeper gateway (viewer queue + turns + guest mirror)"
 tmux new-session -d -s guest "cd $ARENA/bots && BOT_DATA_DIR=$ARENA/bot-state RCON_PASSWORD=clanker-dev node guest-gateway.mjs 2>&1 | tee -a $ARENA/logs/guest.log"

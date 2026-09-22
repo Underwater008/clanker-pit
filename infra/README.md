@@ -214,6 +214,12 @@ That directory also holds the prior clanker state and a SHA-256 manifest;
 `latest-round-backup.json` records the restore inputs. The archive was verified
 before switching worlds. Runtime `release.json` records hashes of installed
 source files. Keep these backups when updating code or restarting the controller.
+The founding four clankers respawn, but a Server-booted clanker's death is final.
+The vacated home lot is assigned to the next booted clanker without removing
+the house blocks from the world. `home-beds.mjs` places labeled beds in the
+founders' homes and sets their server respawn points beside those beds after
+they join; its `bot-state/home-beds.json` marker prevents replacing later
+player construction.
 
 `lab-placement.mjs` is another isolated-server regression: the bot must place
 the complete 23-block shelter from an uneven approach, with every block checked

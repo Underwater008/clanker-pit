@@ -168,7 +168,8 @@ const villageFile = join(DATA_DIR, 'village.json')
 // own keys (roundSetup) while this process runs, so saves merge disk-fresh
 // values for everything this process does not own.
 const VILLAGE_OWNED_KEYS = [
-  'waterFed', 'population', 'bootedVillagers', 'homes', 'homeUpgrades',
+  'waterFed', 'population', 'founders', 'bootedVillagers', 'fallenVillagers',
+  'homeLots', 'homes', 'homeUpgrades',
   'wall', 'wallUpgrade', 'gate',
   'roles', 'processedGuestEvents', 'lastBoomAt', 'lastFedBy',
 ]
@@ -194,11 +195,9 @@ function villageUpdate(operation, update) {
     return undefined
   }
 }
-if (villageEnabled && !(village.raw.population?.length > 0)) villageUpdate('seed_population', () => {
-  village.adopt({ population: [...names] })
-  log('director', 'village_population_seeded', { names })
-})
-const friendlyNames = new Set(['ClankerCam', 'FlagSetup', ...names])
+if (villageEnabled) village.initializeCast(names)
+const foundingNames = villageEnabled ? village.raw.founders : names
+const friendlyNames = new Set(['ClankerCam', 'FlagSetup', ...foundingNames])
 const isEnemyPlayer = (username) => {
   if (friendlyNames.has(username)) return false
   if (/^(Cam[A-Z]|View)/.test(username)) return false
@@ -372,6 +371,7 @@ function currentRoles() {
 
 /* ---------- actors --------------------------------------------------------- */
 function actor(name, index) {
+  const founder = foundingNames.includes(name)
   const identity = identityFor(name)
   // Each clanker thinks with its own routed LLM (CLANKER_MODELS in models.mjs).
   const planner = plannerFor(name)
@@ -398,6 +398,9 @@ function actor(name, index) {
     },
     ...state,
   }
+  // The shared village ledger owns lots; old per-actor files must not reclaim
+  // a home already assigned to someone else after a death or restart.
+  if (villageEnabled) state.homeLot = index
   if (!Object.hasOwn(scenarioGoals, state.plan?.goal)) state.plan = {
     goal: villageEnabled ? 'build_village' : 'build_shelter',
     intention: villageEnabled
@@ -417,7 +420,8 @@ function actor(name, index) {
     failures = 0,
     task = 'connecting',
     staleRevision = 0,
-    lastReflect = 0
+    lastReflect = 0,
+    permanentlyDead = false
   const brain = {
     jev: [], think: null, reflect: null, action: null,
     planner: { status: MODELS ? 'idle' : 'disabled' },
@@ -805,8 +809,8 @@ function actor(name, index) {
     if (decisions === loopDecisions) decisions = null
   }
   function connect() {
-    if (stopping) return
-    const thisEpoch = ++epoch
+    if (stopping || permanentlyDead) return
+    ++epoch
     bot = mineflayer.createBot({
       host: HOST,
       port: PORT,
@@ -816,7 +820,9 @@ function actor(name, index) {
       hideErrors: true,
       checkTimeoutInterval: 120000,
       viewDistance: 6,
+      respawn: founder,
     })
+    const connection = bot
     mirror?.attach(bot)
     skills = installSurvival(bot, state, actorLog, { village: villageCtx })
     // Fail closed if a future dependency regression produces non-finite movement.
@@ -834,7 +840,8 @@ function actor(name, index) {
       }
       return originalWrite(packet, data)
     }
-    bot.once('spawn', async () => {
+    bot.on('spawn', async () => {
+      const spawnEpoch = ++epoch
       connected = true
       failures = 0
       task = 'orienting'
@@ -851,9 +858,11 @@ function actor(name, index) {
         village: villageEnabled,
       })
       await sleep(2000)
-      if (connected && epoch === thisEpoch) void loop(thisEpoch)
+      if (connected && epoch === spawnEpoch) void loop(spawnEpoch)
     })
     bot.on('death', () => {
+      connected = false
+      epoch++
       staleRevision++
       decisions?.cancel('death')
       skills?.stop()
@@ -862,17 +871,42 @@ function actor(name, index) {
       reflectRequest?.controller.abort()
       state.recent.push({ event: 'death', at: new Date().toISOString() })
       memory.event('death', { position: bot?.entity?.position })
-      save()
+      try { save() } catch (error) {
+        log(name, 'death_memory_save_error', { error: String(error) })
+      }
       log(name, 'death')
-      chat('system', 'death', `${name} died. The village will feel this.`)
-      void reflect('death', { what: 'you died' })
+      if (villageEnabled && !founder) {
+        permanentlyDead = true
+        task = 'permanently dead'
+        clearInterval(reportTimer)
+        mirror?.close()
+        const retire = () => {
+          try {
+            const result = village.retireVillager(name)
+            if (result) {
+              handles.delete(name)
+              friendlyNames.delete(name)
+              delete STATE[name]
+              chat('system', 'death', `${name} fell permanently. Their home lot is available for the next clanker.`)
+              log(name, 'villager_retired', { homeLot: result.lotIndex })
+            }
+          } catch (error) {
+            log(name, 'villager_retire_error', { error: String(error) })
+            if (!stopping) setTimeout(retire, 5000)
+          }
+        }
+        retire()
+        bot.quit('Clanker permanently died')
+        return
+      }
+      chat('system', 'death', `${name} died and will respawn.`)
     })
     bot.on('kicked', (reason) =>
       log(name, 'kicked', { reason: JSON.stringify(reason).slice(0, 300) }),
     )
     bot.on('error', (error) => log(name, 'error', { error: String(error) }))
     bot.on('end', () => {
-      if (epoch !== thisEpoch) return
+      if (bot !== connection) return
       connected = false
       decisions?.close()
       planRequest?.controller.abort()
@@ -881,11 +915,11 @@ function actor(name, index) {
         ...brain.action, status: 'failed', error: 'Disconnected before completion was confirmed',
         completedAt: new Date().toISOString(),
       }
-      task = 'reconnecting'
+      task = permanentlyDead ? 'permanently dead' : 'reconnecting'
       staleRevision++
       log(name, 'disconnected')
-      report()
-      if (!stopping) setTimeout(connect, 5000)
+      if (!permanentlyDead) report()
+      if (!stopping && !permanentlyDead) setTimeout(connect, 5000)
     })
   }
   connect()
@@ -948,7 +982,7 @@ function onActionOutcome(name, action, result) {
           if (handle.connected)
             handle.reflect('villager_booted', { who: villager })
         setTimeout(() => {
-          if (!stopping) spawnActor(villager, handles.size)
+          if (!stopping) spawnActor(villager)
         }, 8000)
       } else {
         chat(
@@ -990,19 +1024,22 @@ function onActionOutcome(name, action, result) {
 }
 
 /* ---------- boot ----------------------------------------------------------- */
-function spawnActor(name, index) {
+function spawnActor(name, index = village.raw.homeLots[name]) {
   if (handles.has(name)) return
+  if (villageEnabled && !village.raw.population.includes(name)) return
+  if (!Number.isInteger(index)) throw new Error(`Missing home lot for ${name}`)
   log('director', 'actor_spawn', { name, index })
   actor(name, index)
 }
-names.forEach((name, i) => setTimeout(() => spawnActor(name, i), i * 3000))
+foundingNames.forEach((name, i) => setTimeout(() => spawnActor(name, villageEnabled ? undefined : i), i * 3000))
 // Booted villagers persist in village.json; restore them after a controller
 // restart so the village does not permanently lose its residents.
 if (villageEnabled)
-  for (const [i, villager] of (village.raw.bootedVillagers ?? []).entries())
+  for (const [i, villager] of (village.raw.bootedVillagers ?? [])
+    .filter((name) => village.raw.population.includes(name)).entries())
     setTimeout(
-      () => spawnActor(villager, names.length + i),
-      (names.length + i) * 3000,
+      () => spawnActor(villager),
+      (foundingNames.length + i) * 3000,
     )
 if (villageEnabled)
   chat(
@@ -1011,7 +1048,7 @@ if (villageEnabled)
     'Round setup placed the Server monument, coolant basin + spring, starter chest, plaza world spawn and keepInventory (fixture). The village must keep the Server alive.',
   )
 log('director', 'survival_start', {
-  cast: names,
+  cast: foundingNames,
   models: MODELS,
   scenario: SCENARIO,
   village: villageEnabled,

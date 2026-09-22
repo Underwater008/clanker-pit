@@ -155,6 +155,21 @@ export function homeLot(flag, index) {
   return plus(flag, dx, 0, dz)
 }
 
+/** Bed sits in the home center and points through its open doorway. The
+ * adjacent floor in the doorway/extension has two blocks of headroom for a
+ * server-assigned respawn point, even when the bed itself is under the roof. */
+export function homeBed(flag, index) {
+  const lot = homeLot(flag, index)
+  const [dx, dz] = rotateXZ(0, -1, homeRotation(lot, flag))
+  const facing = dx === 1 ? 'east' : dx === -1 ? 'west' : dz === 1 ? 'south' : 'north'
+  return {
+    foot: lot.offset(0, 1, 0),
+    head: lot.offset(dx, 1, dz),
+    spawn: lot.offset(dx * 2, 1, dz * 2),
+    facing,
+  }
+}
+
 /** A 3x3 home with a complete roof, doorway turned to face the Server.
  * Local shell from survival.mjs's shelter shape, rotated per lot. */
 export function homeBlueprint(lot, flag) {
@@ -349,8 +364,11 @@ export function createVillageState({
     flag: null, // {x,y,z} ground block under the rack; null until set up
     waterFed: 0,
     waterTarget: WATER_TARGET,
-    population: [], // all clanker names, founding cast + booted villagers
-    bootedVillagers: [],
+    population: [], // living clankers, including the founding cast
+    founders: [], // the original cast; only these clankers respawn
+    bootedVillagers: [], // all names ever booted, including the fallen
+    fallenVillagers: [],
+    homeLots: {}, // living name -> persistent lot index
     homes: {}, // name -> {done,total,complete}
     homeUpgrades: {}, // name -> progress of the finite room extension
     wall: null, // {done,total,complete} refreshed from world observations
@@ -403,6 +421,27 @@ export function createVillageState({
     state.waterFed = Math.max(0, state.waterFed + amount)
     return { before, after: state.waterFed, changed: before !== state.waterFed }
   }
+  function firstFreeLot(occupied = new Set(Object.values(state.homeLots))) {
+    for (let index = state.founders.length; index < HOME_LOTS.length; index++)
+      if (!occupied.has(index)) return index
+    return null
+  }
+  function reserveVillager() {
+    if (state.population.length >= MAX_POPULATION) return null
+    const lot = firstFreeLot()
+    if (lot === null) return null
+    const used = new Set([...state.population, ...state.bootedVillagers])
+    let name = VILLAGER_POOL.find((candidate) => !used.has(candidate))
+    if (!name) {
+      let serial = VILLAGER_POOL.length + 1
+      while (used.has(`Clanker${serial}`)) serial++
+      name = `Clanker${serial}`
+    }
+    state.bootedVillagers.push(name)
+    state.population.push(name)
+    state.homeLots[name] = lot
+    return name
+  }
   return {
     get raw() {
       return state
@@ -427,14 +466,17 @@ export function createVillageState({
         ),
       },
       population: [...state.population],
+      founders: [...state.founders],
       bootedVillagers: [...state.bootedVillagers],
+      fallenVillagers: [...state.fallenVillagers],
+      homeLots: { ...state.homeLots },
       homes: state.homes,
       homeUpgrades: state.homeUpgrades,
       wall: state.wall,
       wallUpgrade: state.wallUpgrade,
       gate: state.gate,
       roles: { ...state.roles },
-      atCapacity: state.population.length >= MAX_POPULATION,
+      atCapacity: state.population.length >= Math.min(MAX_POPULATION, HOME_LOTS.length),
     }),
     feedCoolant(botName) {
       const r = chatWorthy(1)
@@ -452,14 +494,44 @@ export function createVillageState({
       save()
       return r
     },
+    /** Migrate an existing round once, then keep the founding cast and its
+     * homes fixed even if the controller is restarted with different names. */
+    initializeCast(names) {
+      let changed = false
+      if (!state.founders.length) {
+        state.founders = [...names]
+        changed = true
+      }
+      for (const name of state.founders) if (!state.population.includes(name)) {
+        state.population.push(name)
+        changed = true
+      }
+      for (const name of Object.keys(state.homeLots)) if (!state.population.includes(name)) {
+        delete state.homeLots[name]
+        changed = true
+      }
+      const occupied = new Set()
+      for (const [index, name] of state.founders.entries()) {
+        if (state.homeLots[name] !== index) changed = true
+        state.homeLots[name] = index
+        occupied.add(index)
+      }
+      for (const name of state.population) {
+        if (state.founders.includes(name)) continue
+        let lot = state.homeLots[name]
+        if (!Number.isInteger(lot) || lot < 0 || lot >= HOME_LOTS.length || occupied.has(lot)) {
+          lot = firstFreeLot(occupied)
+          if (lot === null) throw new Error('No home lot for a living clanker')
+          state.homeLots[name] = lot
+          changed = true
+        }
+        occupied.add(lot)
+      }
+      if (changed) save()
+    },
     nextVillager() {
-      if (state.population.length >= MAX_POPULATION) return null
-      const used = new Set([...state.population, ...state.bootedVillagers])
-      const name = VILLAGER_POOL.find((n) => !used.has(n))
-      if (!name) return null
-      state.bootedVillagers.push(name)
-      state.population.push(name)
-      save()
+      const name = reserveVillager()
+      if (name) save()
       return name
     },
     /** The Server boots a villager when the coolant target is reached; the
@@ -467,15 +539,27 @@ export function createVillageState({
      * a crash between the two can never double-boot. */
     bootVillager() {
       if (state.waterFed < state.waterTarget) return null
-      if (state.population.length >= MAX_POPULATION) return null
-      const used = new Set([...state.population, ...state.bootedVillagers])
-      const name = VILLAGER_POOL.find((n) => !used.has(n))
+      const name = reserveVillager()
       if (!name) return null
-      state.bootedVillagers.push(name)
-      state.population.push(name)
       state.waterFed = 0
       save()
       return name
+    },
+    /** Death of a Server-booted clanker is final. Preserve the physical home
+     * in Minecraft while releasing its ownership and progress for the next
+     * booted clanker to inspect and inherit. */
+    retireVillager(name) {
+      if (state.founders.includes(name) || !state.bootedVillagers.includes(name)) return null
+      if (!state.population.includes(name)) return null
+      const lotIndex = state.homeLots[name] ?? null
+      state.population = state.population.filter((resident) => resident !== name)
+      if (!state.fallenVillagers.includes(name)) state.fallenVillagers.push(name)
+      delete state.homeLots[name]
+      delete state.homes[name]
+      delete state.homeUpgrades[name]
+      delete state.roles[name]
+      save()
+      return { name, lotIndex }
     },
     setRoles(roles) {
       state.roles = { ...roles }
