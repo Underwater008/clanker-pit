@@ -174,6 +174,105 @@
   };
   var singleSub = document.querySelector('#singleHud .sub');
   var attachedFeed = undefined;
+  var arenaColors = ['#ff7a42', '#a7b8ff', '#6fd7c7', '#ffb347', '#58c472', '#d888ff', '#f28d8d', '#d8d39b'];
+
+  // The spectator is fixed by infra/capture/spectate-loop.mjs at this offset
+  // from the Server. Project live Minecraft positions into the 16:9 feed;
+  // no world inspection or hidden bot data is used.
+  function projectArenaPosition(position, flag, width, height) {
+    var eye = [flag.x + 24.5, flag.y + 21.62, flag.z + 28.5];
+    var target = [flag.x + .5, flag.y + 1.5, flag.z + .5];
+    var forward = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
+    var length = Math.hypot(forward[0], forward[1], forward[2]);
+    forward = forward.map(function (n) { return n / length; });
+    var right = [-forward[2], 0, forward[0]];
+    length = Math.hypot(right[0], right[2]);
+    right = right.map(function (n) { return n / length; });
+    var up = [
+      right[1] * forward[2] - right[2] * forward[1],
+      right[2] * forward[0] - right[0] * forward[2],
+      right[0] * forward[1] - right[1] * forward[0]
+    ];
+    var point = [position.x - eye[0], position.y + 2.25 - eye[1], position.z - eye[2]];
+    var dot = function (axis) { return point[0] * axis[0] + point[1] * axis[1] + point[2] * axis[2]; };
+    var depth = dot(forward);
+    if (depth < 2) return null;
+    var focal = height / (2 * Math.tan(70 * Math.PI / 360));
+    return { x: width / 2 + focal * dot(right) / depth,
+      y: height / 2 - focal * dot(up) / depth, depth: depth };
+  }
+  function arenaSvg(tag) { return document.createElementNS('http://www.w3.org/2000/svg', tag); }
+  function renderArenaNameplates() {
+    var root = $('arenaNameplates');
+    var village = telemetry && telemetry.village;
+    var fresh = telemetry && Date.now() - Date.parse(telemetry.updated) < 12000 &&
+      Date.now() - lastStateReceivedAt < 12000;
+    if (state.mode !== 'arena' || !fresh || !village || !village.flag || !telemetry.bots) {
+      root.hidden = true;
+      return;
+    }
+    root.hidden = false;
+    var width = root.clientWidth, height = root.clientHeight;
+    if (!width || !height) { root.hidden = true; return; }
+    var lines = $('arenaPlateLines'), tags = $('arenaPlateTags'), offscreen = $('arenaOffscreen');
+    clear(lines); clear(tags);
+    lines.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+    var occupied = [], outside = [];
+    var names = village.population || Object.keys(telemetry.bots);
+    names.forEach(function (name, index) {
+      var player = telemetry.bots[name];
+      var p = player && player.position;
+      if (!player || player.offline || !p || ![p.x, p.y, p.z].every(isFinite)) return;
+      var anchor = projectArenaPosition(p, village.flag, width, height);
+      if (!anchor || anchor.x < 12 || anchor.x > width - 12 || anchor.y < 12 || anchor.y > height - 12) {
+        outside.push(name);
+        return;
+      }
+      var labelWidth = Math.max(62, Math.min(112, name.length * 8 + 25));
+      var offsets = [[0,-42],[-65,-50],[65,-50],[-65,18],[65,18],[0,25],[-110,-20],[110,-20],[0,-76],[0,56]];
+      var box;
+      for (var i = 0; i < offsets.length; i++) {
+        var left = Math.max(4, Math.min(width - labelWidth - 4, anchor.x + offsets[i][0] - labelWidth / 2));
+        var top = Math.max(4, Math.min(height - 28, anchor.y + offsets[i][1]));
+        var candidate = { left: left, top: top, right: left + labelWidth, bottom: top + 24 };
+        if (!occupied.some(function (other) {
+          return candidate.left < other.right + 4 && candidate.right > other.left - 4 &&
+            candidate.top < other.bottom + 4 && candidate.bottom > other.top - 4;
+        })) { box = candidate; break; }
+      }
+      if (!box) box = candidate;
+      occupied.push(box);
+      var color = arenaColors[index % arenaColors.length];
+      var line = arenaSvg('line');
+      line.setAttribute('x1', box.left + labelWidth / 2);
+      line.setAttribute('y1', box.top < anchor.y ? box.bottom : box.top);
+      line.setAttribute('x2', anchor.x);
+      line.setAttribute('y2', anchor.y);
+      line.setAttribute('stroke', color);
+      line.setAttribute('stroke-width', '1.5');
+      line.setAttribute('stroke-opacity', '.9');
+      lines.appendChild(line);
+      var marker = arenaSvg('circle');
+      marker.setAttribute('cx', anchor.x);
+      marker.setAttribute('cy', anchor.y);
+      marker.setAttribute('r', '4');
+      marker.setAttribute('fill', color);
+      marker.setAttribute('stroke', '#09090b');
+      marker.setAttribute('stroke-width', '2');
+      lines.appendChild(marker);
+      var plate = el('button', 'arena-nameplate' + (p.y < village.flag.y - 1 ? ' underground' : ''),
+        name.toUpperCase() + (p.y < village.flag.y - 1 ? ' ↓' : ''));
+      plate.type = 'button';
+      plate.style.left = box.left + 'px';
+      plate.style.top = box.top + 'px';
+      plate.style.setProperty('--plate-color', color);
+      plate.setAttribute('aria-label', 'Focus ' + name);
+      plate.addEventListener('click', function () { setMode('focus', name.toLowerCase()); });
+      tags.appendChild(plate);
+    });
+    offscreen.hidden = !outside.length;
+    offscreen.textContent = outside.length ? 'OUT OF VIEW · ' + outside.join(' · ') : '';
+  }
 
   function showSingle(feed, label, sub, offlineMsg) {
     $('gridStage').hidden = true;
@@ -304,6 +403,7 @@
     } else if (mode === 'play') {
       renderPlay();
     }
+    renderArenaNameplates();
   }
 
   function bot(name) {
@@ -1028,14 +1128,16 @@
         renderVillageBar();
         renderChat();
         renderChip();
+        if (state.mode === 'arena') renderArenaNameplates();
         if (state.mode === 'focus') render();
         else if (state.mode === 'pov') renderFocusPicker();
         if (state.mode === 'play') renderPlay();
       })
-      .catch(function () { renderTelemetryStatus(); })
+      .catch(function () { renderTelemetryStatus(); renderArenaNameplates(); })
       .finally(function () { pollBusy = false; });
   }
-  setInterval(renderTelemetryStatus, 2000);
+  setInterval(function () { renderTelemetryStatus(); renderArenaNameplates(); }, 2000);
+  window.addEventListener('resize', renderArenaNameplates);
   setInterval(pollState, 2000);
   pollState();
 

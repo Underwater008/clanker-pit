@@ -116,6 +116,23 @@ header {
 }
 .aspect { position: relative; width: 100%; padding-top: 56.25%; }
 video { position: absolute; inset: 0; width: 100%; height: 100%; display: block; background: #000; }
+.arena-nameplates { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+.arena-nameplates svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.arena-nameplate {
+  position: absolute; min-height: 24px; padding: 3px 8px 3px 7px;
+  border: 1px solid rgba(232,230,225,.55); border-left: 3px solid var(--plate-color);
+  border-radius: 3px; background: rgba(6,6,8,.88); color: var(--bone);
+  box-shadow: 0 2px 12px #000; font: 600 11px var(--mono); letter-spacing: .07em;
+  white-space: nowrap; cursor: pointer; pointer-events: auto;
+}
+.arena-nameplate:hover, .arena-nameplate:focus-visible { background: var(--plate-color); color: #08090a; outline: none; }
+.arena-nameplate.underground { border-style: dashed; }
+.arena-offscreen {
+  position: absolute; right: 8px; bottom: 8px; max-width: calc(100% - 16px);
+  padding: 5px 8px; border: 1px solid var(--panel-edge); border-radius: 3px;
+  background: rgba(6,6,8,.82); color: var(--ash); font: 10px var(--mono);
+  letter-spacing: .06em; text-align: right;
+}
 .hud {
   display: flex; justify-content: space-between; align-items: center; padding: 9px 13px;
   font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;

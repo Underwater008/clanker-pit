@@ -52,6 +52,11 @@
     <section class="stage" id="singleStage" aria-label="Live feed">
       <div class="aspect">
         <video id="singleVideo" playsinline autoplay muted></video>
+        <div id="arenaNameplates" class="arena-nameplates" aria-label="Clanker positions in the arena" hidden>
+          <svg id="arenaPlateLines" aria-hidden="true"></svg>
+          <div id="arenaPlateTags"></div>
+          <div id="arenaOffscreen" class="arena-offscreen" hidden></div>
+        </div>
         <div class="overlay" id="singleOverlay">
           <div class="code" id="singleCode">SIGNAL</div>
           <div class="msg" id="singleMsg">Tuning the feed…</div>
