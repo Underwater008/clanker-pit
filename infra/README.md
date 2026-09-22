@@ -85,7 +85,7 @@ The website's stream and telemetry URLs must target the same current pod.
 - Safari plays HLS natively. Chrome/Firefox need an hls.js player (the website will embed one).
 - The camera account `ClankerCam` is a spectator-mode, invisible client joined via
   `--quickPlayMultiplayer 127.0.0.1:25565` (the legacy `--server/--port` args no longer auto-join).
-- Capture config: 1280x720 @ 30fps, NVENC when available (otherwise x264 with
+- Capture config: 1280x720 @ 20fps, NVENC when available (otherwise x264 with
   bounded threads), ~2.5 Mbps, LL-HLS (2 s keyframes, 200 ms target parts).
 - `capture/` holds: `client_setup.py` (vanilla 1.21.1 client downloader), `run-client.sh`,
   `run-stream.sh`, `options.txt` (fast graphics, no HUD-affecting mods), `mediamtx.yml`.

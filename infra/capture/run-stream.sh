@@ -7,6 +7,7 @@ DISP=${1:?display required}
 PATH_NAME=${2:?stream path required}
 REG_X=${3:-}
 REG_Y=${4:-}
+STREAM_FPS=${STREAM_FPS:-20}
 source "$(dirname "$0")/display.sh"
 require_capture_region "$DISP" "${REG_X:-0}" "${REG_Y:-0}"
 
@@ -28,9 +29,9 @@ echo "[run-stream] encoder ${ENCODER_ARGS[*]}"
 while true; do
   echo "[run-stream] starting capture $GRAB -> $PATH_NAME $(date -u +%FT%TZ)"
   ffmpeg -hide_banner -loglevel warning -filter_threads 1 \
-    -f x11grab -video_size 1280x720 -framerate 30 -i "$GRAB" \
+    -f x11grab -video_size 1280x720 -framerate "$STREAM_FPS" -i "$GRAB" \
     -vf format=yuv420p "${ENCODER_ARGS[@]}" \
-    -b:v 2500k -maxrate 3000k -bufsize 5000k -g 60 \
+    -b:v 2500k -maxrate 3000k -bufsize 5000k -g "$((STREAM_FPS * 2))" \
     -an -f flv "rtmp://127.0.0.1:1935/$PATH_NAME" || true
   echo "[run-stream] ffmpeg exited; restarting in 2 s"
   sleep 2
