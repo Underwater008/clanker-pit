@@ -800,7 +800,10 @@ export function installSurvival(bot, state, log, opts = {}) {
       release()
     }
   }
-  const table = () => nearbyBlock((b) => b.name === 'crafting_table', 24)
+  // Crafting and village checks can ask for the same station several times in
+  // one decision. The scan is expensive; nearbyBlock rechecks a cached hit
+  // against the live world before returning it.
+  const table = () => nearbyBlock((b) => b.name === 'crafting_table', 24, 'table24', 1500)
   async function craft(name, times = 1) {
     const item = bot.registry.itemsByName[name]
     if (!item) throw new Error(`Unknown item ${name}`)
@@ -1079,7 +1082,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       throw new Error('Road spot still has an obstruction')
     return { ...await useToolOnGround(spot, '_shovel', 'dirt_path'), road: true }
   }
-  const oreNearby = () => nearbyBlock((b) => ironOreNames.has(b.name), 16)
+  const oreNearby = () => nearbyBlock((b) => ironOreNames.has(b.name), 16, 'ore16', 1500)
   const wallEarthNearby = () => bot.findBlocks({
     matching: (b) => ['grass_block', 'dirt'].includes(b.name) &&
       !constructionBlock(b.position) &&
@@ -1091,7 +1094,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   }).map((p) => bot.blockAt(p)).filter(usable)
     .sort((a, b) => a.position.distanceTo(bot.entity.position) -
       b.position.distanceTo(bot.entity.position))[0]
-  const furnaceNearby = () => nearbyBlock((b) => b.name === 'furnace', 16)
+  const furnaceNearby = () => nearbyBlock((b) => b.name === 'furnace', 16, 'furnace16', 1500)
   async function smeltIron() {
     const run = async () => {
       const furnaceBlock = furnaceNearby()
@@ -1584,7 +1587,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (nearVillage && V.farm?.growing < V.farm?.tilled && n('wheat_seeds') > 0)
         vadd('plant_wheat', 'Sow wheat seeds in one empty irrigated plot.')
       if (nearVillage && V.farm?.growing < V.farm?.plots && n('wheat_seeds') === 0 &&
-          nearbyBlock((b) => b.name === 'short_grass', 24))
+          nearbyBlock((b) => b.name === 'short_grass', 24, 'grass24', 1500))
         vadd('gather_wheat_seeds', 'Cut nearby wild grass for wheat seeds; a cut may yield none.')
       if (nearVillage && V.roads?.paved < V.roads?.total && n((name) => name.endsWith('_shovel')) > 0)
         vadd('pave_road', 'Turn one clear block of the finite village lanes into a dirt path.')

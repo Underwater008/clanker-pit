@@ -197,7 +197,10 @@
     var flag = snapshot.village.flag;
     var key = [flag.x, flag.y, flag.z].join(',');
     if (arenaSamples.length && (arenaSamples[arenaSamples.length - 1].key !== key ||
-        time < arenaSamples[arenaSamples.length - 1].time)) arenaSamples = [];
+        time < arenaSamples[arenaSamples.length - 1].time)) {
+      arenaSamples = [];
+      Object.keys(arenaElements).forEach(function (name) { arenaElements[name].smooth = null; });
+    }
     if (arenaSamples.length && time === arenaSamples[arenaSamples.length - 1].time) return;
     var positions = {};
     Object.keys(snapshot.bots).forEach(function (name) {
@@ -226,16 +229,30 @@
   }
 
   function arenaPosition(name, time) {
-    var before = null, after = null;
+    var prior = null, before = null, after = null;
     for (var i = 0; i < arenaSamples.length; i++) {
       var sample = arenaSamples[i];
       if (!sample.positions[name]) continue;
-      if (sample.time <= time) before = sample;
+      if (sample.time <= time) { prior = before; before = sample; }
       if (sample.time >= time) { after = sample; break; }
     }
     if (!before && !after) return null;
     if (!before) return after.positions[name];
-    if (!after || before === after) return before.positions[name];
+    if (!after) {
+      // Video can be ahead of the newest telemetry sample. Predict at most
+      // half a second of ordinary walking instead of pinning every label.
+      if (!prior || before.time - prior.time < 100 || before.time - prior.time > 2000)
+        return before.positions[name];
+      var from = prior.positions[name], latest = before.positions[name];
+      if (Math.hypot(latest.x - from.x, latest.y - from.y, latest.z - from.z) > 6)
+        return latest; // respawn or teleport, not walking velocity
+      var scale = Math.min(500, Math.max(0, time - before.time)) /
+        (before.time - prior.time);
+      return { x: latest.x + (latest.x - from.x) * scale,
+        y: latest.y + (latest.y - from.y) * scale,
+        z: latest.z + (latest.z - from.z) * scale };
+    }
+    if (before === after) return before.positions[name];
     var a = before.positions[name], b = after.positions[name];
     var fraction = (time - before.time) / (after.time - before.time);
     return { x: a.x + (b.x - a.x) * fraction,
@@ -321,6 +338,19 @@
       if (!player || player.offline) return;
       var p = arenaPosition(name, frameTime) || player.position;
       if (!p || ![p.x, p.y, p.z].every(isFinite)) return;
+      var elements = arenaElement(name, index, lines, tags);
+      var now = Date.now();
+      var smooth = elements.smooth;
+      if (!smooth || Math.hypot(p.x - smooth.x, p.y - smooth.y, p.z - smooth.z) > 12) {
+        smooth = { x: p.x, y: p.y, z: p.z, at: now };
+      } else {
+        var blend = 1 - Math.exp(-Math.min(250, now - smooth.at) / 180);
+        smooth = { x: smooth.x + (p.x - smooth.x) * blend,
+          y: smooth.y + (p.y - smooth.y) * blend,
+          z: smooth.z + (p.z - smooth.z) * blend, at: now };
+      }
+      elements.smooth = smooth;
+      p = smooth;
       var anchor = projectArenaPosition(p, village.flag, width, height);
       if (!anchor || anchor.x < 12 || anchor.x > width - 12 || anchor.y < 12 || anchor.y > height - 12) {
         outside.push(name);
@@ -341,7 +371,6 @@
       }
       if (!box) box = candidate;
       occupied.push(box);
-      var elements = arenaElement(name, index, lines, tags);
       var line = elements.line, marker = elements.marker, plate = elements.plate;
       line.style.display = marker.style.display = plate.style.display = '';
       line.setAttribute('x1', box.left + labelWidth / 2);
