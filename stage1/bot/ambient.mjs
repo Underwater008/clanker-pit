@@ -175,12 +175,27 @@ const village = createVillageState({
   ownedKeys: VILLAGE_OWNED_KEYS,
 })
 const villageEnabled = SCENARIO === 'village' && village.exists
+const scenarioGoals = Object.fromEntries(Object.entries(GOALS).filter(([goal]) =>
+  villageEnabled
+    ? !['build_shelter', 'improve_camp'].includes(goal)
+    : !['protect_server', 'build_village', 'stockpile_defense'].includes(goal),
+))
 if (SCENARIO === 'village' && !village.exists)
   log('director', 'village_fixture_missing', { path: villageFile })
-if (villageEnabled && !(village.raw.population?.length > 0)) {
+function villageUpdate(operation, update) {
+  try {
+    return update()
+  } catch (error) {
+    log('director', error.code === 'VILLAGE_PERSIST_FAILED' ? 'village_persistence_error' : 'village_update_error', {
+      operation, error: String(error).slice(0, 240), saveFailures: village.saveFailures,
+    })
+    return undefined
+  }
+}
+if (villageEnabled && !(village.raw.population?.length > 0)) villageUpdate('seed_population', () => {
   village.adopt({ population: [...names] })
   log('director', 'village_population_seeded', { names })
-}
+})
 const friendlyNames = new Set(['ClankerCam', 'FlagSetup', ...names])
 const isEnemyPlayer = (username) => {
   if (friendlyNames.has(username)) return false
@@ -227,27 +242,29 @@ function mergeGuestState() {
     guestPublic = null
     return
   }
-  // Dedup relies on the persisted village.sawGuestEvent() guard alone: chat
+  guestPublic = guest.public ?? null
+  // Persisted guards handle chat and events separately: chat
   // and events share one id sequence, so a numeric in-memory cursor would
   // let a later chat id suppress an earlier, unprocessed boom event.
   for (const message of guest.chat ?? [])
     if (village.sawGuestEvent(`chat:${message.id}`))
       chat('guest', message.from, message.text)
   for (const event of guest.events ?? []) {
-    if (!village.sawGuestEvent(`event:${event.id}`)) continue
+    const eventId = `event:${event.id}`
     if (event.type === 'boom' && villageEnabled) {
       const flag = village.flag()
       // Horizontal distance only: creeper booms happen at ground level, and
       // the plaza is graded flat, so height adds nothing but false negatives.
-      const distance = flag
+      const distance = flag && Number.isFinite(event.position?.x) && Number.isFinite(event.position?.z)
         ? Math.hypot(
-            (event.position?.x ?? 0) - flag.x,
-            (event.position?.z ?? 0) - flag.z,
+            event.position.x - flag.x,
+            event.position.z - flag.z,
           )
         : Infinity
       const nickname = event.nickname ?? 'A creeper guest'
       if (distance <= EXPLOSION_RADIUS) {
-        const r = village.overheat()
+        const r = village.overheat(eventId)
+        if (!r) continue
         chat(
           'system',
           'server',
@@ -258,16 +275,15 @@ function mergeGuestState() {
             what: `${nickname} exploded ${Math.round(distance)}m from the Server core`,
             coolant: r.after,
           })
-      } else {
+      } else if (village.sawGuestEvent(eventId)) {
         chat(
           'system',
           'server',
           `${nickname} exploded ${Number.isFinite(distance) ? `${Math.round(distance)}m` : 'far'} from the Server. The village holds.`,
         )
       }
-    }
+    } else village.sawGuestEvent(eventId)
   }
-  guestPublic = guest.public ?? null
 }
 
 /* ---------- village structure progress (one world reader) ----------------- */
@@ -379,17 +395,31 @@ function actor(name, index) {
     },
     ...state,
   }
+  if (!Object.hasOwn(scenarioGoals, state.plan?.goal)) state.plan = {
+    goal: villageEnabled ? 'build_village' : 'build_shelter',
+    intention: villageEnabled
+      ? 'Gather materials and build the village around the Server.'
+      : 'Acquire wood, craft tools and build a local shelter.',
+    steps: [], source: 'bootstrap',
+  }
   let bot,
     skills,
     connected = false,
     epoch = 0,
     planning = false,
+    planRequest = null,
+    reflectRequest = null,
+    decisions = null,
     lastPlan = 0,
     failures = 0,
     task = 'connecting',
     staleRevision = 0,
     lastReflect = 0
-  const brain = { jev: [], think: null, reflect: null }
+  const brain = {
+    jev: [], think: null, reflect: null, action: null,
+    planner: { status: MODELS ? 'idle' : 'disabled' },
+    decision: { status: MODELS ? 'idle' : 'disabled' },
+  }
   const memory = new Memory(join(DATA_DIR, `memory-${name}.jsonl`))
   const mirror =
     MIRRORS && index < MIRROR_LIMIT
@@ -447,18 +477,22 @@ function actor(name, index) {
     }
   }
   async function reflect(type, data) {
-    if (!MODELS || !connected || planning) return
+    if (!MODELS || !connected || planning || reflectRequest) return
     if (Date.now() - lastReflect < 90000) return
     lastReflect = Date.now()
     const event = memory.event(type, data)
+    const request = { controller: new AbortController(), epoch, revision: staleRevision }
+    reflectRequest = request
     try {
       const r = await planner.reflect({
         identity,
         memoryContext: memory.recentContext(6, 3),
         event: { type, data },
         observation: safelyObserve(),
-        obsRevision: staleRevision,
+        obsRevision: request.revision,
+        signal: request.controller.signal,
       })
+      if (!connected || request.epoch !== epoch || request.revision !== staleRevision || request.controller.signal.aborted) return
       if (r.error) {
         log(name, 'reflect_error', { error: r.error })
         return
@@ -475,6 +509,8 @@ function actor(name, index) {
       }
     } catch (e) {
       log(name, 'reflect_error', { error: String(e) })
+    } finally {
+      if (reflectRequest === request) reflectRequest = null
     }
   }
   function report() {
@@ -500,6 +536,9 @@ function actor(name, index) {
         jev: brain.jev.slice(-8),
         think: brain.think,
         reflect: brain.reflect,
+        planner: brain.planner,
+        decision: brain.decision,
+        action: brain.action,
       },
       soul: {
         origin: identity.origin,
@@ -525,6 +564,9 @@ function actor(name, index) {
   const reportTimer = setInterval(report, 1000)
   function actorLog(event, data = {}) {
     log(name, event, data)
+    if (event === 'jev_status') brain.decision = {
+      ...brain.decision, ...data, error: data.error ?? null,
+    }
     if (event === 'jev_decision' || event === 'fallback_decision') {
       brain.jev.push({
         t: new Date().toISOString(),
@@ -534,6 +576,9 @@ function actor(name, index) {
         durationMs: data.durationMs ?? null,
         model: data.model ?? null,
         options: data.options ?? {},
+        reason: data.reason ?? null,
+        error: data.error ?? null,
+        requestPending: data.requestPending ?? false,
       })
       if (brain.jev.length > 12) brain.jev.splice(0, brain.jev.length - 12)
     }
@@ -559,42 +604,74 @@ function actor(name, index) {
     lastPlan = Date.now()
     const revision = staleRevision
     const thisEpoch = epoch
+    const request = { controller: new AbortController(), startedAt: Date.now() }
+    planRequest = request
+    brain.planner = {
+      status: 'pending', requestedAt: new Date(request.startedAt).toISOString(),
+      provider: planner.name, model: planner.describe.model,
+    }
     log(name, 'planner_request', {
       goal: state.plan.goal,
       provider: planner.name,
       model: planner.describe.model,
     })
     try {
+      const observation = skills.observation()
       const r = await planner.plan({
-        identity: { ...identity, current_goal: state.plan.intention ?? identity.current_goal },
-        observation: skills.observation(),
+        identity: villageEnabled
+          ? { ...identity, current_goal: `Keep the village and Server alive. Assigned role: ${state.role ?? 'unassigned'}. ${identity.current_goal}` }
+          : identity,
+        observation,
         memoryContext: state.recent.slice(-8),
-        goals: GOALS,
+        goals: scenarioGoals,
+        actions: skills.candidates(observation),
+        capabilities: skills.capabilities?.() ?? {},
+        signal: request.controller.signal,
       })
-      if (!connected || epoch !== thisEpoch || revision !== staleRevision) {
+      if (!connected || epoch !== thisEpoch || revision !== staleRevision || request.controller.signal.aborted) {
+        if (planRequest === request) brain.planner = {
+          ...brain.planner, status: 'stale', completedAt: new Date().toISOString(),
+          durationMs: Date.now() - request.startedAt,
+        }
         log(name, 'planner_stale')
         return
       }
       if (r.error) {
+        brain.planner = {
+          ...brain.planner, status: 'error', error: r.error,
+          completedAt: new Date().toISOString(), durationMs: Date.now() - request.startedAt,
+        }
         log(name, 'planner_fallback', { error: r.error, kept: state.plan })
         return
       }
       state.plan = { ...r, source: planner.name }
+      brain.planner = {
+        ...brain.planner, status: 'ready', error: null,
+        completedAt: new Date().toISOString(), durationMs: Date.now() - request.startedAt,
+      }
+      decisions?.cancel('plan_changed')
       save()
       memory.event('plan', { goal: r.goal, intention: r.intention })
       // Route through actorLog so brain.think telemetry is populated.
       actorLog('planner_plan', r)
       if (r.says) say(r.says)
     } catch (e) {
+      brain.planner = {
+        ...brain.planner, status: 'error', error: String(e),
+        completedAt: new Date().toISOString(), durationMs: Date.now() - request.startedAt,
+      }
       log(name, 'planner_error', { error: String(e) })
     } finally {
-      planning = false
+      if (planRequest === request) {
+        planning = false
+        planRequest = null
+      }
     }
   }
   async function loop(thisEpoch) {
     // Jev decisions are requested while the previous action runs, so the bot
     // starts its next action immediately instead of idling between cycles.
-    const decisions = MODELS
+    const loopDecisions = MODELS
       ? createDecisionMaker({
           jevChoose,
           identity,
@@ -604,17 +681,18 @@ function actor(name, index) {
           sleep,
         })
       : null
+    decisions = loopDecisions
     while (connected && epoch === thisEpoch && !stopping) {
       try {
         void plan()
         let urgent = skills.emergency()
         let choice, source
         if (urgent) {
-          decisions?.cancel()
+          loopDecisions?.cancel('safety_reflex')
           choice = urgent
           source = 'safety_reflex'
         } else if (MODELS) {
-          const d = await decisions.next()
+          const d = await loopDecisions.next()
           if (epoch !== thisEpoch || !connected) break
           if (d.urgent) {
             choice = d.urgent
@@ -630,9 +708,14 @@ function actor(name, index) {
         }
         urgent = skills.emergency()
         if (urgent) {
-          decisions?.cancel()
+          loopDecisions?.cancel('safety_reflex')
           choice = urgent
           source = 'safety_reflex'
+        }
+        if (!choice) {
+          task = 'waiting for a feasible action'
+          await sleep(500)
+          continue
         }
         task = choice
         report()
@@ -640,6 +723,11 @@ function actor(name, index) {
           .items()
           .map((i) => ({ name: i.name, count: i.count }))
         const started = Date.now()
+        const actionRevision = staleRevision
+        brain.action = {
+          action: choice, source, status: 'running',
+          startedAt: new Date(started).toISOString(),
+        }
         log(name, 'action_start', {
           action: choice,
           source,
@@ -648,16 +736,21 @@ function actor(name, index) {
         try {
           const result = await skills.execute(choice)
           if (epoch !== thisEpoch || !connected) break
+          if (actionRevision !== staleRevision) throw new Error('Action interrupted before completion could be confirmed')
+          // Durable village accounting must commit before success is announced.
+          onActionOutcome(name, choice, result)
           failures = 0
           const outcome = {
             action: choice,
+            source,
+            durationMs: Date.now() - started,
             ok: true,
             result,
             at: new Date().toISOString(),
           }
+          brain.action = { ...brain.action, status: 'succeeded', completedAt: outcome.at, durationMs: outcome.durationMs, result }
           state.recent.push(outcome)
           memory.event('action', { action: choice, ok: true, result })
-          onActionOutcome(name, choice, result)
           log(name, 'action_result', {
             ...outcome,
             source,
@@ -669,31 +762,41 @@ function actor(name, index) {
           })
         } catch (e) {
           if (epoch !== thisEpoch || !connected) break
+          if (e.code === 'VILLAGE_PERSIST_FAILED') actorLog('village_persistence_error', {
+            action: choice, error: String(e), saveFailures: village.saveFailures,
+          })
           failures++
           state.cooldowns[choice] =
             Date.now() + Math.min(90000, 15000 * failures)
           const outcome = {
             action: choice,
+            source,
+            durationMs: Date.now() - started,
             ok: false,
             error: String(e).slice(0, 180),
             at: new Date().toISOString(),
           }
+          brain.action = { ...brain.action, status: 'failed', completedAt: outcome.at, durationMs: outcome.durationMs, error: outcome.error }
           state.recent.push(outcome)
           memory.event('action', { action: choice, ok: false, error: outcome.error })
           log(name, 'action_result', outcome)
+          loopDecisions?.cancel('action_failed')
           if (failures === 3) {
             lastPlan = Math.min(lastPlan, Date.now() - PLAN_INTERVAL)
             staleRevision++
+            planRequest?.controller.abort()
           }
         }
         save()
         report()
-        await sleep(MODELS ? 100 : 600)
+        await sleep(failures ? Math.min(2000, failures * 300) : MODELS ? 100 : 600)
       } catch (e) {
         log(name, 'loop_error', { error: String(e) })
         await sleep(2000)
       }
     }
+    loopDecisions?.close()
+    if (decisions === loopDecisions) decisions = null
   }
   function connect() {
     if (stopping) return
@@ -746,12 +849,17 @@ function actor(name, index) {
     })
     bot.on('death', () => {
       staleRevision++
+      decisions?.cancel('death')
+      skills?.stop()
+      lastPlan = Math.min(lastPlan, Date.now() - PLAN_INTERVAL)
+      planRequest?.controller.abort()
+      reflectRequest?.controller.abort()
       state.recent.push({ event: 'death', at: new Date().toISOString() })
       memory.event('death', { position: bot?.entity?.position })
       save()
       log(name, 'death')
       chat('system', 'death', `${name} died. The village will feel this.`)
-      void reflect('death', { what: 'you died and respawned' })
+      void reflect('death', { what: 'you died' })
     })
     bot.on('kicked', (reason) =>
       log(name, 'kicked', { reason: JSON.stringify(reason).slice(0, 300) }),
@@ -760,6 +868,13 @@ function actor(name, index) {
     bot.on('end', () => {
       if (epoch !== thisEpoch) return
       connected = false
+      decisions?.close()
+      planRequest?.controller.abort()
+      reflectRequest?.controller.abort()
+      if (brain.action?.status === 'running') brain.action = {
+        ...brain.action, status: 'failed', error: 'Disconnected before completion was confirmed',
+        completedAt: new Date().toISOString(),
+      }
       task = 'reconnecting'
       staleRevision++
       log(name, 'disconnected')
@@ -790,6 +905,9 @@ function actor(name, index) {
   })
   actors.push(() => {
     clearInterval(reportTimer)
+    decisions?.close()
+    planRequest?.controller.abort()
+    reflectRequest?.controller.abort()
     skills?.stop()
     bot?.quit('Controller update')
     mirror?.close()
@@ -883,11 +1001,12 @@ log('director', 'survival_start', {
   mirrors: MIRRORS,
   mirrorLimit: MIRROR_LIMIT,
 })
-const structureTimer = setInterval(refreshVillageStructures, 2000)
-const guestTimer = setInterval(mergeGuestState, 1000)
+const structureTimer = setInterval(() => villageUpdate('refresh_structures', refreshVillageStructures), 2000)
+const guestTimer = setInterval(() => villageUpdate('merge_guest_events', mergeGuestState), 1000)
 const telemetry = setInterval(() => {
   atomic(STATE_PATH, {
     updated: new Date().toISOString(),
+    buildSha: process.env.BUILD_SHA ?? null,
     scenario: SCENARIO,
     village: villageEnabled
       ? { ...village.snapshot(), wallRadius: WALL_RADIUS }

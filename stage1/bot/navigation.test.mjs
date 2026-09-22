@@ -1,0 +1,257 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
+import { createRequire } from 'node:module'
+import { Vec3 } from 'vec3'
+import pathfinder from 'mineflayer-pathfinder'
+import minecraftData from 'minecraft-data'
+import { serverAnatomy } from './village.mjs'
+import {
+  gotoConfirmed,
+  installSurvival,
+  localShelter,
+  navigationReached,
+  navigationGoalSummary,
+  navigateWithRecovery,
+  shelterBlueprint,
+} from './survival.mjs'
+
+const require = createRequire(import.meta.url)
+const dependencyGoto = require('mineflayer-pathfinder/lib/goto.js')
+const { GoalNearXZ } = pathfinder.goals
+
+test('navigation watchdog logs only a compact target, never a world or live entity', () => {
+  const world = { chunks: Buffer.alloc(1024 * 1024) }
+  world.self = world
+  const goal = { pos: new Vec3(1, 64, 2), world }
+  const encoded = JSON.stringify(navigationGoalSummary(goal))
+  assert.ok(encoded.length < 100)
+  assert.deepEqual(JSON.parse(encoded).target, { x: 1, y: 64, z: 2 })
+})
+
+function fixture({ inventory = [], shelter = null, blocks = [], village = null } = {}) {
+  const bot = new EventEmitter()
+  Object.assign(bot, {
+    username: 'RecoveryTest',
+    entity: { id: 1, position: new Vec3(0.5, 64, 0.5), eyeHeight: 1.62 },
+    health: 20,
+    food: 20,
+    entities: {},
+    inventory: { items: () => inventory },
+    registry: minecraftData('1.21.1'),
+    loadPlugin() {},
+    clearControlStates() {},
+    stopDigging() {},
+    blockAt(position) {
+      const p = position.floored()
+      const defined = blocks.find((b) => b.position.equals(p))
+      return defined ?? {
+        position: p,
+        name: p.y < 64 ? 'grass_block' : 'air',
+        boundingBox: p.y < 64 ? 'block' : 'empty',
+      }
+    },
+    findBlocks({ matching, maxDistance }) {
+      return blocks.filter((b) => matching(b) &&
+        b.position.distanceTo(bot.entity.position) <= maxDistance)
+        .map((b) => b.position)
+    },
+    pathfinder: {
+      setGoal() {},
+      setMovements(movements) { this.movements = movements },
+      async goto() {},
+    },
+  })
+  const state = { camp: null, shelter, recent: [], cooldowns: {}, plan: { goal: 'explore' } }
+  const skills = installSurvival(bot, state, () => {}, { village })
+  return { bot, state, skills }
+}
+
+test('empty noPath from the pinned dependency cannot become a successful walk', async () => {
+  const bot = new EventEmitter()
+  bot.entity = { position: new Vec3(0.5, 64, 0.5) }
+  bot.pathfinder = {
+    setGoal() {
+      queueMicrotask(() => bot.emit('path_update', { path: [], status: 'noPath' }))
+    },
+    goto(goal) { return dependencyGoto(bot, goal) },
+  }
+  await assert.rejects(
+    gotoConfirmed(bot, new GoalNearXZ(12, 0, 1)),
+    /before reaching the goal/,
+  )
+  assert.equal(bot.listenerCount('path_update'), 0)
+})
+
+test('navigation succeeds only at the actual goal position', async () => {
+  const { bot } = fixture()
+  const goal = new GoalNearXZ(12, 0, 1)
+  assert.equal(navigationReached(goal, bot.entity.position), false)
+  bot.pathfinder.goto = async () => { bot.entity.position = new Vec3(12.5, 64, 0.5) }
+  await gotoConfirmed(bot, goal)
+  assert.equal(navigationReached(goal, bot.entity.position), true)
+})
+
+test('a stalled work route sidesteps the obstacle and retries the original goal within one budget', async () => {
+  const { bot } = fixture()
+  const goal = new GoalNearXZ(0, -10, 1)
+  const calls = []
+  await navigateWithRecovery({
+    bot, goal, ms: 11000, emergency: () => null, log: () => {},
+    run: async (next, budget) => {
+      calls.push({ next, budget })
+      if (calls.length === 1) throw new Error('stuck at basin')
+      bot.entity.position = new Vec3(next.x + 0.5, 64, next.z + 0.5)
+    },
+  })
+  assert.equal(calls.length, 3)
+  assert.notEqual(calls[1].next, goal)
+  assert.equal(calls[2].next, goal)
+  assert.ok(calls.every((c) => c.budget <= 11000))
+  assert.equal(navigationReached(goal, bot.entity.position), true)
+})
+
+test('safety reflexes prevent retrying a failed work route', async () => {
+  const { bot } = fixture()
+  let calls = 0
+  await assert.rejects(navigateWithRecovery({
+    bot, goal: new GoalNearXZ(0, -10, 1), ms: 11000,
+    emergency: () => 'flee', log: () => {},
+    run: async () => { calls++; throw new Error('hit by threat') },
+  }), /hit by threat/)
+  assert.equal(calls, 1)
+})
+
+test('scouting abandons an empty failed landmark route and moves on an alternate route', async () => {
+  const tree = { name: 'oak_log', boundingBox: 'block', position: new Vec3(15, 64, 0) }
+  const { bot, skills } = fixture({ blocks: [tree] })
+  const routes = []
+  bot.pathfinder.goto = async (goal) => {
+    routes.push([goal.x, goal.z])
+    if (routes.length === 2) bot.entity.position = new Vec3(goal.x + 0.5, 64, goal.z + 0.5)
+  }
+  const result = await skills.execute('explore')
+  assert.equal(routes.length, 2)
+  assert.notDeepEqual(routes[0], routes[1])
+  assert.ok(result.moved > 0.75)
+  assert.equal(skills.observation().resources.tree, null, 'Failed landmark is temporarily excluded')
+})
+
+test('an enclosed clanker reports failed exploration rather than a fictional success', async () => {
+  const { bot, skills } = fixture()
+  const routes = []
+  bot.pathfinder.goto = async (goal) => { routes.push(`${goal.x},${goal.z}`) }
+  await assert.rejects(skills.execute('explore'), /before reaching the goal/)
+  assert.equal(routes.length, 3)
+  assert.equal(new Set(routes).size, 3)
+  assert.deepEqual(bot.entity.position, new Vec3(0.5, 64, 0.5))
+})
+
+test('shelter construction accepts stone and all plank species without a workbench', () => {
+  for (const material of ['cobblestone', 'dirt', 'cherry_planks', 'mangrove_planks']) {
+    const { skills } = fixture({ inventory: [{ name: material, count: 4 }] })
+    const options = skills.candidates(skills.observation())
+    assert.ok(options.build_shelter, `${material} can build a shelter`)
+  }
+})
+
+test('remote shelter cannot be built from afar and relocation retains its recorded site', async () => {
+  const previous = { x: -103, y: 118, z: -1220 }
+  const { bot, state, skills } = fixture({
+    shelter: previous,
+    inventory: [{ name: 'cobblestone', count: 20 }],
+  })
+  let routes = 0
+  bot.pathfinder.goto = async () => { routes++ }
+  const observation = skills.observation()
+  const options = skills.candidates(observation)
+  assert.equal(observation.shelter.local, false)
+  assert.equal(options.build_shelter, undefined)
+  assert.ok(options.relocate_shelter)
+  await assert.rejects(skills.execute('build_shelter'), /too far away/)
+  const result = await skills.execute('relocate_shelter')
+  assert.equal(result.placed, 0)
+  assert.deepEqual(state.shelterHistory[0].site, previous)
+  assert.equal(localShelter(state.shelter, bot.entity.position), true)
+  assert.equal(routes, 0, 'Selecting a new site does not navigate or mutate old construction')
+})
+
+test('unknown unloaded shelter blocks are reported as unknown progress', () => {
+  const { bot, skills } = fixture({ shelter: { x: 1000, y: 80, z: 1000 } })
+  const localBlockAt = bot.blockAt
+  bot.blockAt = (p) => Math.abs(p.x) > 30 ? null : localBlockAt(p)
+  const shelter = skills.observation().shelter
+  assert.equal(shelter.loaded, false)
+  assert.equal(shelter.blocks, null)
+  assert.equal(shelter.complete, false)
+})
+
+test('navigation preserves both current and archived shelter blocks, including dirt', () => {
+  const { bot, state } = fixture({ shelter: { x: 5, y: 64, z: 5 } })
+  const previous = { x: -6, y: 64, z: -6 }
+  state.shelterHistory = [{ site: previous }]
+  bot.emit('spawn')
+  const forbidden = bot.pathfinder.movements.exclusionAreasBreak[0]
+  for (const origin of [state.shelter, previous]) {
+    const position = shelterBlueprint(new Vec3(origin.x, origin.y, origin.z))[0]
+    assert.equal(forbidden({ name: 'dirt', position }), 100)
+  }
+  assert.equal(forbidden({ name: 'dirt', position: new Vec3(20, 64, 20) }), 0)
+})
+
+test('resource scans preserve construction logs but still see a workbench built into a shelter', () => {
+  const table = new Vec3(4, 65, 4)
+  const { skills } = fixture({
+    shelter: { x: 5, y: 64, z: 5 },
+    blocks: [
+      { name: 'oak_log', position: new Vec3(4, 64, 4), boundingBox: 'block' },
+      { name: 'crafting_table', position: table, boundingBox: 'block' },
+    ],
+  })
+  const resources = skills.observation().resources
+  assert.equal(resources.tree, null)
+  assert.deepEqual(resources.workbench, table)
+})
+
+test('returning to a distant camp uses a local waypoint and reports partial progress truthfully', async () => {
+  const { bot, state, skills } = fixture()
+  state.camp = { x: 200, y: 64, z: 0 }
+  bot.pathfinder.goto = async (goal) => {
+    assert.ok(goal.x < 15, 'Do not pathfind to a remote remembered position in one action')
+    bot.entity.position = new Vec3(goal.x + 0.5, 64, goal.z + 0.5)
+  }
+  const result = await skills.execute('return_to_camp')
+  assert.equal(result.returned, false)
+  assert.ok(result.moved > 8)
+  assert.ok(result.remaining > 150)
+})
+
+test('a distant village offers returning to post before inaccessible construction or coolant work', () => {
+  const { skills } = fixture({
+    inventory: [{ name: 'cobblestone', count: 20 }, { name: 'water_bucket', count: 1 }],
+    village: { flag: new Vec3(200, 63, 0), lotIndex: 0, summary: () => ({}) },
+  })
+  const options = skills.candidates(skills.observation())
+  assert.ok(options.return_to_post)
+  for (const action of ['build_wall', 'build_gate', 'build_home', 'feed_server', 'build_shelter'])
+    assert.equal(options[action], undefined, action)
+})
+
+test('scooping a self-refilling spring uses held-item activation and confirms the bucket inventory change', async () => {
+  const flag = new Vec3(0, 63, 0)
+  const inventory = [{ name: 'bucket', count: 1 }]
+  const { bot, skills } = fixture({
+    inventory,
+    village: { flag, lotIndex: 0, summary: () => ({}) },
+    blocks: serverAnatomy(flag).spring.map((position) => ({ name: 'water', boundingBox: 'empty', position })),
+  })
+  let uses = 0
+  bot.pathfinder.goto = async (goal) => { bot.entity.position = new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5) }
+  bot.equip = async () => {}
+  bot.lookAt = async () => {}
+  bot._placeBlockWithOptions = async () => { assert.fail('Buckets are not block placement') }
+  bot.activateItem = () => { uses++; inventory[0] = { name: 'water_bucket', count: 1 } }
+  assert.deepEqual(await skills.execute('scoop_water'), { filledBucket: true })
+  assert.equal(uses, 1)
+  assert.equal(bot.blockAt(serverAnatomy(flag).spring[0]).name, 'water', 'Spring need not disappear to prove a filled bucket')
+})

@@ -26,8 +26,8 @@ native() { # contestant port x y session
   mkdir -p "/workspace/arena/cameras/View$1"
   cp -f /workspace/arena/capture/options.txt "/workspace/arena/cameras/View$1/options.txt"
   tmux new-session -d -s "$5" "python3 /workspace/arena/capture/run-native-view.py $1 $2 $3 $4 2>&1 | tee /workspace/arena/logs/client-View$1.log"
-  # This pod has about four CPU cores. Wait for each renderer to finish its
-  # expensive startup before launching the next one.
+  # Wait for each renderer to finish its expensive startup before launching
+  # the next one; pod CPU quotas vary independently of the visible host CPUs.
   for _ in $(seq 1 120); do
     if jq -e '.viewer == true' "/workspace/arena/bot-state/mirror-$1.json" >/dev/null 2>&1; then return; fi
     sleep 2

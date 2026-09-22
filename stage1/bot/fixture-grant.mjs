@@ -8,7 +8,7 @@
 //
 //   node fixture-grant.mjs        (waits up to 5 minutes for the cast)
 import './env.mjs'
-import { existsSync, writeFileSync, readFileSync } from 'node:fs'
+import { writeFileSync, readFileSync, openSync, closeSync, fsyncSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Rcon } from 'rcon-client'
@@ -31,14 +31,29 @@ if (!village.exists) {
 try {
   const marker = JSON.parse(readFileSync(MARKER, 'utf8'))
   if (marker.grantedAt) {
-    log('grant_skipped', {
-      reason: 'starter buckets already granted',
-      grantedAt: marker.grantedAt,
-    })
+    log('grant_skipped', { reason: 'starter buckets already granted', grantedAt: marker.grantedAt })
     process.exit(0)
   }
-} catch {
-  // No marker yet: proceed.
+  // A previous process may have sent /give before losing its acknowledgement.
+  // Never infer that a missing success marker means the grant did not happen.
+  log('grant_blocked', { reason: 'pending or unrecognized grant marker; inspect the recipient inventory and server log before operator reconciliation', target: marker.grantedTo })
+  process.exit(1)
+} catch (e) {
+  if (e.code !== 'ENOENT') {
+    log('grant_blocked', { reason: 'grant marker could not be read safely', error: String(e).slice(0, 160) })
+    process.exit(1)
+  }
+}
+function durableWrite(path, data, flags) {
+  const fd = openSync(path, flags)
+  try {
+    writeFileSync(fd, JSON.stringify(data))
+    fsyncSync(fd)
+  } finally { closeSync(fd) }
+}
+function syncDirectory() {
+  const fd = openSync(DATA_DIR, 'r')
+  try { fsyncSync(fd) } finally { closeSync(fd) }
 }
 // Hand the starter buckets to the first listed clanker (the industrious
 // one), not a hardcoded name.
@@ -47,8 +62,12 @@ const RECIPIENT =
   village.raw.population?.[0] ||
   'Cinder'
 
+if (!/^[A-Za-z0-9_]{1,16}$/.test(RECIPIENT)) throw new Error('Invalid fixture recipient Minecraft name')
+
 const deadline = Date.now() + WAIT_MS
 let rcon = null
+let attempted = false
+let granted = false
 try {
   while (Date.now() < deadline) {
     try {
@@ -66,37 +85,57 @@ try {
         .map((s) => s.trim().toLowerCase())
         .filter(Boolean)
       if (online.includes(RECIPIENT.toLowerCase())) {
-        const give = await rcon.send(`give ${RECIPIENT} minecraft:water_bucket 2`)
-        if (/no player|could not|incorrect|unknown/i.test(String(give ?? ''))) {
-          log('grant_give_failed', { response: String(give).slice(0, 160) })
-          await sleep(10000)
-          continue
+        // Exclusive, durable intent BEFORE the external side effect. Concurrent
+        // invocations and process crashes cannot silently duplicate this grant.
+        const pending = { status: 'pending', attemptedAt: new Date().toISOString(), grantedTo: RECIPIENT, item: 'minecraft:water_bucket', count: 2 }
+        try {
+          durableWrite(MARKER, pending, 'wx')
+          syncDirectory()
+        } catch (e) {
+          log('grant_blocked', { reason: e.code === 'EEXIST' ? 'another grant attempt already owns the marker' : 'could not persist grant intent', error: String(e).slice(0, 160) })
+          process.exitCode = 1
+          break
         }
+        attempted = true
+        const give = await rcon.send(`give ${RECIPIENT} minecraft:water_bucket 2`)
+        if (!/^Gave 2\b/i.test(String(give ?? ''))) {
+          log('grant_uncertain', { response: String(give).slice(0, 160), note: 'pending marker retained; no automatic retry' })
+          process.exitCode = 1
+          break
+        }
+        const complete = { ...pending, status: 'granted', grantedAt: new Date().toISOString() }
+        const temporary = `${MARKER}.${process.pid}.tmp`
+        durableWrite(temporary, complete, 'wx')
+        renameSync(temporary, MARKER)
+        syncDirectory()
+        granted = true
         log('fixture_grant', { target: RECIPIENT, response: String(give).slice(0, 120) })
-        await rcon.send(
-          `say [Round setup] ${RECIPIENT} was handed two starter buckets (round fixture, labeled).`,
-        )
-        writeFileSync(
-          MARKER,
-          JSON.stringify({
-            grantedAt: new Date().toISOString(),
-            grantedTo: RECIPIENT,
-          }),
-        )
+        // Announcement is optional and cannot turn a successful grant into a
+        // retry. The final marker is already durable at this point.
+        try {
+          await rcon.send(`say [Round setup] ${RECIPIENT} was handed two starter buckets (round fixture, labeled).`)
+        } catch (e) {
+          log('grant_announcement_failed', { error: String(e).slice(0, 120) })
+        }
         log('grant_done')
-        process.exit(0)
+        break
       }
     } catch (e) {
+      if (attempted) {
+        log('grant_uncertain', { error: String(e).slice(0, 160), note: 'grant intent retained; inspect inventory and server log, do not retry automatically' })
+        process.exitCode = 1
+        break
+      }
       log('grant_retry', { error: String(e).slice(0, 120) })
+      await rcon?.end().catch(() => {})
       rcon = null
     }
     await sleep(10000)
   }
-  log('grant_timeout', {
-    target: RECIPIENT,
-    note: 'run node fixture-grant.mjs again later',
-  })
-  process.exitCode = 1
+  if (!granted && !attempted && !process.exitCode) {
+    log('grant_timeout', { target: RECIPIENT, note: 'no give attempted; run node fixture-grant.mjs again later' })
+    process.exitCode = 1
+  }
 } finally {
   await rcon?.end().catch(() => {})
 }

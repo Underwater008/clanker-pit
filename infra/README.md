@@ -4,8 +4,8 @@ RunPod runs the Minecraft server, survival controllers, native player renderers,
 and capture/stream services. Vercel serves the separate website. Start with
 [agent guidance](../AGENTS.md) for the source map and development checks.
 
-`pod-bootstrap.sh` is the current full-stack startup path. It fetches source from
-GitHub `main`, installs Java 21 and Node 22+, and preserves existing
+`pod-bootstrap.sh` is the current full-stack startup path. It resolves GitHub
+`main` to one commit (or accepts `CLANKER_SOURCE_SHA`), installs Java 21 and Node 22+, and preserves existing
 `server.properties`. It starts services and may interrupt existing sessions;
 do not rerun the entire bootstrap as a routine code update. Inspect the running
 stack and restart only the affected components.
@@ -19,7 +19,8 @@ stack and restart only the affected components.
   is injected into the pod at creation time via the `PUBLIC_KEY` env var.
 - Full-stack bootstrap also needs `RUNPOD_API_KEY` (Kimi) and `TYPESAFE_API_KEY`
   (Jev) in its process environment. It writes the private bot configuration to
-  `/workspace/arena/.env`; it does not read the local `stage0/.env` automatically.
+  `/workspace/arena/.env` only if it is absent; it preserves existing private
+  configuration and does not read local `stage0/.env` automatically.
 
 ## Pod utilities and legacy setup
 
@@ -71,9 +72,10 @@ waypoints, reported observations). Record the run in `stage0/RESULTS.md`.
 
 ## SSH versus HTTP 404s
 
-Run `bash infra/pod-status.sh` from the repository (or `./pod-status.sh` from
-this directory) to get the current direct SSH command. It queries `pod.json`'s
-pod ID and resolves private port 22 to its **public TCP port**. Copy that whole
+Run `bash infra/pod-status.sh --pod-id <id-serving-the-website>` from the repository
+to get the current direct SSH command. `CLANKER_POD_ID` is also supported; without
+either override it reads the ignored `pod.json`, which can still refer to an old
+pod. It resolves private port 22 to its **public TCP port**. Copy that whole
 command; neither port 22 on the public IP nor an HTTP proxy URL is a substitute.
 The command uses the project SSH private key. The RunPod API key is used only to
 discover the pod, not to authenticate SSH. Refresh the mapping after a restart.
@@ -89,7 +91,13 @@ the Xorg module uninstalled; tiled camera startup then silently created the smal
 fallback screen. The corrected scripts validate display dimensions, require the
 shared display for tiled clients, and fail readiness if a playlist is unavailable.
 
-Port 8081 now runs `telemetry-server.py`, which serves **only** the state snapshot.
+Port 8081 runs `telemetry-server.py`, which serves **only** the state snapshot
+and allowlisted guest API routes. Behind RunPod, configure
+`TELEMETRY_TRUSTED_PROXY_CIDRS=100.64.1.0/24` and
+`TELEMETRY_CLIENT_IP_HEADER=CF-Connecting-IP`: these were verified against the
+current proxy's socket peer and overwritten client-IP header. Untrusted peers
+cannot select their own rate-limit identity; default configuration trusts no
+proxy headers. Refresh this configuration if the provider changes its network.
 Do not replace it with `python -m http.server --directory /workspace`: that exposes
 the arena `.env`, server configuration, and logs. Use SSH to inspect logs.
 
@@ -152,8 +160,11 @@ must remain bound to `127.0.0.1`. `run-native-view.py` watches the matching
 The existing Xorg tiles, ffmpeg publishers and public HLS paths are unchanged.
 
 The controller is `stage1/bot/ambient.mjs`: asynchronous Kimi plans (normally at
-most once every five minutes per bot), bounded Jev choices (at least eight
-seconds apart), then verified Mineflayer actions. `survival.mjs` provides wood
+most once every five minutes per clanker), one bounded Jev request per clanker
+(request starts at least 2.5 seconds apart), then verified Mineflayer actions.
+Slow choices remain in flight while labeled fallback actions continue; expired
+choices and choices invalidated by failure, death or a new plan are discarded.
+`survival.mjs` provides wood
 collection, crafting, mining, eating, hunting, sapling planting and a small
 23-block shelter. Plans, camps and recent outcomes persist in `bot-state/`.
 Fallback choices are explicitly logged and must not be called model decisions.
@@ -185,11 +196,14 @@ are cancelled after four seconds, excluding active digging. Scouting prefers
 visible wood before a blind heading. Nearby enemies and hunger trigger bounded
 safety actions without waiting for a planner response.
 
-The production round selected on 2026-09-21 is `round-20260921-native`, with a
+The historical survival round selected on 2026-09-21 is `round-20260921-native`, with a
 dry cherry-grove spawn near (-113, 117, -1225). The old `world` directory and
 `backups/round-20260921-native` are retained. Bootstrap preserves existing
 `server.properties` so it cannot silently switch back to the old beach world.
-Player POV is the website default; `?v=arena` explicitly selects the wide camera.
+FOCUS is the website default: the native POV, current plan, action outcome,
+provider status and labeled decisions appear together. `?v=arena` explicitly
+selects the wide camera. Public telemetry's `buildSha` identifies loaded
+controller source; a fresh snapshot alone does not prove movement or progress.
 
 `lab-placement.mjs` is another isolated-server regression: the bot must place
 the complete 23-block shelter from an uneven approach, with every block checked
@@ -202,6 +216,12 @@ server-confirmed mechanics chain — infinite spring refill, `scoop_water`,
 `feed_server` (pour + drink, twice), complete wall/gate blueprints with the
 gate passage open, home completion, torch placement, `mine_iron_ore` →
 `smelt_iron` → `craft_bucket`, and patrol staying near the village.
+
+`lab-guest.mjs` uses the same isolated server to verify guest movement, a real
+server-confirmed explosion, rejection of a repeated boom, event persistence
+across gateway restart, and disconnecting a guest who leaves. Its private HTTP
+gateway is on 18090 and its read-only mirror is on 25694. Run it after other
+fixture-mutating labs finish, with no production guest queue involved.
 
 ## Village round: protect the Server
 
@@ -264,12 +284,14 @@ Abuse controls: guest nicknames may never match clanker/villager/camera names
 joins are throttled per visitor IP at the public proxy (two per ten minutes —
 the gateway only ever sees the proxy's loopback address). The queue lives
 in gateway memory — a gateway restart clears it (viewers re-join; the
-event-id sequence is restored from `guest.json` so boom/overheat accounting
-survives restarts). Booms are single-attempt, verified by an actual creeper
-spawning at the guest's feet, and never fire before the guest is confirmed
+event-id sequence and unconsumed event buffers are restored from `guest.json`
+so boom/overheat accounting survives restarts). Booms are single-attempt,
+verified by a nearby server explosion packet, and never fire before the guest is confirmed
 at the gate. Boom events are written to `bot-state/guest.json` and consumed
 exactly once by the controller, which applies overheat penalties and
 publishes queue status + guest chat in `state.json` for the website.
+An uncertain explosion attempt consumes the turn and is never automatically
+repeated. Late callbacks from an old guest cannot finish a newer guest's turn.
 
 The guest POV is a sixth native view: the gateway attaches a read-only mirror
 on port 25584 (state file `bot-state/mirror-Guest.json`); `camguest` runs the

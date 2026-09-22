@@ -2,4 +2,7 @@
 node_modules/
 infra/pod_ed25519*
 infra/pod.json
+infra/pod-new.json
+infra/pod-new-gql.json
+infra/pod-3090.json
 .vercel/

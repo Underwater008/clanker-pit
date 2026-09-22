@@ -17,6 +17,7 @@ import mineflayer from 'mineflayer'
 import { once } from 'node:events'
 import { Vec3 } from 'vec3'
 import { join } from 'node:path'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { Rcon } from 'rcon-client'
 import {
   createVillageState,
@@ -31,9 +32,14 @@ const PORT = Number(process.env.MC_PORT ?? 25565)
 const RCON_PORT = Number(process.env.RCON_PORT ?? 25575)
 const RCON_PASSWORD = process.env.RCON_PASSWORD ?? 'clanker-dev'
 const SEARCH_RADIUS = Number(process.env.FLAG_SITE_SEARCH ?? 48)
+const MAX_SITE_SPREAD = Number(process.env.FLAG_SITE_MAX_SPREAD ?? 3)
+if (!Number.isFinite(SEARCH_RADIUS) || SEARCH_RADIUS < 8 || SEARCH_RADIUS > 128 ||
+    !Number.isFinite(MAX_SITE_SPREAD) || MAX_SITE_SPREAD < 0 || MAX_SITE_SPREAD > 6)
+  throw new Error('Flag site search radius must be 8..128 and max spread 0..6')
 const log = (event, data = {}) =>
   console.log(JSON.stringify({ t: new Date().toISOString(), event, ...data }))
 
+mkdirSync(DATA_DIR, { recursive: true })
 const villagePath = join(DATA_DIR, 'village.json')
 const village = createVillageState({
   path: villagePath,
@@ -60,29 +66,56 @@ const timeout = setTimeout(() => {
 }, 240000)
 await once(bot, 'spawn')
 log('probe_spawned', { position: bot.entity.position })
+let chunksDeadline
+try {
+  await Promise.race([
+    bot.waitForChunksToLoad(),
+    new Promise((_, reject) => { chunksDeadline = setTimeout(() => reject(new Error('nearby chunks did not load within 30 seconds')), 30000) }),
+  ])
+  log('probe_chunks_ready')
+} catch (e) {
+  log('round_setup_failed', { reason: String(e) })
+  bot.quit()
+  clearTimeout(timeout)
+  process.exit(1)
+} finally {
+  clearTimeout(chunksDeadline)
+}
 
 /* ---------- pick a flat, dry site near spawn ------------------------------ */
+const heightCache = new Map()
 function groundHeight(x, z) {
-  for (let y = 140; y >= 40; y--) {
+  const key = `${x},${z}`
+  if (heightCache.has(key)) return heightCache.get(key)
+  const minY = bot.game.minY ?? -64
+  const topY = minY + (bot.game.height ?? 384) - 1
+  let height = -Infinity
+  for (let y = topY; y >= minY; y--) {
     const block = bot.blockAt(new Vec3(x, y, z))
-    if (block && block.boundingBox === 'block' && block.name !== 'water')
-      return y
-    if (block && block.name === 'water') return -1
+    // An unknown column is not evidence of solid land. A canopy is not a
+    // foundation either: keep the fixture out of trees, water and lava.
+    if (!block || /^(water|lava)$/.test(block.name)) break
+    if (block.boundingBox !== 'block') continue
+    if (/(?:_leaves|_log|_wood)$/.test(block.name)) break
+    height = y
+    break
   }
-  return -1
+  heightCache.set(key, height)
+  return height
 }
 function scoreSite(cx, cz) {
   const R = WALL_RADIUS + 1
   const heights = []
-  for (let x = cx - R; x <= cx + R; x += 2)
-    for (let z = cz - R; z <= cz + R; z += 2) {
-      const h = groundHeight(x, z)
-      if (h === -1) return null // water in the footprint
-      heights.push(h)
-    }
-  const min = Math.min(...heights),
-    max = Math.max(...heights)
-  return { spread: max - min, y: Math.round((min + max) / 2) }
+  // Check every column, including the spring and guest arrival road. Sampling
+  // every second column missed narrow water channels inside the foundation.
+  for (let x = cx - R; x <= cx + R; x++)
+    for (let z = cz - R; z <= cz + R; z++) heights.push(groundHeight(x, z))
+  for (let x = cx - 2; x <= cx + 2; x++)
+    for (let z = cz + WALL_RADIUS; z <= cz + WALL_RADIUS + 6; z++) heights.push(groundHeight(x, z))
+  if (heights.some((h) => !Number.isFinite(h))) return null
+  const min = Math.min(...heights), max = Math.max(...heights)
+  if (max - min > MAX_SITE_SPREAD) return null
+  return { spread: max - min, minY: min, y: Math.round((min + max) / 2) }
 }
 const spawn = bot.entity.position.floored()
 let best = null
@@ -100,7 +133,7 @@ for (const [dx, dz] of offsets) {
   if (best.spread <= 1) break
 }
 if (!best) {
-  log('round_setup_failed', { reason: 'no flat dry site found near spawn' })
+  log('round_setup_failed', { reason: 'no loaded, dry site within the allowed elevation spread near spawn', searchRadius: SEARCH_RADIUS, maxSpread: MAX_SITE_SPREAD })
   bot.quit()
   process.exitCode = 1
   process.exit(1)
@@ -117,7 +150,7 @@ const rcon = await Rcon.connect({
 })
 async function run(command) {
   const response = await rcon.send(command)
-  if (/^(Unknown|Incorrect|Expected|Could not|Invalid)/i.test(response ?? ''))
+  if (/^(Unknown|Incorrect|Expected|Could not|Invalid|The position is not loaded|That position is not loaded|No player was found)|can only stack up to/i.test(response ?? ''))
     throw new Error(`RCON rejected "${command.slice(0, 80)}": ${response}`)
   return response
 }
@@ -127,12 +160,13 @@ const a = serverAnatomy(flag)
 let built = false
 try {
   await run('gamerule keepInventory true')
+  await run('gamerule spawnRadius 0')
   // Village green: solid floor, level surface, open sky over the build area.
   await run(
     `fill ${flag.x - R} ${flag.y + 1} ${flag.z - R} ${flag.x + R} ${flag.y + 9} ${flag.z + R} air`,
   )
   await run(
-    `fill ${flag.x - R} ${flag.y - 1} ${flag.z - R} ${flag.x + R} ${flag.y - 1} ${flag.z + R} dirt`,
+    `fill ${flag.x - R} ${Math.min(best.minY, flag.y - 1)} ${flag.z - R} ${flag.x + R} ${flag.y - 1} ${flag.z + R} dirt`,
   )
   await run(
     `fill ${flag.x - R} ${flag.y} ${flag.z - R} ${flag.x + R} ${flag.y} ${flag.z + R} grass_block`,
@@ -142,7 +176,7 @@ try {
     `fill ${flag.x - 2} ${flag.y + 1} ${flag.z + R} ${flag.x + 2} ${flag.y + 6} ${flag.z + R + 6} air`,
   )
   await run(
-    `fill ${flag.x - 2} ${flag.y - 1} ${flag.z + R} ${flag.x + 2} ${flag.y - 1} ${flag.z + R + 6} dirt`,
+    `fill ${flag.x - 2} ${Math.min(best.minY, flag.y - 1)} ${flag.z + R} ${flag.x + 2} ${flag.y - 1} ${flag.z + R + 6} dirt`,
   )
   await run(
     `fill ${flag.x - 2} ${flag.y} ${flag.z + R} ${flag.x + 2} ${flag.y} ${flag.z + R + 6} grass_block`,
@@ -163,7 +197,9 @@ try {
   // of Cinder's two starter buckets happens in fixture-grant.mjs once the
   // cast is actually online (flag-setup runs before the bots exist).
   await run(`setblock ${a.chest.x} ${a.chest.y} ${a.chest.z} chest`)
-  await run(`item replace block ${a.chest.x} ${a.chest.y} ${a.chest.z} container.0 with minecraft:water_bucket 2`)
+  // Filled buckets do not stack; one slot per bucket.
+  await run(`item replace block ${a.chest.x} ${a.chest.y} ${a.chest.z} container.0 with minecraft:water_bucket 1`)
+  await run(`item replace block ${a.chest.x} ${a.chest.y} ${a.chest.z} container.4 with minecraft:water_bucket 1`)
   await run(`item replace block ${a.chest.x} ${a.chest.y} ${a.chest.z} container.1 with minecraft:bread 8`)
   await run(`item replace block ${a.chest.x} ${a.chest.y} ${a.chest.z} container.2 with minecraft:torch 8`)
   await run(`item replace block ${a.chest.x} ${a.chest.y} ${a.chest.z} container.3 with minecraft:crafting_table 1`)
@@ -174,6 +210,18 @@ try {
   await run(
     `setworldspawn ${flag.x} ${flag.y + 1} ${flag.z + R + 2}`,
   )
+  // Verify authoritative block state before recording the fixture as ready.
+  for (const [position, block] of [
+    [a.base, 'obsidian'], ...a.core.map((p) => [p, 'iron_block']),
+    [a.lantern, 'sea_lantern'], [a.basinFloor, 'stone'],
+    ...a.spring.map((p) => [p, 'water[level=0]']),
+  ]) {
+    const response = await run(`execute if block ${position.x} ${position.y} ${position.z} minecraft:${block}`)
+    if (!/^Test passed/.test(response)) throw new Error(`Fixture verification failed at ${position}: ${response}`)
+  }
+  const chestItems = await run(`data get block ${a.chest.x} ${a.chest.y} ${a.chest.z} Items`)
+  if ((chestItems.match(/minecraft:water_bucket/g) ?? []).length !== 2)
+    throw new Error('Starter chest does not contain both water buckets')
   await run(
     'say [Round setup] The Server stands at the village heart. Fixtures placed: monument, coolant basin + spring, starter chest, gate-side world spawn, keepInventory on.',
   )
@@ -199,10 +247,14 @@ if (built) {
       probeSpawn: { x: spawn.x, y: spawn.y, z: spawn.z },
       siteSpread: best.spread,
       keepInventory: true,
+      spawnRadius: 0,
       worldSpawnAtGate: true,
       at: new Date().toISOString(),
     },
   })
+  const persisted = JSON.parse(readFileSync(villagePath, 'utf8'))
+  if (village.saveFailures || !persisted.flag || ['x', 'y', 'z'].some((key) => persisted.flag[key] !== flag[key]))
+    throw new Error('Fixture blocks exist, but village.json was not persisted correctly; inspect state before retrying')
   log('round_setup_done', {
     flag: { x: flag.x, y: flag.y, z: flag.z },
     waterTarget: WATER_TARGET,

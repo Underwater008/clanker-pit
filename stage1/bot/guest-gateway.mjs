@@ -25,7 +25,8 @@ import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { Rcon } from 'rcon-client'
 import { createNativeMirror } from './native-mirror.mjs'
-import { GuestQueue } from './guest-queue.mjs'
+import { GuestQueue, restoreGuestHistory } from './guest-queue.mjs'
+import { confirmGuestExplosion } from './guest-boom.mjs'
 import { readVillageFixture, serverAnatomy, VILLAGER_POOL } from './village.mjs'
 
 const DATA_DIR = process.env.BOT_DATA_DIR ?? '/workspace/arena/bot-state'
@@ -62,13 +63,10 @@ const guestEvents = []
 // make fresh events collide with old keys and silently vanish.
 try {
   const previous = JSON.parse(readFileSync(GUEST_STATE, 'utf8'))
-  const seq = Number(previous.seq ?? 0)
-  const maxId = Math.max(
-    seq,
-    ...(previous.events ?? []).map((e) => Number(e.id) || 0),
-    ...(previous.chat ?? []).map((m) => Number(m.id) || 0),
-  )
-  eventSeq = Number.isFinite(maxId) ? maxId : 0
+  const restored = restoreGuestHistory(previous)
+  eventSeq = restored.seq
+  guestEvents.push(...restored.events)
+  guestChat.push(...restored.chat)
   log('guest_seq_restored', { from: eventSeq })
 } catch {
   eventSeq = 0
@@ -230,8 +228,8 @@ function teardownBot(bot, reason) {
   log('guest_bot_teardown', { reason })
 }
 
-function endTurn(reason, { chat = true } = {}) {
-  const finished = queue.finishActive(reason)
+function endTurn(reason, { chat = true, token = null } = {}) {
+  const finished = queue.finishActive(reason, token)
   if (!finished) return null
   const nickname = finished.entry.nickname
   if (chat)
@@ -278,11 +276,15 @@ function spawnGuest(entry) {
   const finish = (reason) => {
     if (ended) return
     ended = true
-    endTurn(reason)
+    endTurn(reason, { token: entry.token })
     setTimeout(() => teardownBot(bot, reason), reason === 'died' ? 3000 : 0)
   }
   bot.once('spawn', async () => {
-    queue.markSpawned(botName)
+    if (ended || queue.active?.token !== entry.token) {
+      teardownBot(bot, 'stale spawn')
+      return
+    }
+    queue.markSpawned(botName, entry.token)
     mirror.attach(bot)
     log('guest_spawned', { nickname: entry.nickname, botName, position: bot.entity.position })
     // Place the guest at the front gate, verified. The bot spawns at world
@@ -300,7 +302,7 @@ function spawnGuest(entry) {
       }
       log('gate_tp_retry', { nickname: entry.nickname, attempt, position: p ?? null })
     }
-    if (ended) return
+    if (ended || queue.active?.token !== entry.token) return
     if (!entry.placed) {
       log('guest_gate_refused', { nickname: entry.nickname })
       emitChat('gate', `${entry.nickname}'s creeper could not be placed at the gate. Turn skipped.`)
@@ -308,6 +310,7 @@ function spawnGuest(entry) {
       return
     }
     await wearCreeperHead(bot)
+    if (ended || queue.active?.token !== entry.token) return
     emitChat('gate', `${entry.nickname} became a creeper near the front gate.`)
     writeGuestState()
   })
@@ -329,6 +332,7 @@ function spawnGuest(entry) {
 
 async function boom(entry) {
   const bot = guestBot
+  if (queue.active?.token !== entry.token) return { ok: false, error: 'turn ended' }
   if (!bot?.entity) return { ok: false, error: 'no creeper body' }
   if (!entry.placed) return { ok: false, error: 'still arriving at the gate' }
   if (boomLatched) return { ok: false, error: 'already exploded' }
@@ -342,46 +346,35 @@ async function boom(entry) {
   // Audience mechanic, match-controller side: a real creeper explosion at the
   // guest's feet. The guest dies with it — one creeper, one boom. Single
   // attempt per try (a blind retry could double-summon) and the explosion is
-  // verified from the bot's own entity list before it counts.
-  let verified = false
-  for (let attempt = 0; attempt < 2 && !verified; attempt++) {
-    const sent = await withRconOnce((client) =>
+  // verified from a server explosion packet before it counts.
+  bot.clearControlStates()
+  const explodedAt = await confirmGuestExplosion({
+    client: bot._client,
+    position,
+    summon: () => withRconOnce((client) =>
       client.send(
         `execute at ${bot.username} run summon minecraft:creeper ~ ~ ~ {NoAI:1b,ignited:1b,Fuse:15s,ExplosionRadius:3b}`,
       ),
-    )
-    if (sent !== null) {
-      for (let i = 0; i < 8 && !creeperNear(bot); i++) await sleep(200)
-      verified = creeperNear(bot)
-    }
-    if (!verified) log('boom_unverified', { nickname: entry.nickname, attempt })
+    ),
+  })
+  if (!explodedAt) {
+    log('boom_unverified', { nickname: entry.nickname })
+    endTurn('unverified', { token: entry.token })
+    teardownBot(bot, 'unverified boom')
+    return { ok: false, error: 'Explosion could not be confirmed; turn ended.' }
   }
-  if (!verified) {
-    // No verified explosion: unlatch so the guest can try again.
-    boomLatched = false
-    return { ok: false, error: 'the fuse fizzled — try again' }
-  }
-  emitEvent('boom', { nickname: entry.nickname, position })
-  endTurn('boom', { chat: false }) // the controller writes the boom story line
+  emitEvent('boom', { nickname: entry.nickname, position: explodedAt })
+  endTurn('boom', { chat: false, token: entry.token }) // controller writes the story
+  writeGuestState()
   setTimeout(() => teardownBot(bot, 'boom'), BOOM_GRACE_MS)
   return { ok: true, exploded: true }
-}
-
-function creeperNear(bot) {
-  return (
-    Boolean(bot?.entity) &&
-    Object.values(bot.entities).some(
-      (e) =>
-        e.name === 'creeper' &&
-        e.position.distanceTo(bot.entity.position) < 5,
-    )
-  )
 }
 
 function applyInput(entry, input) {
   const bot = guestBot
   if (!bot || queue.active?.token !== entry.token) return false
   if (!entry.placed) return false // hold inputs while the creeper is placed at the gate
+  if (boomLatched) return false
   entry.lastInputAt = Date.now()
   // The full control set a guest creeper has: move, look, jump, boom.
   // No interacting with blocks, no inventory, no sprint/sneak.
@@ -482,7 +475,13 @@ const server = createServer(async (req, res) => {
         return send(res, 200, result)
       }
       if (path === '/leave') {
-        const left = queue.leave(String(body.token ?? ''))
+        const token = String(body.token ?? '')
+        let left
+        if (queue.active?.token === token) {
+          const bot = guestBot
+          left = Boolean(endTurn('left', { token }))
+          teardownBot(bot, 'left')
+        } else left = queue.leave(token)
         writeGuestState()
         return send(res, 200, { ok: left })
       }

@@ -1,0 +1,71 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { makePlanner, jevChoose } from './llm.mjs'
+
+const identity = { name: 'Cinder', dispositions: ['careful'], current_goal: 'Build a shelter' }
+const planner = () => makePlanner({ name: 'test', baseUrl: 'https://example.invalid/v1', apiKey: 'test-key', model: 'test-model' })
+const input = () => ({
+  identity, observation: { shelter: { can_build_here: false } },
+  memoryContext: [], goals: { build_shelter: 'Build a local shelter' },
+  actions: { gather_wood: 'Gather locally reachable logs' },
+  capabilities: { shelter: { materials: ['planks', 'cobblestone'] }, navigation: { pillar_climbing: false } },
+})
+
+test('planner receives executable actions and capabilities rather than inventing a skill set', async (t) => {
+  let sent
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    sent = JSON.parse(options.body)
+    return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: {
+      content: JSON.stringify({ goal: 'build_shelter', intention: 'Gather wood for a local shelter', steps: ['gather_wood'] }),
+    } }] }) }
+  })
+  const params = input()
+  const result = await planner().plan(params)
+  assert.equal(result.goal, 'build_shelter')
+  const context = JSON.parse(sent.messages[1].content)
+  assert.deepEqual(context.actions, params.actions)
+  assert.deepEqual(context.capabilities, params.capabilities)
+  assert.match(sent.messages[0].content, /hard executor limits/)
+})
+
+test('aborted planner fetch is not retried and reports a bounded cancellation', async (t) => {
+  let calls = 0, ready
+  const started = new Promise((r) => { ready = r })
+  t.mock.method(globalThis, 'fetch', (_url, { signal }) => {
+    calls++
+    ready()
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+    })
+  })
+  const controller = new AbortController()
+  const result = planner().plan({ ...input(), signal: controller.signal })
+  await started
+  controller.abort()
+  assert.match((await result).error, /cancelled/)
+  assert.equal(calls, 1)
+})
+
+test('an already-aborted planner request never reaches the provider', async (t) => {
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async () => { calls++; throw new Error('should not fetch') })
+  const controller = new AbortController()
+  controller.abort()
+  const result = await planner().plan({ ...input(), signal: controller.signal })
+  assert.match(result.error, /cancelled/)
+  assert.equal(calls, 0)
+})
+
+test('Jev missing credentials fail locally and explicitly', async (t) => {
+  const previous = process.env.TYPESAFE_API_KEY
+  delete process.env.TYPESAFE_API_KEY
+  t.after(() => {
+    if (previous === undefined) delete process.env.TYPESAFE_API_KEY
+    else process.env.TYPESAFE_API_KEY = previous
+  })
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async () => { calls++; throw new Error('should not fetch') })
+  const result = await jevChoose({ identity, stance: {}, observation: {}, questionId: 'action', options: { explore: 'Explore' } })
+  assert.match(result.error, /Jev has no API key/)
+  assert.equal(calls, 0)
+})

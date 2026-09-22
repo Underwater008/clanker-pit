@@ -1,11 +1,27 @@
 #!/usr/bin/env bash
 # Polls pod status until the SSH endpoint is available, then prints the SSH command.
-# Usage: ./pod-status.sh           (check once)
-#        ./pod-status.sh --wait    (poll until SSH-ready)
+# Usage: ./pod-status.sh [--pod-id ID] [--wait]
+# CLANKER_POD_ID overrides the local, ignored pod.json metadata. Always use
+# the id serving the website when inspecting or updating the public stream.
 set -euo pipefail
 cd "$(dirname "$0")"
 set -a; source ../stage0/.env; set +a
-POD_ID=$(python3 -c "import json; print(json.load(open('pod.json'))['id'])")
+POD_ID=${CLANKER_POD_ID:-}
+WAIT=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --pod-id)
+      [ "$#" -ge 2 ] || { echo '--pod-id requires an id' >&2; exit 2; }
+      POD_ID=$2; shift 2 ;;
+    --wait) WAIT=1; shift ;;
+    --help|-h) echo 'Usage: pod-status.sh [--pod-id ID] [--wait]'; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+if [ -z "$POD_ID" ]; then
+  POD_ID=$(python3 -c "import json; print(json.load(open('pod.json'))['id'])")
+fi
+[[ "$POD_ID" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo 'Invalid pod id' >&2; exit 2; }
 
 QUERY='{"query":"{ pod(input: {podId: \"'$POD_ID'\"}) { id desiredStatus costPerHr runtime { ports { ip isIpPublic privatePort publicPort } } } }"}'
 
@@ -21,7 +37,7 @@ except Exception:
 pod = (resp.get('data') or {}).get('pod')
 if not pod:
     print('RunPod did not return this pod:', str(resp)[:200]); sys.exit(2)
-print(f\"desiredStatus: {pod['desiredStatus']}\")
+print(f\"pod: {pod['id']} desiredStatus: {pod['desiredStatus']}\")
 ports = (pod.get('runtime') or {}).get('ports') or []
 for p in ports:
     if p.get('privatePort') == 22 and p.get('isIpPublic'):
@@ -35,7 +51,7 @@ sys.exit(1)
 "
 }
 
-if [ "${1:-}" = "--wait" ]; then
+if [ "$WAIT" = 1 ]; then
   for i in $(seq 1 90); do
     check && exit 0
     sleep 10

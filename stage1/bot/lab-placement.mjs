@@ -6,6 +6,8 @@ import { once } from 'node:events'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { installSurvival, shelterBlueprint } from './survival.mjs'
 import { Vec3 } from 'vec3'
+const material = process.env.LAB_MATERIAL ?? 'oak_planks'
+assert.ok(['oak_planks', 'cobblestone', 'dirt', 'cherry_planks'].includes(material))
 const r = await Rcon.connect({
   host: '127.0.0.1',
   port: 25576,
@@ -42,7 +44,7 @@ try {
     'fill -2 -60 -2 0 -59 0 dirt',
     'tp PlacementLab -0.5 -58 -0.5',
     'clear PlacementLab',
-    'give PlacementLab oak_planks 32',
+    `give PlacementLab ${material} 32`,
   ])
     await r.send(c)
   await sleep(1500)
@@ -50,16 +52,17 @@ try {
     console.log(JSON.stringify(await skills.execute('build_shelter')))
   for (const p of shelterBlueprint(new Vec3(4, -60, 5)))
     assert.equal(
-      await r.send(`execute if block ${p.x} ${p.y} ${p.z} oak_planks`),
+      await r.send(`execute if block ${p.x} ${p.y} ${p.z} ${material}`),
       'Test passed',
     )
   console.log(
     JSON.stringify({
       event: 'PLACEMENT_PASS',
       serverConfirmedBlocks: 23,
-      remainingPlanks: b.inventory
+      material,
+      remainingMaterial: b.inventory
         .items()
-        .filter((i) => i.name === 'oak_planks')
+        .filter((i) => i.name === material)
         .reduce((n, i) => n + i.count, 0),
     }),
   )

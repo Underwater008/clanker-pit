@@ -24,6 +24,7 @@ const makeDm = (jevChoose, skills) =>
     skills: skills ?? fakeSkills(),
     log: () => {},
     sleep,
+    minRequestIntervalMs: 0,
   })
 
 test('choices come from jev and consecutive decisions overlap instead of idling', async () => {
@@ -79,4 +80,84 @@ test('provider errors fall back to policy instead of throwing', async () => {
   const r = await dm.next()
   assert.equal(r.choice, 'gather_wood')
   assert.equal(r.source, 'fallback')
+})
+
+const deferred = () => {
+  let resolve
+  const promise = new Promise((r) => { resolve = r })
+  return { promise, resolve }
+}
+
+test('slow provider remains one request while bounded-wait fallback actions continue', async () => {
+  const first = deferred()
+  let calls = 0
+  const events = []
+  const dm = createDecisionMaker({
+    jevChoose: () => { calls++; return first.promise }, identity,
+    getPlan: () => ({}), skills: fakeSkills(), sleep,
+    log: (event, data) => events.push({ event, ...data }),
+    waitCapMs: 5, minRequestIntervalMs: 0,
+  })
+  for (let i = 0; i < 4; i++) {
+    const result = await dm.next()
+    assert.equal(result.source, 'fallback')
+    assert.equal(result.reason, 'request_pending')
+  }
+  assert.equal(calls, 1, 'wait cap must not abandon an active provider request')
+  assert.ok(events.some((e) => e.event === 'fallback_decision' && e.requestPending))
+  first.resolve({ choice: 'explore' })
+  const result = await dm.next()
+  assert.equal(result.choice, 'explore')
+  assert.equal(result.source, 'jev')
+  dm.close()
+})
+
+test('cancel aborts the transport and a late reply cannot become a decision', async () => {
+  const request = deferred()
+  let calls = 0, requestSignal
+  const dm = createDecisionMaker({
+    jevChoose: ({ signal }) => { calls++; requestSignal = signal; return request.promise },
+    identity, getPlan: () => ({}), skills: fakeSkills(), sleep, log: () => {},
+    waitCapMs: 5, minRequestIntervalMs: 1000,
+  })
+  await dm.next()
+  dm.cancel('action_failed')
+  assert.equal(requestSignal.aborted, true)
+  const whileCancelling = await dm.next()
+  assert.equal(whileCancelling.source, 'fallback')
+  assert.equal(calls, 1)
+  request.resolve({ choice: 'explore' })
+  await sleep(0)
+  const afterCancel = await dm.next()
+  assert.equal(afterCancel.source, 'fallback')
+  assert.equal(afterCancel.choice, 'gather_wood', 'cancelled reply must be discarded')
+  dm.close()
+})
+
+test('fast failures do not cause a provider request on every failed action', async () => {
+  let calls = 0
+  const dm = createDecisionMaker({
+    jevChoose: async () => { calls++; return { error: 'HTTP 503' } },
+    identity, getPlan: () => ({}), skills: fakeSkills(), sleep, log: () => {},
+    waitCapMs: 5, minRequestIntervalMs: 1000,
+  })
+  const first = await dm.next()
+  assert.equal(first.reason, 'provider_error')
+  for (let i = 0; i < 20; i++) await dm.next()
+  assert.equal(calls, 1)
+  dm.close()
+})
+
+test('a prefetched choice expires even if its action is still feasible', async () => {
+  const dm = createDecisionMaker({
+    jevChoose: async () => ({ choice: 'explore' }),
+    identity, getPlan: () => ({}), skills: fakeSkills(), sleep, log: () => {},
+    minRequestIntervalMs: 0, maxChoiceAgeMs: 5,
+  })
+  await dm.next()
+  await sleep(15)
+  const result = await dm.next()
+  assert.equal(result.source, 'fallback')
+  assert.equal(result.reason, 'expired_observation')
+  dm.close()
 })

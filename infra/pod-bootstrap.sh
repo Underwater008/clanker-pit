@@ -87,11 +87,13 @@ paths:
 EOF
 
 wlog "step: fetch capture + bot code from github"
-RAW=https://raw.githubusercontent.com/Underwater008/clanker-pit/main
+SOURCE_SHA=${CLANKER_SOURCE_SHA:-$(curl -fsSL https://api.github.com/repos/Underwater008/clanker-pit/commits/main | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')}
+[[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Expected a full source commit SHA'; exit 1; }
+RAW=https://raw.githubusercontent.com/Underwater008/clanker-pit/$SOURCE_SHA
 for f in run-client.sh run-stream.sh run-native-view.py display.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
   curl -fsSL "$RAW/infra/capture/$f" -o "$ARENA/capture/$f"
 done
-for f in ambient.mjs survival.mjs crafting.mjs native-mirror.mjs llm.mjs memory.mjs env.mjs decision.mjs village.mjs council.mjs models.mjs guest-queue.mjs guest-gateway.mjs flag-setup.mjs fixture-grant.mjs identity.cinder.json package.json package-lock.json; do
+for f in ambient.mjs survival.mjs crafting.mjs native-mirror.mjs llm.mjs memory.mjs env.mjs decision.mjs village.mjs council.mjs models.mjs guest-queue.mjs guest-boom.mjs guest-gateway.mjs flag-setup.mjs fixture-grant.mjs identity.cinder.json package.json package-lock.json; do
   curl -fsSL "$RAW/stage1/bot/$f" -o "$ARENA/bots/$f"
 done
 cp "$ARENA/capture/spectate-loop.mjs" "$ARENA/bots/"
@@ -102,13 +104,15 @@ systemctl stop nginx 2>/dev/null || true
 systemctl disable nginx 2>/dev/null || true
 pkill nginx 2>/dev/null || true
 tmux kill-session -t filesrv 2>/dev/null || true
-tmux new-session -d -s filesrv "python3 $ARENA/telemetry-server.py 2>&1 | tee -a $ARENA/logs/telemetry.log"
+tmux new-session -d -s filesrv "TELEMETRY_TRUSTED_PROXY_CIDRS='${TELEMETRY_TRUSTED_PROXY_CIDRS:-100.64.1.0/24}' TELEMETRY_CLIENT_IP_HEADER=CF-Connecting-IP python3 $ARENA/telemetry-server.py 2>&1 | tee -a $ARENA/logs/telemetry.log"
+if [ ! -f "$ARENA/.env" ]; then
 (umask 077
 cat > "$ARENA/.env" <<EOF
 RUNPOD_API_KEY=${RUNPOD_API_KEY:-}
 TYPESAFE_API_KEY=${TYPESAFE_API_KEY:-}
 EOF
 )
+fi
 chmod 600 "$ARENA/.env"
 
 wlog "step: client download (jar+libs+assets)"
@@ -178,12 +182,12 @@ wlog "step: village round setup (Server fixture; idempotent)"
 # are round fixtures, labeled as such in the logs and chat. Idempotent: a
 # second run keeps an existing village.json.
 BOT_DATA_DIR="$ARENA/bot-state" RCON_PASSWORD=clanker-dev \
-  SCENARIO="${SCENARIO:-village}" node "$ARENA/bots/flag-setup.mjs" 2>&1 | tee -a "$ARENA/logs/flag-setup.log" || true
+  SCENARIO="${SCENARIO:-village}" node "$ARENA/bots/flag-setup.mjs" 2>&1 | tee -a "$ARENA/logs/flag-setup.log"
 
 wlog "step: launch survival cast and native mirrors"
 # SCENARIO=village: clankers protect the Server. CLANKER_MODELS routes a
 # different LLM per clanker (Name=provider); default: all Kimi K3.
-tmux new-session -d -s bots "cd $ARENA/bots && SCENARIO=${SCENARIO:-village} DEFAULT_LLM_PROVIDER=${DEFAULT_LLM_PROVIDER:-kimi} CLANKER_MODELS='${CLANKER_MODELS:-}' node ambient.mjs 2>&1 | tee -a $ARENA/logs/bots.log"
+tmux new-session -d -s bots "cd $ARENA/bots && BUILD_SHA=$SOURCE_SHA SCENARIO=${SCENARIO:-village} node ambient.mjs 2>&1 | tee -a $ARENA/logs/bots.log"
 
 wlog "step: starter kit fixture grant (waits for the cast, idempotent)"
 ( sleep 75

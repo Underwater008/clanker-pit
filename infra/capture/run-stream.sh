@@ -26,11 +26,14 @@ if ffmpeg -hide_banner -loglevel error -f lavfi -i color=size=1280x720:rate=30 \
 fi
 echo "[run-stream] encoder ${ENCODER_ARGS[*]}"
 
+# x11grab can miss capture deadlines under CPU pressure. Resample onto a
+# fixed output clock so those gaps do not change LL-HLS part durations on iOS.
+# -vsync cfr also supports the pod's FFmpeg 4.4 (which lacks -fps_mode).
 while true; do
   echo "[run-stream] starting capture $GRAB -> $PATH_NAME $(date -u +%FT%TZ)"
   ffmpeg -hide_banner -loglevel warning -filter_threads 1 \
     -f x11grab -video_size 1280x720 -framerate "$STREAM_FPS" -i "$GRAB" \
-    -vf format=yuv420p "${ENCODER_ARGS[@]}" \
+    -vf "fps=${STREAM_FPS},format=yuv420p" -r "$STREAM_FPS" -vsync cfr "${ENCODER_ARGS[@]}" \
     -b:v 2500k -maxrate 3000k -bufsize 5000k -g "$((STREAM_FPS * 2))" \
     -an -f flv "rtmp://127.0.0.1:1935/$PATH_NAME" || true
   echo "[run-stream] ffmpeg exited; restarting in 2 s"

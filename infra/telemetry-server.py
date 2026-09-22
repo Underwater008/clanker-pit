@@ -8,9 +8,12 @@ Paths served:
 
 The gateway itself binds loopback only; this server is the public gatekeeper.
 """
+from collections import OrderedDict
+from ipaddress import ip_address, ip_network
 import json
 import os
 import time
+from threading import Lock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import URLError
@@ -21,23 +24,71 @@ GUEST_BODY_LIMIT = 8 * 1024
 GUEST_TIMEOUT = 10
 GUEST_GET = {'/guest/status'}
 GUEST_POST = {'/guest/join', '/guest/leave', '/guest/input'}
-# The queue is the headline interactive feature: at most 2 joins per visitor
-# IP per 10 minutes, enforced here — the only place the real client address
-# is visible (everything arrives at the loopback gateway from this proxy).
+# RunPod forwards public HTTP through shared peers. Trust a single client-IP
+# header only when the socket peer belongs to an explicitly configured proxy
+# network; direct clients cannot choose their own limiter identity.
 JOIN_WINDOW_SECONDS = 600
 JOIN_MAX_PER_IP = 2
-_join_times = {}
+JOIN_MAX_IDENTITIES = 10000
+JOIN_PRUNE_INTERVAL_SECONDS = 30
+_join_times = OrderedDict()
+_join_lock = Lock()
+_join_last_prune = 0.0
 
 
-def _join_throttled(ip):
+def _address(value):
+    try:
+        if '%' in value:
+            return None
+        address = ip_address(value.strip())
+        return getattr(address, 'ipv4_mapped', None) or address
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def client_identity(peer, headers):
+    address = _address(peer)
+    fallback = str(address) if address else 'unknown'
+    header = os.environ.get('TELEMETRY_CLIENT_IP_HEADER', '').strip()
+    if address is None or not header:
+        return fallback
+    try:
+        networks = [ip_network(cidr.strip(), strict=False) for cidr in
+                    os.environ.get('TELEMETRY_TRUSTED_PROXY_CIDRS', '').split(',') if cidr.strip()]
+    except ValueError:
+        return fallback  # a malformed trust configuration must not trust all peers
+    if not any(address in network for network in networks):
+        return fallback
+    # This is deliberately a single-address contract (e.g. CF-Connecting-IP),
+    # not the leftmost untrusted value of an X-Forwarded-For chain.
+    values = headers.get_all(header) if hasattr(headers, 'get_all') else [headers.get(header)]
+    if not values or len(values) != 1:
+        return fallback
+    forwarded = _address(values[0])
+    return str(forwarded) if forwarded else fallback
+
+
+def _join_throttled(identity):
+    global _join_last_prune
     now = time.monotonic()
-    times = [t for t in _join_times.get(ip, []) if now - t < JOIN_WINDOW_SECONDS]
-    if len(times) >= JOIN_MAX_PER_IP:
-        _join_times[ip] = times
-        return True
-    times.append(now)
-    _join_times[ip] = times
-    return False
+    cutoff = now - JOIN_WINDOW_SECONDS
+    with _join_lock:
+        # ThreadingHTTPServer can handle simultaneous joins. Pruning and the
+        # read/check/append must be one transaction or a burst bypasses limits.
+        if now - _join_last_prune >= JOIN_PRUNE_INTERVAL_SECONDS or len(_join_times) >= JOIN_MAX_IDENTITIES:
+            expired = [key for key, times in _join_times.items() if not times or times[-1] <= cutoff]
+            for key in expired:
+                del _join_times[key]
+            _join_last_prune = now
+        times = [stamp for stamp in _join_times.get(identity, []) if stamp > cutoff]
+        throttled = len(times) >= JOIN_MAX_PER_IP
+        if not throttled:
+            times.append(now)
+        if identity not in _join_times and len(_join_times) >= JOIN_MAX_IDENTITIES:
+            _join_times.popitem(last=False)
+        _join_times[identity] = times
+        _join_times.move_to_end(identity)
+        return throttled
 
 
 def guest_upstream():
@@ -141,7 +192,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(413)
             return
         body = self.rfile.read(length) if length else b''
-        if path == '/guest/join' and _join_throttled(self.client_address[0] if self.client_address else 'unknown'):
+        if path == '/guest/join' and _join_throttled(client_identity(self.client_address[0] if self.client_address else '', self.headers)):
             payload = json.dumps(
                 {'error': 'Slow down - the queue is for everyone'}
             ).encode()

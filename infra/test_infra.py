@@ -1,4 +1,6 @@
 """Offline regressions: capture geometry and public telemetry isolation."""
+from concurrent.futures import ThreadPoolExecutor
+from email.message import Message
 import importlib.util
 import json
 import os
@@ -76,6 +78,8 @@ class TelemetryTests(unittest.TestCase):
         env = patch.dict(os.environ, {
             'STATE_PATH': str(self.state),
             'GUEST_FORWARD': f'http://127.0.0.1:{self.upstream.server_port}',
+            'TELEMETRY_TRUSTED_PROXY_CIDRS': '',
+            'TELEMETRY_CLIENT_IP_HEADER': '',
         })
         env.start()
         self.addCleanup(env.stop)
@@ -164,6 +168,21 @@ class TelemetryTests(unittest.TestCase):
                     self.assertEqual(error.code, expected)
                     error.close()
 
+    def test_two_visitors_behind_one_trusted_proxy_do_not_share_join_limit(self):
+        with patch.dict(os.environ, {
+            'TELEMETRY_TRUSTED_PROXY_CIDRS': '127.0.0.1/32',
+            'TELEMETRY_CLIENT_IP_HEADER': 'CF-Connecting-IP',
+        }):
+            for visitor, expected in [('203.0.113.1', 200), ('203.0.113.1', 200),
+                                      ('203.0.113.1', 429), ('203.0.113.2', 200)]:
+                try:
+                    response, _ = self.request('/guest/join', method='POST', body=b'{}',
+                                               headers={'CF-Connecting-IP': visitor})
+                    self.assertEqual(response.status, expected)
+                except HTTPError as error:
+                    self.assertEqual(error.code, expected)
+                    error.close()
+
     def test_preflight_options_are_allowed_for_guest_paths(self):
         req = urllib.request.Request(self.base + '/guest/input', method='OPTIONS')
         with urlopen(req) as response:
@@ -194,6 +213,53 @@ class TelemetryTests(unittest.TestCase):
             error.close()
 
 
+class ProxyIdentityTests(unittest.TestCase):
+    def setUp(self):
+        telemetry._join_times.clear()
+        telemetry._join_last_prune = 0.0
+        env = patch.dict(os.environ, {
+            'TELEMETRY_TRUSTED_PROXY_CIDRS': '100.64.1.0/24',
+            'TELEMETRY_CLIENT_IP_HEADER': 'CF-Connecting-IP',
+        })
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_only_the_explicit_proxy_boundary_can_supply_identity(self):
+        headers = {'CF-Connecting-IP': '203.0.113.10', 'X-Forwarded-For': '198.51.100.99'}
+        self.assertEqual(telemetry.client_identity('100.64.1.97', headers), '203.0.113.10')
+        self.assertEqual(telemetry.client_identity('198.51.100.9', headers), '198.51.100.9')
+        self.assertEqual(telemetry.client_identity('100.64.2.97', headers), '100.64.2.97')
+        self.assertEqual(telemetry.client_identity('::ffff:100.64.1.97', headers), '203.0.113.10')
+
+    def test_no_configuration_or_malformed_headers_never_enable_implicit_trust(self):
+        with patch.dict(os.environ, {'TELEMETRY_TRUSTED_PROXY_CIDRS': ''}):
+            self.assertEqual(telemetry.client_identity('100.64.1.97', {'CF-Connecting-IP': '203.0.113.10'}), '100.64.1.97')
+        with patch.dict(os.environ, {'TELEMETRY_TRUSTED_PROXY_CIDRS': 'invalid'}):
+            self.assertEqual(telemetry.client_identity('100.64.1.97', {'CF-Connecting-IP': '203.0.113.10'}), '100.64.1.97')
+        for value in [None, 'unknown', '203.0.113.10, 198.51.100.99', '::1%eth0']:
+            self.assertEqual(telemetry.client_identity('100.64.1.97', {'CF-Connecting-IP': value}), '100.64.1.97')
+        duplicate = Message()
+        duplicate['CF-Connecting-IP'] = '203.0.113.10'
+        duplicate['CF-Connecting-IP'] = '198.51.100.99'
+        self.assertEqual(telemetry.client_identity('100.64.1.97', duplicate), '100.64.1.97')
+
+    def test_simultaneous_joins_cannot_race_the_check_and_append(self):
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            throttled = list(pool.map(lambda _: telemetry._join_throttled('visitor'), range(64)))
+        self.assertEqual(throttled.count(False), telemetry.JOIN_MAX_PER_IP)
+        self.assertEqual(throttled.count(True), 64 - telemetry.JOIN_MAX_PER_IP)
+
+    def test_limiter_expires_old_visitors_and_stays_bounded(self):
+        with patch.object(telemetry, 'JOIN_MAX_IDENTITIES', 3):
+            with patch.object(telemetry.time, 'monotonic', return_value=1000):
+                for number in range(8):
+                    telemetry._join_throttled(str(number))
+                self.assertEqual(len(telemetry._join_times), 3)
+            with patch.object(telemetry.time, 'monotonic', return_value=1700):
+                self.assertFalse(telemetry._join_throttled('new'))
+                self.assertEqual(list(telemetry._join_times), ['new'])
+
+
 class StubGateway(BaseHTTPRequestHandler):
     requests: list = []
     next_payload: dict = {}
@@ -220,6 +286,56 @@ class StubGateway(BaseHTTPRequestHandler):
 
 
 class SpectatorTests(unittest.TestCase):
+    def run_camera_fixture(self, marker, scenario='village'):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            script = tmp / 'spectate.mjs'
+            script.write_text((ROOT / 'capture/spectate-loop.mjs').read_text())
+            if marker is not None:
+                (tmp / 'village.json').write_text(json.dumps(marker))
+            package = tmp / 'node_modules/rcon-client'
+            package.mkdir(parents=True)
+            (package / 'package.json').write_text(json.dumps({'type': 'module', 'exports': './index.js'}))
+            (package / 'index.js').write_text('''
+import { EventEmitter } from 'node:events';
+export class Rcon extends EventEmitter {
+  static async connect(options) { console.log('PORT ' + options.port); return new Rcon(); }
+  async send(command) {
+    console.log('COMMAND ' + command);
+    if (command === 'spectate Tally CamTally') process.exit(0);
+    return 'ok';
+  }
+  async end() {}
+}
+''')
+            result = subprocess.run(
+                ['node', str(script)],
+                env=dict(os.environ, NATIVE_MIRRORS='0', BOT_DATA_DIR=str(tmp), SCENARIO=scenario, RCON_PORT='25577'),
+                capture_output=True, text=True, timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout
+
+    def test_village_overview_positions_only_wide_camera_and_faces_flag(self):
+        output = self.run_camera_fixture({'flag': {'x': -152, 'y': 63, 'z': -168}})
+        teleports = [line for line in output.splitlines() if line.startswith('COMMAND teleport ')]
+        self.assertEqual(teleports, ['COMMAND teleport ClankerCam -127.5 83 -139.5 facing -151.5 64.5 -167.5'])
+        self.assertIn('PORT 25577', output)
+        self.assertIn('COMMAND spectate Mira CamMira', output)
+
+    def test_missing_invalid_or_survival_fixture_leaves_wide_pose_unchanged(self):
+        for marker, scenario in [
+            (None, 'village'),
+            ({'flag': None}, 'village'),
+            ({'flag': {'x': '0; op intruder', 'y': 63, 'z': 0}}, 'village'),
+            ({'flag': {'x': 0, 'y': 999, 'z': 0}}, 'village'),
+            ({'flag': {'x': 0, 'y': 63, 'z': 0}}, 'survival'),
+        ]:
+            with self.subTest(marker=marker, scenario=scenario):
+                output = self.run_camera_fixture(marker, scenario)
+                self.assertNotIn('COMMAND teleport ', output)
+                self.assertIn('COMMAND gamemode spectator ClankerCam', output)
+
     def test_reconnects_and_rebinds_after_server_disconnect(self):
         with tempfile.TemporaryDirectory() as directory:
             tmp = Path(directory)

@@ -35,6 +35,18 @@ export const IDLE_END_MS = Math.max(
 const TOKEN_ALPHABET =
   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
+// Confirmed events may still be waiting for the controller to consume them
+// when the gateway restarts. Keep those buffers, not only their id counter.
+export function restoreGuestHistory(previous = {}) {
+  const keep = (values) => Array.isArray(values)
+    ? values.filter((e) => Number.isSafeInteger(e?.id) && e.id > 0).slice(-24)
+    : []
+  const events = keep(previous?.events)
+  const chat = keep(previous?.chat)
+  const seq = Number.isSafeInteger(previous?.seq) ? previous.seq : 0
+  return { seq: Math.max(0, seq, ...events.map((e) => e.id), ...chat.map((e) => e.id)), events, chat }
+}
+
 /** Minecraft-safe viewer nickname. Rejects anything unusable. */
 export function sanitizeNickname(raw) {
   if (typeof raw !== 'string') return null
@@ -181,15 +193,15 @@ export class GuestQueue {
   }
 
   /** The gateway confirms the guest bot exists (or failed to spawn). */
-  markSpawned(botName) {
-    if (!this.active) return
+  markSpawned(botName, token = null) {
+    if (!this.active || (token && this.active.token !== token)) return
     this.active.botName = botName
     this.active.spawned = true
   }
 
   /** Explicit turn end: boom, death, or the human disconnected. */
-  finishActive(reason) {
-    if (!this.active) return null
+  finishActive(reason, token = null) {
+    if (!this.active || (token && this.active.token !== token)) return null
     const entry = this.active
     this.active = null
     return { entry, reason }

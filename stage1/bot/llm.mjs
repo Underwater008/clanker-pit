@@ -15,33 +15,46 @@ const KIMI_MODEL = process.env.KIMI_MODEL ?? 'kimi-k3'
 const TYPESAFE_URL = process.env.TYPESAFE_BASE_URL ?? 'https://api.typesafe.ai'
 const JEV_MODEL = process.env.JEV_MODEL ?? 'jev-latest'
 
-async function post(url, key, body, deadlineMs) {
+async function post(url, key, body, deadlineMs, signal) {
+  const ctrl = new AbortController()
+  const abort = () => ctrl.abort()
+  if (signal?.aborted) abort()
+  else signal?.addEventListener('abort', abort, { once: true })
+  // One deadline covers retries as well as response-body reads. A controller
+  // cancellation must never be retried as a transient network failure.
+  const timer = setTimeout(abort, deadlineMs)
   let lastErr
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), deadlineMs)
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      })
-      const text = await res.text()
-      if (res.ok)
-        return { ok: true, json: JSON.parse(text), status: res.status }
-      lastErr = new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`)
-      if (res.status >= 400 && res.status < 500) break // don't retry 4xx
-    } catch (err) {
-      lastErr = err
-    } finally {
-      clearTimeout(timer)
+  try {
+    for (let attempt = 0; attempt < 2 && !ctrl.signal.aborted; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        })
+        const text = await res.text()
+        if (res.ok) return { ok: true, json: JSON.parse(text), status: res.status }
+        lastErr = new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`)
+        if (res.status >= 400 && res.status < 500) break
+      } catch (err) {
+        lastErr = err
+        if (ctrl.signal.aborted) break
+      }
     }
+    return {
+      ok: false,
+      error: ctrl.signal.aborted
+        ? (signal?.aborted ? 'Request cancelled' : `Request deadline exceeded (${deadlineMs}ms)`)
+        : String(lastErr),
+    }
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
   }
-  return { ok: false, error: String(lastErr) }
 }
 
 // Reasoning models often inline their chain of thought inside XML-ish
@@ -84,7 +97,7 @@ const clean = (value, max) =>
  */
 export function makePlanner({ name, baseUrl, apiKey, model }) {
   const label = name ?? 'llm'
-  async function chat(messages, maxTokens, deadlineMs) {
+  async function chat(messages, maxTokens, deadlineMs, signal) {
     if (!apiKey) return { error: `${label} has no API key configured` }
     if (!baseUrl || !model)
       return { error: `${label} is missing a base URL or model id` }
@@ -93,6 +106,7 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
       apiKey,
       { model, max_tokens: maxTokens, messages },
       deadlineMs,
+      signal,
     )
     if (!r.ok) return { error: r.error }
     const message = r.json.choices?.[0]?.message ?? {}
@@ -111,17 +125,19 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
   return {
     name: label,
     describe: { provider: label, baseUrl: baseUrl ?? null, model: model ?? null },
-    async plan({ identity, observation, memoryContext, goals }) {
+    async plan({ identity, observation, memoryContext, goals, actions = {}, capabilities = {}, signal }) {
       const r = await chat(
         [
           {
             role: 'system',
-            content: `You are ${identity.name}, a Minecraft survival player. Personality: ${identity.dispositions.join(', ')}. Motivation: ${identity.current_goal}. Plan useful visible work: acquire wood, craft tools, mine stone, build a shelter, find food. You act through ordinary survival mechanics with limited local observations. Adapt when attempts fail; do not claim achievements without recorded results. Choose one goal from the supplied goal list and a short practical plan for the next few minutes. Return ONLY JSON {"goal":"goal_key","intention":"one sentence","steps":["up to four steps"],"says":"one short in-character sentence"}.`,
+            content: `You are ${identity.name}, a Minecraft clanker. Personality: ${identity.dispositions.join(', ')}. Motivation: ${identity.current_goal}. Plan useful visible work for the supplied scenario and goal list. You act through ordinary survival mechanics with limited local observations. The supplied capabilities describe hard executor limits; the actions list contains currently executable action keys and prerequisites. Build steps using supported actions and materials only. Do not invent abilities such as pillar climbing or arbitrary block placement, and do not target distant saved sites the observation marks unavailable. If a needed action is not currently offered, first plan its supported prerequisites. Adapt when attempts fail; do not claim achievements without recorded results. Choose one goal from the supplied goal list and a short practical plan for the next few minutes. Return ONLY JSON {"goal":"goal_key","intention":"one sentence","steps":["up to four steps"],"says":"one short in-character sentence"}.`,
           },
           {
             role: 'user',
             content: JSON.stringify({
               goals,
+              actions,
+              capabilities,
               observation,
               recent_memory: memoryContext,
             }),
@@ -129,6 +145,7 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
         ],
         1800,
         60000,
+        signal,
       )
       if (r.error) return { error: r.error }
       try {
@@ -163,6 +180,7 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
       event,
       observation,
       obsRevision,
+      signal,
     }) {
       const r = await chat(
         [
@@ -189,6 +207,7 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
         ],
         900,
         30000,
+        signal,
       )
       if (r.error) return { error: r.error, obsRevision }
       try {
@@ -198,7 +217,7 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
           intention: clean(json.intention, 300),
           says: clean(json.says, 180),
           reasoning: clean(r.thinking, 600),
-          model: r.json?.model ?? model,
+          model: r.model ?? model,
           obsRevision,
         }
       } catch {
@@ -214,6 +233,7 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
       currentRoles,
       othersSoFar,
       situation,
+      signal,
     }) {
       const { SYSTEM_PROMPT, parseDiscussResponse } = await import(
         './council.mjs'
@@ -233,6 +253,7 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
         ],
         400,
         30000,
+        signal,
       )
       if (r.error) return { error: r.error }
       const parsed = parseDiscussResponse(r.content)
@@ -272,8 +293,10 @@ export async function jevChoose({
   observation,
   questionId,
   options,
+  signal,
 }) {
   const key = process.env.TYPESAFE_API_KEY
+  if (!key) return { error: 'Jev has no API key configured' }
   const body = {
     model: JEV_MODEL,
     state: {
@@ -289,7 +312,7 @@ export async function jevChoose({
       },
     },
   }
-  const r = await post(`${TYPESAFE_URL}/v1/systemone`, key, body, 15000)
+  const r = await post(`${TYPESAFE_URL}/v1/systemone`, key, body, 15000, signal)
   if (!r.ok) return { error: r.error }
   const answer = r.json.answers?.[questionId]
   if (!answer)

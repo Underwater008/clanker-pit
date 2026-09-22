@@ -65,8 +65,8 @@ async function rconOk(command) {
 async function assertBlock(position, name, what) {
   const block = bot.blockAt(position)
   assert.ok(block && block.name === name, `${what}: expected ${name} at ${position}, saw ${block?.name}`)
-  const data = await rcon.send(`data get block ${position.x} ${position.y} ${position.z}`)
-  assert.ok(!/is not a valid block/i.test(data ?? ''), `server does not know block at ${position}`)
+  const data = await rcon.send(`execute if block ${position.x} ${position.y} ${position.z} ${name}`)
+  assert.equal(data, 'Test passed', `server must confirm ${name} at ${position}`)
 }
 
 try {
@@ -158,7 +158,7 @@ try {
   assert.equal(fed2.fedCoolant, true, 'second feed cycle must also verify')
 
   // ---- wall, gate, home and torches.
-  await rconOk('give VillageLab minecraft:cobblestone 64')
+  await rconOk('give VillageLab minecraft:cobblestone 256')
   await sleep(1200)
   for (let i = 0; i < 80; i++) {
     const r = await act('build_wall')
@@ -170,10 +170,11 @@ try {
   }
   const wall = wallBlueprint(FLAG)
   const gate = gateBlueprint(FLAG)
-  const missingWall = wall.filter((p) => !bot.blockAt(p)?.boundingBox)
-  const missingGate = gate.filter((p) => !bot.blockAt(p)?.boundingBox)
+  const missingWall = wall.filter((p) => bot.blockAt(p)?.boundingBox !== 'block')
+  const missingGate = gate.filter((p) => bot.blockAt(p)?.boundingBox !== 'block')
   assert.equal(missingWall.length, 0, `wall incomplete: ${missingWall.slice(0, 3)}`)
   assert.equal(missingGate.length, 0, `gate incomplete: ${missingGate.slice(0, 3)}`)
+  for (const p of [...wall, ...gate]) await assertBlock(p, 'cobblestone', 'village defense')
   // The wall stands ON the ground — never replacing it.
   assert.ok(
     wall.every((p) => p.y > FLAG.y),

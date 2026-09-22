@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Vec3 } from 'vec3'
@@ -58,8 +58,11 @@ test('front gate is two pillars and a lintel over the open passage', () => {
   const keys = gate.map(key)
   assert.equal(new Set(keys).size, gate.length)
   const pillarX = GATE_HALF_WIDTH + 1
-  // 2 pillars x 3 high + 5 lintel blocks
-  assert.equal(gate.length, 2 * (WALL_HEIGHT + 1) + 2 * pillarX + 1)
+  // 2 pillars x 2 high + 5 lintel blocks, all reachable without scaffolding.
+  assert.equal(gate.length, 2 * WALL_HEIGHT + 2 * pillarX + 1)
+  assert.equal(Math.max(...gate.map((p) => p.y - flag.y)), 3)
+  for (let x = -pillarX; x <= pillarX; x++)
+    assert.ok(keys.includes(key(flag.offset(x, 3, WALL_RADIUS))), `lintel missing above column ${x}`)
   // The passage (x in [-1,1], z=+R, above the ground) is not blocked.
   for (let x = -GATE_HALF_WIDTH; x <= GATE_HALF_WIDTH; x++)
     for (let h = 1; h <= WALL_HEIGHT; h++)
@@ -68,7 +71,7 @@ test('front gate is two pillars and a lintel over the open passage', () => {
   assert.ok(gate.every((p) => p.y > flag.y))
 })
 
-test('torch spots sit on the wall top and the gate lintel, without duplicates', () => {
+test('torch spots sit on reachable wall tops including beside the gate, without duplicates', () => {
   const spots = torchSpots(flag)
   const keys = spots.map(key)
   assert.equal(new Set(keys).size, spots.length)
@@ -78,11 +81,12 @@ test('torch spots sit on the wall top and the gate lintel, without duplicates', 
   for (const p of spots) {
     const onWallTop =
       p.y === flag.y + WALL_HEIGHT + 1 && wall.has(key(p.offset(0, -1, 0)))
-    const onLintel =
-      p.y === flag.y + WALL_HEIGHT + 3 && gate.has(key(p.offset(0, -1, 0)))
-    assert.ok(onWallTop || onLintel, `torch at ${p} rests on nothing`)
+    assert.ok(onWallTop, `torch at ${p} needs a reachable wall top`)
+    assert.equal(p.y - flag.y, 3, 'torches must remain within ground placement reach')
     assert.ok(!wall.has(key(p)) && !gate.has(key(p)), `torch collides with a block at ${p}`)
   }
+  for (const side of [-1, 1])
+    assert.ok(keys.includes(key(flag.offset(side * (GATE_HALF_WIDTH + 2), 3, WALL_RADIUS))), 'gate lighting needs a torch on each adjacent wall')
 })
 
 test('home lots stay inside the wall, away from the south road, and never overlap', () => {
@@ -264,4 +268,69 @@ test('a constrained writer never clobbers keys owned by another process', () => 
     "another writer's key is preserved, not clobbered by a stale copy",
   )
   assert.equal(merged.raw.flag.x, 1)
+})
+
+
+test('a guest boom commits its penalty and event guard in the same persisted state', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'village-boom-'))
+  const path = join(dir, 'village.json')
+  const village = createVillageState({ path })
+  village.adopt({ waterFed: 6 })
+  const result = village.overheat('event:boom-1')
+  assert.ok(result.after < result.before)
+  const disk = JSON.parse(readFileSync(path, 'utf8'))
+  assert.equal(disk.waterFed, result.after)
+  assert.ok(disk.processedGuestEvents.includes('event:boom-1'))
+  const restarted = createVillageState({ path })
+  assert.equal(restarted.overheat('event:boom-1'), null)
+  assert.equal(restarted.raw.waterFed, result.after)
+  rmSync(dir, { recursive: true })
+})
+
+test('failed boom persistence rolls back the guard and penalty so a retry is safe', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'village-retry-'))
+  const path = join(dir, 'village.json')
+  const village = createVillageState({ path })
+  village.adopt({ waterFed: 6 })
+  const blockedTemp = `${path}.${process.pid}.tmp`
+  mkdirSync(blockedTemp)
+  assert.throws(() => village.overheat('event:boom-2'), { code: 'VILLAGE_PERSIST_FAILED' })
+  assert.equal(village.raw.waterFed, 6)
+  assert.equal(village.raw.processedGuestEvents.includes('event:boom-2'), false)
+  assert.equal(JSON.parse(readFileSync(path, 'utf8')).waterFed, 6)
+  assert.equal(village.saveFailures, 1)
+  rmSync(blockedTemp, { recursive: true })
+  const result = village.overheat('event:boom-2')
+  assert.ok(result.after < 6)
+  assert.equal(village.overheat('event:boom-2'), null)
+  rmSync(dir, { recursive: true })
+})
+
+test('failed durable mutations cannot report a feed, villager boot or role update', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'village-persistence-'))
+  const path = join(dir, 'village.json')
+  const village = createVillageState({ path })
+  village.adopt({ waterFed: 3, waterTarget: 3, population: ['Cinder'] })
+  const before = structuredClone(village.raw)
+  const blockedTemp = `${path}.${process.pid}.tmp`
+  mkdirSync(blockedTemp)
+  for (const operation of [
+    () => village.feedCoolant('Cinder'),
+    () => village.bootVillager(),
+    () => village.nextVillager(),
+    () => village.setRoles({ Cinder: 'guard' }),
+    () => village.setHome('Cinder', { complete: true }),
+    () => village.setStructures({ wall: { complete: true } }),
+    () => village.sawGuestEvent('event:failed'),
+    () => village.adopt({ waterTarget: 20 }),
+  ]) {
+    assert.throws(operation, { code: 'VILLAGE_PERSIST_FAILED' })
+    assert.deepEqual(village.raw, before)
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), before)
+  }
+  rmSync(blockedTemp, { recursive: true })
+  assert.equal(village.bootVillager(), 'Ember')
+  assert.equal(village.raw.waterFed, 0)
+  assert.deepEqual(village.raw.population, ['Cinder', 'Ember'])
+  rmSync(dir, { recursive: true })
 })

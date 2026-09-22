@@ -72,21 +72,22 @@ export function wallBlueprint(flag) {
   return positions
 }
 
-/** Front gate: two pillars flanking the gap and a lintel over the passage.
+/** Front gate: wall-height pillars and one lintel above a two-block passage.
+ * This height stays reachable from the ground without temporary scaffolding.
  * The passage itself stays open — the clankers must guard it. */
 export function gateBlueprint(flag) {
   const positions = []
   const R = WALL_RADIUS
   const pillarX = GATE_HALF_WIDTH + 1
   for (const x of [-pillarX, pillarX])
-    for (let h = 1; h <= WALL_HEIGHT + 1; h++)
+    for (let h = 1; h <= WALL_HEIGHT; h++)
       positions.push(plus(flag, x, h, R))
   for (let x = -pillarX; x <= pillarX; x++)
-    positions.push(plus(flag, x, WALL_HEIGHT + 2, R))
+    positions.push(plus(flag, x, WALL_HEIGHT + 1, R))
   return positions
 }
 
-/** Torch stands along the wall top, every few blocks, plus the gate pillars. */
+/** Torch stands along the wall top, including beside the gate. */
 export function torchSpots(flag) {
   const spots = []
   const R = WALL_RADIUS
@@ -97,10 +98,10 @@ export function torchSpots(flag) {
   }
   for (let z = -R + 4; z <= R - 4; z += 4)
     spots.push(plus(flag, -R, top, z), plus(flag, R, top, z))
-  // Above the lintel, clear of its blocks.
+  // Adjacent wall tops are reachable from the ground; the lintel top is not.
   spots.push(
-    plus(flag, -(GATE_HALF_WIDTH + 1), WALL_HEIGHT + 3, R),
-    plus(flag, GATE_HALF_WIDTH + 1, WALL_HEIGHT + 3, R),
+    plus(flag, -(GATE_HALF_WIDTH + 2), top, R),
+    plus(flag, GATE_HALF_WIDTH + 2, top, R),
   )
   return spots
 }
@@ -218,7 +219,8 @@ export function isBuildMaterial(name) {
  * writers pass `ownedKeys` and every save MERGES: keys this process does not
  * own are re-read fresh from disk instead of being clobbered by a stale
  * in-memory copy. Writes go to a per-process temp file (no cross-process
- * rename races) and never throw.
+ * rename races). Failed saves restore the last committed state and throw a
+ * labeled error; callers must not announce an unpersisted game mutation.
  */
 export function createVillageState({
   path,
@@ -246,11 +248,9 @@ export function createVillageState({
   } catch {
     state = defaults()
   }
-  let writing = false
+  let committed = structuredClone(state)
   const saveFailures = { count: 0 }
   function save() {
-    if (writing) return // a write already in flight; the next save covers it
-    writing = true
     try {
       let toWrite = state
       if (ownedKeys) {
@@ -270,11 +270,13 @@ export function createVillageState({
       const tmp = `${path}.${process.pid}.tmp`
       writeFileSync(tmp, JSON.stringify(toWrite))
       renameSync(tmp, path)
-    } catch {
+      committed = structuredClone(state)
+    } catch (cause) {
       saveFailures.count++
-      // Never crash a long-running writer over one telemetry save.
-    } finally {
-      writing = false
+      state = structuredClone(committed)
+      const error = new Error(`Village state persistence failed: ${cause.message}`, { cause })
+      error.code = 'VILLAGE_PERSIST_FAILED'
+      throw error
     }
   }
   function chatWorthy(amount) {
@@ -319,8 +321,11 @@ export function createVillageState({
       save()
       return r
     },
-    /** A creeper boom near the core makes the Server overheat. */
-    overheat() {
+    /** Persist the guest event guard and its coolant penalty together. An
+     * event is never acknowledged before its game effect has committed. */
+    overheat(eventId = null) {
+      if (eventId && state.processedGuestEvents.includes(eventId)) return null
+      if (eventId) state.processedGuestEvents = [...state.processedGuestEvents, eventId].slice(-64)
       const r = chatWorthy(-EXPLOSION_PENALTY)
       state.lastBoomAt = now()
       save()

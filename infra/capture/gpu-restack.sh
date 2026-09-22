@@ -11,7 +11,8 @@ echo "=== restack $(date -u +%FT%TZ) ==="
 
 # 1. Stop old captures and camera clients (Xvfb-era)
 for s in cap cap101 cap102 cap103 cap104 cap105 cap106 caparena capmira captally capcinder capvex capguest; do tmux kill-session -t "$s" 2>/dev/null || true; done
-for s in cam cam101 cam102 cam103 cam104 cam105 cam106 arena mira tally cinder vex guest camarena cammira camtally camcinder camvex camguest; do tmux kill-session -t "$s" 2>/dev/null || true; done
+# The `guest` session is the live queue gateway, not a camera.
+for s in cam cam101 cam102 cam103 cam104 cam105 cam106 arena mira tally cinder vex camarena cammira camtally camcinder camvex camguest; do tmux kill-session -t "$s" 2>/dev/null || true; done
 pkill -f "net.minecraft.client.main.Main" 2>/dev/null
 sleep 3
 

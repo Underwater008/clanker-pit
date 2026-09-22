@@ -5,9 +5,36 @@ import {
   sanitizeNickname,
   TURN_MAX_MS,
   TURN_EVERY_MS,
+  restoreGuestHistory,
 } from './guest-queue.mjs'
 
 const minute = 60_000
+
+test('gateway restart retains confirmed unconsumed booms and the shared chat cursor', () => {
+  const boom = { id: 40, type: 'boom', position: { x: 0, y: 64, z: 0 } }
+  const chat = { id: 41, text: 'hello' }
+  const restored = restoreGuestHistory({ seq: 39, events: [boom], chat: [chat] })
+  assert.deepEqual(restored, { seq: 41, events: [boom], chat: [chat] })
+  assert.deepEqual(restoreGuestHistory(null), { seq: 0, events: [], chat: [] })
+})
+
+test('late spawn and teardown from a prior guest cannot affect the next turn', () => {
+  let now = 1000
+  let seq = 0
+  const queue = new GuestQueue({ now: () => now, makeToken: () => `token-${++seq}`, turnEveryMs: 100 })
+  queue.join('Ada')
+  const old = queue.tick().spawn
+  queue.finishActive('boom', old.token)
+  queue.join('Bo')
+  now += 100
+  const current = queue.tick().spawn
+  queue.markSpawned('Ada', old.token)
+  assert.equal(queue.active.spawned, false)
+  assert.equal(queue.finishActive('disconnected', old.token), null)
+  assert.equal(queue.active.token, current.token)
+  queue.markSpawned('Bo', current.token)
+  assert.equal(queue.active.botName, 'Bo')
+})
 function makeQueue(overrides = {}) {
   let now = 1_000_000
   let seed = 0x2f6e2b1

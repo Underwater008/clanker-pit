@@ -35,7 +35,7 @@ evidence before relying on historical notes or another agent's claims.
 | Gameplay | `stage1/bot/survival.mjs`: perception, feasible actions, navigation, survival and village skills (build wall/gate/home/torches, iron→bucket, coolant feeding, guard/patrol/attack); `crafting.mjs`: server-confirmed crafting |
 | Village | `stage1/bot/village.mjs`: layout blueprints (wall, front gate, home lots, Server anatomy), shared coolant economy and villager booting; `council.mjs`: role discussion + deterministic assignment; `flag-setup.mjs` + `fixture-grant.mjs`: idempotent round fixtures (labeled, RCON) |
 | Model routing | `stage1/bot/models.mjs` + `llm.mjs`: per-clanker OpenAI-compatible planners (Kimi default), Jev choice client, thinking extraction |
-| Guests | `stage1/bot/guest-gateway.mjs` (match controller): viewer queue, 3-minute creeper turns, guest input (move/look/jump/boom only), boom explosions, guest mirror on 25584, `guest-queue.mjs` (pure scheduling); the public enters via the allowlisted `/guest/*` proxy on the telemetry port |
+| Guests | `stage1/bot/guest-gateway.mjs` (match controller): viewer queue, 3-minute creeper turns, guest input (move/look/jump/boom only), guest mirror on 25584; `guest-queue.mjs` handles scheduling, `guest-boom.mjs` verifies a single summon using server explosion packets; public entry is the allowlisted `/guest/*` telemetry proxy |
 | Providers | `stage1/bot/llm.mjs`: generic planner client + Kimi/Jev clients; `env.mjs`: configuration loading |
 | Native POV | `stage1/bot/native-mirror.mjs`: read-only protocol mirrors (clankers 25580-25583, guest 25584); `infra/capture/run-native-view.py`: viewer lifecycle |
 | Video | `infra/capture/`: official Minecraft clients, display layout, FFmpeg capture, MediaMTX HLS (six paths incl. `guest`) |
@@ -93,8 +93,8 @@ existing environment variables. Infra utilities instead read `stage0/.env`.
 On the pod, installed bots read `/workspace/arena/.env`. Check the loader before
 diagnosing missing credentials; do not assume all entrypoints use the same file.
 
-`lab-smoke.mjs`, `lab-navigation.mjs`, `lab-placement.mjs`, and
-`lab-village.mjs` mutate fixtures and
+`lab-smoke.mjs`, `lab-navigation.mjs`, `lab-placement.mjs`,
+`lab-village.mjs`, and `lab-guest.mjs` mutate fixtures and
 must only run on an isolated server (Minecraft `25566`, RCON `25576`). Never aim
 them at the production arena. Keep canary `BOT_NAMES`, `BOT_DATA_DIR`, `STATE_PATH`,
 and server ports separate; disable mirrors with `NATIVE_MIRRORS=0` or assign a
@@ -105,9 +105,11 @@ checks; it is not an autonomous-model evaluation. Stop test processes afterward.
 
 1. Inspect `git status` and relevant source first; preserve existing user changes.
    Check installed code and running processes when investigating a live issue.
-2. For SSH, run `bash infra/pod-status.sh` to resolve the current public TCP mapping
+2. For SSH, run `bash infra/pod-status.sh --pod-id <id-serving-the-website>` to resolve the current public TCP mapping
    for private port 22. SSH uses the project SSH key; the RunPod API key discovers
-   the pod. Refresh mappings after restarts. An HTTP proxy URL is not an SSH host.
+   the pod. The default ignored `infra/pod.json` can refer to an older pod; check
+   it against the website's endpoint. Refresh mappings after restarts.
+   An HTTP proxy URL is not an SSH host.
 3. For HTTP 404s, identify the exact service and path. Trace video through native
    client → capture → RTMP publisher → MediaMTX playlist → public proxy → player.
    A missing publisher can cause HLS 404s even when SSH and API authentication work.
@@ -118,8 +120,9 @@ checks; it is not an autonomous-model evaluation. Stop test processes afterward.
 5. Deploy only the affected component within the user's authorized scope. Bot and
    capture changes go to RunPod; website changes go to Vercel. `web/deploy.sh` also
    provisions project/domain wiring, so inspect it before using it for an update.
-6. Bootstrap fetches GitHub `main`: commit and push intended source before a rollout
-   using that path. Keep live repairs in versioned source. Installing a file does
+6. Bootstrap resolves GitHub `main` to one SHA (or accepts `CLANKER_SOURCE_SHA`): commit and push intended source before a rollout
+   using that path. Public telemetry's `buildSha` identifies the controller release.
+   Keep live repairs in versioned source. Installing a file does
    not reload a running process; plan the required restart and verify loaded code.
 7. Verify the relevant result after deployment: server-confirmed gameplay, fresh
    telemetry, decoded public video/native HUD, or the canonical website. Report

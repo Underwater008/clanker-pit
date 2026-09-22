@@ -8,6 +8,7 @@ import {
   torchSpots,
   homeBlueprint,
   homeLot,
+  HOME_LOTS,
   serverAnatomy,
   patrolNodes,
   isBuildMaterial,
@@ -26,7 +27,7 @@ export const GOALS = {
   equip_tools:
     'Progress from wood to stone tools, then gather useful stone and coal.',
   gather_food:
-    'Find edible plants or hunt food, eat when hungry, and replant useful crops.',
+    'Hunt nearby animals for food and eat available food when hungry.',
   improve_camp:
     'Finish the shelter, add a furnace, plant trees, and stockpile useful materials.',
   explore: 'Scout nearby terrain for new resources, remembering where camp is.',
@@ -45,6 +46,7 @@ export const countItems = (items, match) =>
     .reduce((n, i) => n + i.count, 0)
 export const isLog = (n) => /(_log|_stem)$/.test(n)
 export const isPlank = (n) => n.endsWith('_planks')
+export const isShelterMaterial = (n) => isBuildMaterial(n) || isPlank(n) || n === 'dirt'
 const isPick = (n) => n.endsWith('_pickaxe')
 const stoneNames = new Set(['stone', 'cobblestone', 'coal_ore'])
 const ironOreNames = new Set(['iron_ore', 'deepslate_iron_ore'])
@@ -81,6 +83,88 @@ const edible = new Set([
 const solid = (b) =>
   b && b.boundingBox === 'block' && !['magma_block', 'cactus'].includes(b.name)
 
+// goto() in the pinned pathfinder also resolves for an empty failed path.
+// Only the current game position can establish that a navigation goal was met.
+export function navigationReached(goal, position) {
+  const feet = position.floored()
+  return goal.isEnd(feet) || goal.isEnd(feet.offset(0, 1, 0))
+}
+
+export async function gotoConfirmed(bot, goal) {
+  await bot.pathfinder.goto(goal)
+  if (!navigationReached(goal, bot.entity.position))
+    throw new Error('Navigation ended before reaching the goal')
+}
+
+export function navigationGoalSummary(goal) {
+  // GoalPlaceBlock contains the entire world cache, and GoalFollow contains
+  // a live entity. Serializing the raw goal in a watchdog can freeze the
+  // controller long enough to disconnect every clanker.
+  const target = goal.pos ?? goal.entity?.position ?? goal
+  return {
+    type: goal.constructor?.name ?? 'Goal',
+    target: { x: target.x, y: target.y, z: target.z },
+  }
+}
+
+export async function navigateWithRecovery({ bot, goal, run, ms, emergency, log }) {
+  const deadline = Date.now() + ms
+  let lastError
+  try {
+    return await run(goal, Math.min(ms, 6000))
+  } catch (error) {
+    lastError = error
+  }
+  // Short reflex/scouting moves already choose alternate headings themselves.
+  // Longer work routes can sidestep a basin/corner before retrying the target,
+  // while sharing the original action deadline and yielding to safety reflexes.
+  const target = navigationGoalSummary(goal).target
+  if (ms < 7000 || !Number.isFinite(target.x) || !Number.isFinite(target.z)) throw lastError
+  const origin = bot.entity.position.clone()
+  const angle = Math.atan2(target.z - origin.z, target.x - origin.x)
+  for (const offset of [Math.PI / 2, -Math.PI / 2]) {
+    let remaining = deadline - Date.now()
+    if (remaining < 2500 || emergency()) throw lastError
+    const side = new goals.GoalNearXZ(
+      origin.x + Math.cos(angle + offset) * 3,
+      origin.z + Math.sin(angle + offset) * 3,
+      1,
+    )
+    try {
+      const before = bot.entity.position.clone()
+      await run(side, Math.min(2500, remaining - 1000))
+      if (before.distanceTo(bot.entity.position) < 0.75) continue
+      log('navigation_recovery', { position: bot.entity.position, goal: navigationGoalSummary(goal) })
+      remaining = deadline - Date.now()
+      if (remaining < 500 || emergency()) throw lastError
+      return await run(goal, remaining)
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError
+}
+
+export function localShelter(origin, position) {
+  return !origin || (
+    position.distanceTo(new Vec3(origin.x, origin.y, origin.z)) <= 32 &&
+    Math.abs(position.y - origin.y) <= 8
+  )
+}
+
+export function scoutingTargets(position, angle, turn = 0) {
+  // A failed long route must not keep pointing at the same visible tree.
+  // Short routes in different directions can get out of corners and basins.
+  return [
+    { angle: angle + turn * 2.39996, distance: turn ? 5 : 12 },
+    { angle: angle + (turn + 1) * 2.39996, distance: 4 },
+    { angle: angle + (turn + 2) * 2.39996, distance: 3 },
+  ].map(({ angle: bearing, distance }) => ({
+    x: Math.floor(position.x + Math.cos(bearing) * distance),
+    z: Math.floor(position.z + Math.sin(bearing) * distance),
+  }))
+}
+
 export function shelterBlueprint(origin) {
   const blocks = []
   for (let y = 0; y < 2; y++)
@@ -110,6 +194,8 @@ export function installSurvival(bot, state, log, opts = {}) {
   bot.loadPlugin(pathfinder)
   const blocked = new Map()
   let scoutStep = 0
+  let failedScouts = 0
+  let fleeTurn = 0
   // Village scenario context (null in plain survival mode). The controller
   // supplies the Server's flag position, this bot's home-lot index, a live
   // snapshot of shared village state, and how to recognize guest creeper
@@ -126,11 +212,38 @@ export function installSurvival(bot, state, log, opts = {}) {
         home: homeBlueprint(homeLot(villageCtx.flag, villageCtx.lotIndex), villageCtx.flag),
       }
     : null
+  const villageConstruction = new Set(layout
+    ? [
+        ...layout.wall,
+        ...layout.gate,
+        ...HOME_LOTS.flatMap((_, index) => homeBlueprint(
+          homeLot(villageCtx.flag, index), villageCtx.flag,
+        )),
+      ].map((p) => p.toString())
+    : [])
+  let protectedShelter = null, protectedHistoryLength = -1
+  let shelterConstruction = new Set()
+  function constructionBlock(position) {
+    if (protectedShelter !== state.shelter ||
+        protectedHistoryLength !== (state.shelterHistory ?? []).length) {
+      protectedShelter = state.shelter
+      protectedHistoryLength = (state.shelterHistory ?? []).length
+      shelterConstruction = new Set(
+        [state.shelter, ...(state.shelterHistory ?? []).map((s) => s.site)]
+          .filter(Boolean)
+          .flatMap((site) => shelterBlueprint(new Vec3(site.x, site.y, site.z)))
+          .map((p) => p.toString()),
+      )
+    }
+    const key = position.toString()
+    return villageConstruction.has(key) || shelterConstruction.has(key)
+  }
   function resetMovements() {
     const moves = new Movements(bot)
     moves.canDig = true
     moves.digCost = 2 // Prefer going around; clear ordinary terrain when needed.
     moves.exclusionAreasBreak.push((block) => {
+      if (constructionBlock(block.position)) return 100
       const soft =
         [
           'dirt',
@@ -229,6 +342,8 @@ export function installSurvival(bot, state, log, opts = {}) {
       .filter(
         (b) =>
           b &&
+          !((isLog(b.name) || stoneNames.has(b.name) || ironOreNames.has(b.name)) &&
+            constructionBlock(b.position)) &&
           (blocked.get(b.position.toString()) ?? 0) < Date.now() &&
           b.position.y >= bot.entity.position.y - 3 &&
           b.position.y <= bot.entity.position.y + 5,
@@ -255,7 +370,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       clearTimeout(timer)
     }
   }
-  async function walk(goal, ms = 11000) {
+  async function walkOnce(goal, ms) {
     let checkpoint = bot.entity.position.clone(),
       progressed = Date.now()
     const watchdog = setInterval(() => {
@@ -266,13 +381,13 @@ export function installSurvival(bot, state, log, opts = {}) {
         checkpoint = bot.entity.position.clone()
         progressed = Date.now()
       } else if (Date.now() - progressed > 4000) {
-        log('navigation_stuck', { position: bot.entity.position, goal })
+        log('navigation_stuck', { position: bot.entity.position, goal: navigationGoalSummary(goal) })
         bot.pathfinder.setGoal(null)
       }
     }, 500)
     try {
       await bounded(
-        () => bot.pathfinder.goto(goal),
+        () => gotoConfirmed(bot, goal),
         ms,
         () => bot.pathfinder.setGoal(null),
       )
@@ -282,6 +397,9 @@ export function installSurvival(bot, state, log, opts = {}) {
       bot.clearControlStates()
     }
   }
+  const walk = (goal, ms = 11000) => navigateWithRecovery({
+    bot, goal, ms, run: walkOnce, emergency, log,
+  })
   async function reach(block) {
     if (
       bot.entity.position.distanceTo(block.position.offset(0.5, 0.5, 0.5)) > 3.8
@@ -297,6 +415,29 @@ export function installSurvival(bot, state, log, opts = {}) {
       bot.entity.position.distanceTo(block.position.offset(0.5, 0.5, 0.5)) > 4.5
     )
       throw new Error('Block still out of reach')
+  }
+  async function approach(position, range) {
+    const target = new Vec3(position.x, position.y, position.z)
+    const before = bot.entity.position.clone()
+    if (before.distanceTo(target) <= range)
+      return { returned: true, remaining: 0, moved: 0 }
+    const dx = target.x - before.x, dz = target.z - before.z
+    const horizontal = Math.hypot(dx, dz)
+    // Distant remembered coordinates are a direction, not a single enormous
+    // A* search. Each action must make verified local progress toward them.
+    const goal = horizontal > 14
+      ? new goals.GoalNearXZ(before.x + dx / horizontal * 12, before.z + dz / horizontal * 12, 1)
+      : new goals.GoalNear(target.x, target.y, target.z, range)
+    await walk(goal, 9000)
+    const remaining = bot.entity.position.distanceTo(target)
+    const moved = before.distanceTo(bot.entity.position)
+    if (remaining > range && moved < 0.75)
+      throw new Error('Return route made no positional progress')
+    return {
+      returned: remaining <= range,
+      remaining: Math.round(remaining),
+      moved: Math.round(moved * 10) / 10,
+    }
   }
   async function collect(position) {
     await sleep(650) // item spawn, pickup delay, and falling logs need server ticks
@@ -347,9 +488,22 @@ export function installSurvival(bot, state, log, opts = {}) {
   async function craft(name, times = 1) {
     const item = bot.registry.itemsByName[name]
     if (!item) throw new Error(`Unknown item ${name}`)
-    const bench = table()
-    if (bench) await reach(bench)
-    const recipe = bot.recipesFor(item.id, null, 1, bench)[0]
+    // Inventory recipes (planks, sticks, workbench) do not need a trip to a
+    // distant or obstructed workbench merely because one is in loaded chunks.
+    let bench = null
+    let recipe = bot.recipesFor(item.id, null, 1, null)[0]
+    if (!recipe) {
+      bench = table()
+      if (bench) {
+        try {
+          await reach(bench)
+        } catch (error) {
+          blocked.set(bench.position.toString(), Date.now() + 120000)
+          throw error
+        }
+      }
+      recipe = bot.recipesFor(item.id, null, 1, bench)[0]
+    }
     if (!recipe) throw new Error(`Missing ingredients or workbench for ${name}`)
     const before = countItems(bot.inventory.items(), name)
     await craftConfirmed(bot, recipe, times, bench)
@@ -431,13 +585,15 @@ export function installSurvival(bot, state, log, opts = {}) {
       bot.setControlState('sneak', false)
       bot.setControlState('jump', false)
     }
+    if (bot.blockAt(position)?.name !== item.name)
+      throw new Error(`Placement was not confirmed at ${position}`)
     return { placed: item.name, position }
   }
   // ---- village construction and coolant skills ----------------------------
   const buildMaterialCount = () =>
-    countItems(bot.inventory.items(), (n) => isBuildMaterial(n))
+    countItems(bot.inventory.items(), (n) => isBuildMaterial(n) || isPlank(n))
   const firstBuildMaterial = () =>
-    bot.inventory.items().find((i) => isBuildMaterial(i.name))
+    bot.inventory.items().find((i) => isBuildMaterial(i.name) || isPlank(i.name))
   /** Place up to `perAction` missing blocks of a blueprint, in order. */
   async function buildFrom(blueprint, perAction = 2) {
     let placed = 0
@@ -448,8 +604,8 @@ export function installSurvival(bot, state, log, opts = {}) {
         await dig(occupant, '_axe').catch(() => {})
       const material = firstBuildMaterial()
       if (!material) break
-      await place(p, material)
-      if (++placed === perAction) break
+      const result = await place(p, material)
+      if (result.placed && ++placed === perAction) break
     }
     return { placed }
   }
@@ -530,22 +686,25 @@ export function installSurvival(bot, state, log, opts = {}) {
     await walk(
       new goals.GoalNear(water.position.x, water.position.y, water.position.z, 2),
     )
-    // _placeBlockWithOptions needs the solid Block under the water, not a Vec3.
     const floor = bot.blockAt(water.position.offset(0, -1, 0))
     if (!solid(floor)) throw new Error('Spring has no solid bed')
     const bucket = bot.inventory.items().find((i) => i.name === 'bucket')
     if (!bucket) throw new Error('No empty bucket')
+    const fullBefore = countItems(bot.inventory.items(), 'water_bucket')
+    const emptyBefore = countItems(bot.inventory.items(), 'bucket')
     await bot.equip(bucket, 'hand')
-    // Clicking the bed's top face with an empty bucket: vanilla scoops the
-    // water source above it, and the block update confirms the pickup.
-    await bot._placeBlockWithOptions(floor, new Vec3(0, 1, 0), {
-      forceLook: true,
-      swingArm: 'right',
-    })
-    await sleep(300)
-    if (!bot.inventory.items().some((i) => i.name === 'water_bucket'))
-      throw new Error('Bucket did not fill at the spring')
-    return { filledBucket: true }
+    // Buckets use the held-item packet, not block placement. An infinite
+    // spring can refill within the same tick, so inventory is the proof.
+    await bot.lookAt(water.position.offset(0.5, 0.8, 0.5), true)
+    bot.activateItem()
+    const deadline = Date.now() + 5000
+    while (Date.now() < deadline) {
+      if (countItems(bot.inventory.items(), 'water_bucket') > fullBefore &&
+          countItems(bot.inventory.items(), 'bucket') < emptyBefore)
+        return { filledBucket: true }
+      await sleep(50)
+    }
+    throw new Error('Bucket did not fill at the spring')
   }
   /**
    * Feed the Server one bucket of coolant. The pour is server-confirmed by
@@ -559,27 +718,33 @@ export function installSurvival(bot, state, log, opts = {}) {
   async function feedServer() {
     const cycle = async () => {
       const { basinFloor, basinHole } = layout.anatomy
-      await walk(new goals.GoalNear(basinFloor.x, basinFloor.y, basinFloor.z, 2))
-      // _placeBlockWithOptions needs the Block object, not a bare Vec3.
+      // The rim can occlude the basin floor from ground level. Find an actual
+      // visible top face before using the bucket, even if this means stepping
+      // onto the rim; distance alone does not guarantee the pour destination.
+      const pourGoal = new goals.GoalPlaceBlock(basinHole, bot.world, {
+        range: 4.25, LOS: true, faces: [new Vec3(0, -1, 0)],
+      })
+      await walk(pourGoal)
       const floorBlock = bot.blockAt(basinFloor)
       if (!solid(floorBlock)) throw new Error('Server basin floor is missing')
       if (bot.blockAt(basinHole)?.name === 'water')
         throw new Error('The Server is still drinking the last bucket')
       const full = bot.inventory.items().find((i) => i.name === 'water_bucket')
       if (!full) throw new Error('No water bucket to feed the Server')
+      const fullBefore = countItems(bot.inventory.items(), 'water_bucket')
+      const emptyBefore = countItems(bot.inventory.items(), 'bucket')
       await bot.equip(full, 'hand')
-      // Vanilla bucket use: clicking the floor's top face places the water
-      // in the basin hole; the type change acknowledges the pour.
-      await bot._placeBlockWithOptions(floorBlock, new Vec3(0, 1, 0), {
-        forceLook: true,
-        swingArm: 'right',
-      })
-      if (bot.blockAt(basinHole)?.name !== 'water')
-        throw new Error('Server basin did not accept the coolant')
-      // The bucket must now be empty — real consumption, verified.
-      if (!bot.inventory.items().some((i) => i.name === 'bucket'))
-        throw new Error('Bucket did not empty into the basin')
-      return { fedCoolant: true }
+      await bot.lookAt(basinFloor.offset(0.5, 1, 0.5), true)
+      bot.activateItem()
+      const deadline = Date.now() + 5000
+      while (Date.now() < deadline) {
+        if (bot.blockAt(basinHole)?.name === 'water' &&
+            countItems(bot.inventory.items(), 'water_bucket') < fullBefore &&
+            countItems(bot.inventory.items(), 'bucket') > emptyBefore)
+          return { fedCoolant: true }
+        await sleep(50)
+      }
+      throw new Error('Server basin pour was not confirmed by water and an emptied bucket')
     }
     if (villageCtx?.withBasin) return villageCtx.withBasin(cycle)
     return cycle()
@@ -686,6 +851,8 @@ export function installSurvival(bot, state, log, opts = {}) {
       state.shelter &&
       new Vec3(state.shelter.x, state.shelter.y, state.shelter.z)
     const blueprint = origin ? shelterBlueprint(origin) : []
+    const shelterLoaded = blueprint.every((p) => bot.blockAt(p) != null)
+    const shelterLocal = localShelter(origin, bot.entity.position)
     const built = blueprint.filter((p) => solid(bot.blockAt(p))).length
     return {
       health: bot.health,
@@ -709,9 +876,14 @@ export function installSurvival(bot, state, log, opts = {}) {
         : 0,
       shelter: {
         site: origin,
-        blocks: built,
+        distance: origin ? Math.round(origin.distanceTo(bot.entity.position)) : null,
+        local: shelterLocal,
+        loaded: shelterLoaded,
+        blocks: shelterLoaded ? built : null,
         total: 23,
-        complete: built === 23,
+        complete: shelterLoaded && built === 23,
+        can_build_here: shelterLocal && shelterLoaded,
+        archived_sites: (state.shelterHistory ?? []).map((s) => s.site),
       },
       nearby_players: near
         .filter(
@@ -822,10 +994,16 @@ export function installSurvival(bot, state, log, opts = {}) {
       add('craft_furnace', 'Craft a furnace for the camp.')
     if (n('furnace'))
       add('place_furnace', 'Place the furnace near the workbench.')
-    if (n(isPlank) >= 2 && obs.resources.workbench && !obs.shelter.complete)
+    if (!villageCtx && n(isShelterMaterial) >= 1 && !obs.shelter.complete &&
+        obs.shelter.can_build_here)
       add(
         'build_shelter',
-        'Place up to two real blocks of a small shelter, keeping its doorway open.',
+        'Build up to two shelter blocks with planks, cobblestone, stone or dirt; keep its doorway open. No workbench required.',
+      )
+    if (!villageCtx && n(isShelterMaterial) >= 1 && !obs.shelter.local && chooseSite())
+      add(
+        'relocate_shelter',
+        'Select a reachable local shelter site. Remember the distant previous site and leave all of its blocks intact.',
       )
     if (obs.animals.length && n((name) => edible.has(name)) < 4)
       add(
@@ -853,25 +1031,27 @@ export function installSurvival(bot, state, log, opts = {}) {
     // does the right kind of work when Jev is unavailable.
     if (villageCtx) {
       const V = obs.village ?? {}
+      const nearVillage = V.distance_from_flag <= 32 &&
+        Math.abs(bot.entity.position.y - villageCtx.flag.y) <= 8
       const vo = {}
       const vadd = (key, description) => {
         if ((state.cooldowns[key] ?? 0) < Date.now()) vo[key] = description
       }
       const materials = buildMaterialCount()
-      if (materials >= 2 && !V.wall?.complete)
+      if (nearVillage && materials >= 2 && !V.wall?.complete)
         vadd(
           'build_wall',
           'Place two blocks of the perimeter wall that protects the Server.',
         )
-      if (materials >= 2 && !V.gate?.complete)
+      if (nearVillage && materials >= 2 && !V.gate?.complete)
         vadd(
           'build_gate',
           'Raise the front gate pillars and lintel on the south road.',
         )
-      if (materials >= 2 && !V.my_home?.complete)
+      if (nearVillage && materials >= 2 && !V.my_home?.complete)
         vadd('build_home', 'Place two blocks of your own house on your lot.')
       if (
-        n('torch') > 0 &&
+        nearVillage && n('torch') > 0 &&
         V.torches_lit < (V.torches_total ?? 0)
       )
         vadd(
@@ -913,7 +1093,7 @@ export function installSurvival(bot, state, log, opts = {}) {
             'Mine one iron ore with your stone pickaxe; raw iron smelts into buckets.',
           )
       }
-      if (!V.atCapacity) {
+      if (nearVillage && !V.atCapacity) {
         if (n('water_bucket') === 0 && n('bucket') > 0)
           vadd(
             'scoop_water',
@@ -925,9 +1105,9 @@ export function installSurvival(bot, state, log, opts = {}) {
             `Feed the Server one bucket of coolant; it boots a new villager at ${V.water?.target ?? '?'} buckets (now ${V.water?.fed ?? 0}).`,
           )
       }
-      if ((state.role ?? null) === 'guard')
+      if (nearVillage && (state.role ?? null) === 'guard')
         vadd('patrol', 'Walk the perimeter on watch for creepers and guests.')
-      if (V.distance_from_flag > 64)
+      if (!nearVillage)
         vadd('return_to_post', 'Head back toward the Server and the village.')
       const preferred = {
         guard: ['patrol', 'attack_threat', 'build_gate', 'build_wall', 'place_torch', 'return_to_post'],
@@ -959,18 +1139,26 @@ export function installSurvival(bot, state, log, opts = {}) {
       const p = bot.entity.position
       const dx = p.x - threat.position.x,
         dz = p.z - threat.position.z
-      const length = Math.hypot(dx, dz)
-      const ux = length > 0.1 ? dx / length : 1,
-        uz = length > 0.1 ? dz / length : 0
-      await walk(
-        new goals.GoalNearXZ(
-          Math.floor(p.x + ux * 12),
-          Math.floor(p.z + uz * 12),
-          2,
-        ),
-        7000,
-      )
-      return { escaped: threat.name, position: bot.entity.position }
+      const angle = Math.atan2(dz, dx)
+      let lastError
+      // Alternate escape sides after a failed route, staying in the half-plane
+      // away from the threat instead of retrying one impassable cliff forever.
+      for (const offset of [0, Math.PI / 3, -Math.PI / 3]) {
+        const bearing = angle + (fleeTurn % 2 ? -offset : offset)
+        try {
+          await walk(new goals.GoalNearXZ(
+            Math.floor(p.x + Math.cos(bearing) * 8),
+            Math.floor(p.z + Math.sin(bearing) * 8),
+            1,
+          ), 2500)
+          fleeTurn = 0
+          return { retreatedFrom: threat.name, safe: !emergency(), position: bot.entity.position }
+        } catch (error) {
+          lastError = error
+        }
+      }
+      fleeTurn++
+      throw lastError
     }
     if (action === 'eat') {
       const food = items.find((i) => edible.has(i.name))
@@ -1015,7 +1203,21 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (action === 'place_table') state.camp = { ...p }
       return result
     }
+    if (action === 'relocate_shelter') {
+      if (localShelter(state.shelter, bot.entity.position))
+        throw new Error('The current shelter is already local')
+      const site = chooseSite()
+      if (!site) throw new Error('No flat clear shelter site nearby')
+      const previous = { ...state.shelter }
+      state.shelterHistory ??= []
+      state.shelterHistory.push({ site: previous, reason: 'distant_site', at: new Date().toISOString() })
+      state.shelter = { ...site }
+      log('shelter_relocated', { previous, position: site, preservedPreviousBlocks: true })
+      return { selectedSite: site, previousSite: previous, placed: 0 }
+    }
     if (action === 'build_shelter') {
+      if (!localShelter(state.shelter, bot.entity.position))
+        throw new Error('Shelter is too far away; select a local site or return first')
       if (!state.shelter) {
         const site = chooseSite()
         if (!site) throw Error('No flat clear shelter site nearby')
@@ -1029,10 +1231,10 @@ export function installSurvival(bot, state, log, opts = {}) {
         const b = bot.blockAt(p)
         if (['short_grass', 'tall_grass'].includes(b?.name))
           await dig(b, '_axe')
-        const plank = bot.inventory.items().find((i) => isPlank(i.name))
-        if (!plank) break
-        await place(p, plank)
-        if (++placed === 2) break
+        const material = bot.inventory.items().find((i) => isShelterMaterial(i.name))
+        if (!material) break
+        const result = await place(p, material)
+        if (result.placed && ++placed === 2) break
       }
       return { placed, site: state.shelter }
     }
@@ -1098,28 +1300,37 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
     if (action === 'return_to_camp') {
       const p = state.camp
-      await walk(new goals.GoalNear(p.x, p.y, p.z, 4))
-      return { returned: true }
+      if (!p) throw new Error('No remembered camp')
+      return approach(p, 4)
     }
     if (action === 'explore') {
-      const p = bot.entity.position
+      const p = bot.entity.position.clone()
       // Walk toward visible resources before choosing a blind scouting bearing.
       const landmark = nearbyBlock((b) => isLog(b.name), 64)
       const angle = landmark
         ? Math.atan2(landmark.position.z - p.z, landmark.position.x - p.x)
         : scoutStep * 2.39996 + (bot.username.charCodeAt(0) % 6)
-      const goal = new goals.GoalNearXZ(
-        Math.floor(p.x + Math.cos(angle) * 12),
-        Math.floor(p.z + Math.sin(angle) * 12),
-        2,
-      )
-      try {
-        await walk(goal, 9000)
-      } catch (e) {
-        scoutStep++
-        throw e
+      let lastError
+      for (const target of scoutingTargets(p, angle, failedScouts)) {
+        try {
+          await walk(new goals.GoalNearXZ(target.x, target.z, 1), 3500)
+          const moved = p.distanceTo(bot.entity.position)
+          if (moved < 0.75) throw new Error('Scouting made no positional progress')
+          scoutStep++
+          failedScouts = 0
+          return { scouted: bot.entity.position.clone(), moved: Math.round(moved * 10) / 10 }
+        } catch (error) {
+          lastError = error
+          log('scout_route_failed', { target, error: String(error) })
+          if (landmark) blocked.set(landmark.position.toString(), Date.now() + 120000)
+        }
       }
-      return { scouted: bot.entity.position }
+      scoutStep++
+      failedScouts += 3
+      // Empty-path failures can arrive immediately; bound retry pressure even
+      // when exploration is the only remaining candidate during cooldowns.
+      await sleep(700)
+      throw lastError
     }
     if (villageCtx) {
       if (action === 'build_wall') {
@@ -1155,21 +1366,41 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (action === 'feed_server') return feedServer()
       if (action === 'patrol') return patrolOnce()
       if (action === 'return_to_post') {
-        await walk(
-          new goals.GoalNear(
-            layout.flag.x,
-            layout.flag.y,
-            layout.flag.z,
-            6,
-          ),
-        )
-        return { returned: true }
+        return approach(layout.flag, 6)
       }
       if (action === 'attack_threat') return attackThreat()
     }
     throw new Error(`Unsupported action ${action}`)
   }
   return {
+    capabilities: () => ({
+      supported_actions: [
+        'flee', 'eat', 'gather_wood', 'mine_stone', 'craft_planks', 'craft_sticks',
+        'craft_table', 'place_table', 'craft_wooden_pickaxe', 'craft_stone_pickaxe',
+        'craft_stone_axe', 'craft_furnace', 'place_furnace', 'hunt_food',
+        'plant_tree', 'collect_drops', 'return_to_camp', 'explore',
+        ...(villageCtx
+          ? ['build_wall', 'build_gate', 'build_home', 'place_torch',
+              'craft_stone_sword', 'craft_torch', 'craft_bucket', 'mine_iron_ore',
+              'smelt_iron', 'scoop_water', 'feed_server', 'patrol',
+              'return_to_post', 'attack_threat']
+          : ['build_shelter', 'relocate_shelter']),
+      ],
+      navigation: {
+        observations: 'loaded local blocks and entities; darkness does not hide them',
+        max_drop_blocks: 2,
+        pillar_climbing: false,
+        recovery: 'short alternate routes; safe terrain clearing; preserve construction',
+      },
+      shelter: {
+        materials: ['planks', 'cobblestone', 'stone', 'dirt'],
+        workbench_required: false,
+        max_site_distance: 32,
+        max_height_difference: 8,
+        preserve_previous_sites: true,
+      },
+      execution: 'Only currently offered action keys are executable; targets come from loaded local blocks.',
+    }),
     observation,
     emergency,
     candidates,
