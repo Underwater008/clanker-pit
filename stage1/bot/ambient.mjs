@@ -571,7 +571,7 @@ function actor(name, index) {
       },
     }
   }
-  const reportTimer = setInterval(report, 1000)
+  const reportTimer = setInterval(report, 500)
   function actorLog(event, data = {}) {
     log(name, event, data)
     if (event === 'jev_status') brain.decision = {
@@ -1071,7 +1071,7 @@ const telemetry = setInterval(() => {
     guest: guestPublic,
     bots: STATE,
   })
-}, 2000)
+}, 500)
 function stop() {
   if (stopping) return
   stopping = true

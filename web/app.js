@@ -97,7 +97,7 @@
       overlay(true, 'SIGNAL', 'Tuning the feed…', false);
       setLive(false);
       if (window.Hls && Hls.isSupported()) {
-        inst.hls = new Hls(feed === 'guest' ? {
+        inst.hls = new Hls(feed === 'guest' || feed === 'arena' ? {
           lowLatencyMode: true, liveSyncDurationCount: 1,
           liveMaxLatencyDurationCount: 3, maxBufferLength: 3, backBufferLength: 2,
           maxLiveSyncPlaybackRate: 1.5
@@ -179,6 +179,90 @@
   var singleSub = document.querySelector('#singleHud .sub');
   var attachedFeed = undefined;
   var arenaColors = ['#ff7a42', '#a7b8ff', '#6fd7c7', '#ffb347', '#58c472', '#d888ff', '#f28d8d', '#d8d39b'];
+  var arenaSamples = [];
+  var arenaElements = {};
+
+  function recordArenaSample(snapshot) {
+    var time = Date.parse(snapshot.updated);
+    if (!isFinite(time) || !snapshot.village || !snapshot.village.flag) return;
+    // A new round uses a new coordinate frame; never animate across worlds.
+    var flag = snapshot.village.flag;
+    var key = [flag.x, flag.y, flag.z].join(',');
+    if (arenaSamples.length && (arenaSamples[arenaSamples.length - 1].key !== key ||
+        time < arenaSamples[arenaSamples.length - 1].time)) arenaSamples = [];
+    if (arenaSamples.length && time === arenaSamples[arenaSamples.length - 1].time) return;
+    var positions = {};
+    Object.keys(snapshot.bots).forEach(function (name) {
+      var player = snapshot.bots[name];
+      var p = player && player.position;
+      if (!player || player.offline || !p || ![p.x, p.y, p.z].every(isFinite)) return;
+      positions[name] = { x: p.x, y: p.y, z: p.z };
+    });
+    arenaSamples.push({ time: time, key: key, positions: positions });
+    while (arenaSamples.length > 60 ||
+        arenaSamples.length > 1 && time - arenaSamples[0].time > 30000) arenaSamples.shift();
+  }
+
+  function arenaVideoTime() {
+    var player = attachedFeed === 'arena' && live.instances[0];
+    var date = player && player.hls && player.hls.playingDate;
+    // The HLS playlist carries program-date-time, so this is the wall-clock
+    // time of the frame on screen rather than the newest world snapshot.
+    if (date instanceof Date && isFinite(date.getTime())) return date.getTime();
+    if (attachedFeed === 'arena' && typeof singleVideo.getStartDate === 'function') {
+      var start = singleVideo.getStartDate();
+      if (start instanceof Date && isFinite(start.getTime()) && isFinite(singleVideo.currentTime))
+        return start.getTime() + singleVideo.currentTime * 1000;
+    }
+    return Date.now() - 700; // no program-date-time fallback
+  }
+
+  function arenaPosition(name, time) {
+    var before = null, after = null;
+    for (var i = 0; i < arenaSamples.length; i++) {
+      var sample = arenaSamples[i];
+      if (!sample.positions[name]) continue;
+      if (sample.time <= time) before = sample;
+      if (sample.time >= time) { after = sample; break; }
+    }
+    if (!before && !after) return null;
+    if (!before) return after.positions[name];
+    if (!after || before === after) return before.positions[name];
+    var a = before.positions[name], b = after.positions[name];
+    var fraction = (time - before.time) / (after.time - before.time);
+    return { x: a.x + (b.x - a.x) * fraction,
+      y: a.y + (b.y - a.y) * fraction,
+      z: a.z + (b.z - a.z) * fraction };
+  }
+
+  function arenaElement(name, index, lines, tags) {
+    if (arenaElements[name]) return arenaElements[name];
+    var color = arenaColors[index % arenaColors.length];
+    var line = arenaSvg('line');
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-width', '1.5');
+    line.setAttribute('stroke-opacity', '.9');
+    lines.appendChild(line);
+    var marker = arenaSvg('circle');
+    marker.setAttribute('r', '4');
+    marker.setAttribute('fill', color);
+    marker.setAttribute('stroke', '#09090b');
+    marker.setAttribute('stroke-width', '2');
+    lines.appendChild(marker);
+    var plate = el('button', 'arena-nameplate', name.toUpperCase());
+    plate.type = 'button';
+    plate.style.setProperty('--plate-color', color);
+    plate.setAttribute('aria-label', 'Focus ' + name);
+    plate.addEventListener('click', function () { setMode('focus', name.toLowerCase()); });
+    tags.appendChild(plate);
+    return (arenaElements[name] = { line: line, marker: marker, plate: plate });
+  }
+
+  function hideArenaElement(elements) {
+    elements.line.style.display = 'none';
+    elements.marker.style.display = 'none';
+    elements.plate.style.display = 'none';
+  }
 
   // The spectator is fixed by infra/capture/spectate-loop.mjs at this offset
   // from the Server. Project live Minecraft positions into the 16:9 feed;
@@ -219,19 +303,22 @@
     var width = root.clientWidth, height = root.clientHeight;
     if (!width || !height) { root.hidden = true; return; }
     var lines = $('arenaPlateLines'), tags = $('arenaPlateTags'), offscreen = $('arenaOffscreen');
-    clear(lines); clear(tags);
     lines.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
     var occupied = [], outside = [];
     var names = village.population || Object.keys(telemetry.bots);
+    var visible = {};
+    var frameTime = arenaVideoTime();
     names.forEach(function (name, index) {
       var player = telemetry.bots[name];
-      var p = player && player.position;
-      if (!player || player.offline || !p || ![p.x, p.y, p.z].every(isFinite)) return;
+      if (!player || player.offline) return;
+      var p = arenaPosition(name, frameTime) || player.position;
+      if (!p || ![p.x, p.y, p.z].every(isFinite)) return;
       var anchor = projectArenaPosition(p, village.flag, width, height);
       if (!anchor || anchor.x < 12 || anchor.x > width - 12 || anchor.y < 12 || anchor.y > height - 12) {
         outside.push(name);
         return;
       }
+      visible[name] = true;
       var labelWidth = Math.max(62, Math.min(112, name.length * 8 + 25));
       var offsets = [[0,-42],[-65,-50],[65,-50],[-65,18],[65,18],[0,25],[-110,-20],[110,-20],[0,-76],[0,56]];
       var box;
@@ -246,33 +333,28 @@
       }
       if (!box) box = candidate;
       occupied.push(box);
-      var color = arenaColors[index % arenaColors.length];
-      var line = arenaSvg('line');
+      var elements = arenaElement(name, index, lines, tags);
+      var line = elements.line, marker = elements.marker, plate = elements.plate;
+      line.style.display = marker.style.display = plate.style.display = '';
       line.setAttribute('x1', box.left + labelWidth / 2);
       line.setAttribute('y1', box.top < anchor.y ? box.bottom : box.top);
       line.setAttribute('x2', anchor.x);
       line.setAttribute('y2', anchor.y);
-      line.setAttribute('stroke', color);
-      line.setAttribute('stroke-width', '1.5');
-      line.setAttribute('stroke-opacity', '.9');
-      lines.appendChild(line);
-      var marker = arenaSvg('circle');
       marker.setAttribute('cx', anchor.x);
       marker.setAttribute('cy', anchor.y);
-      marker.setAttribute('r', '4');
-      marker.setAttribute('fill', color);
-      marker.setAttribute('stroke', '#09090b');
-      marker.setAttribute('stroke-width', '2');
-      lines.appendChild(marker);
-      var plate = el('button', 'arena-nameplate' + (p.y < village.flag.y - 1 ? ' underground' : ''),
-        name.toUpperCase() + (p.y < village.flag.y - 1 ? ' ↓' : ''));
-      plate.type = 'button';
+      var underground = p.y < village.flag.y - 1;
+      plate.classList.toggle('underground', underground);
+      var label = name.toUpperCase() + (underground ? ' ↓' : '');
+      if (plate.textContent !== label) plate.textContent = label;
       plate.style.left = box.left + 'px';
       plate.style.top = box.top + 'px';
-      plate.style.setProperty('--plate-color', color);
-      plate.setAttribute('aria-label', 'Focus ' + name);
-      plate.addEventListener('click', function () { setMode('focus', name.toLowerCase()); });
-      tags.appendChild(plate);
+    });
+    Object.keys(arenaElements).forEach(function (name) {
+      if (names.indexOf(name) === -1) {
+        var old = arenaElements[name];
+        old.line.remove(); old.marker.remove(); old.plate.remove();
+        delete arenaElements[name];
+      } else if (!visible[name]) hideArenaElement(arenaElements[name]);
     });
     offscreen.hidden = !outside.length;
     offscreen.textContent = outside.length ? 'OUT OF VIEW · ' + outside.join(' · ') : '';
@@ -1142,23 +1224,25 @@
           data.guest = telemetry.guest;
         }
         if (!data || !data.bots || !data.updated) throw new Error('Invalid game telemetry');
+        recordArenaSample(data);
         telemetry = data;
         lastStateReceivedAt = Date.now();
         renderAvailability();
         renderVillageBar();
         renderChat();
         renderChip();
-        if (state.mode === 'arena') renderArenaNameplates();
         if (state.mode === 'focus') render();
         else if (state.mode === 'pov') renderFocusPicker();
         if (state.mode === 'play') renderPlay();
       })
-      .catch(function () { renderTelemetryStatus(); renderArenaNameplates(); })
+      .catch(function () { renderTelemetryStatus(); })
       .finally(function () { pollBusy = false; });
   }
-  setInterval(function () { renderTelemetryStatus(); renderArenaNameplates(); }, 2000);
+  setInterval(renderTelemetryStatus, 2000);
+  // Keep the labels in step with each video frame without recreating buttons.
+  setInterval(function () { if (state.mode === 'arena') renderArenaNameplates(); }, 50);
   window.addEventListener('resize', renderArenaNameplates);
-  setInterval(pollState, 2000);
+  setInterval(pollState, 500);
   pollState();
 
   setInterval(function () {
