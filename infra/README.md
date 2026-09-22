@@ -278,7 +278,13 @@ drinks" moment), and every `FLAG_WATER_TARGET` buckets boots one new
 villager from `VILLAGER_POOL` (cap `MAX_POPULATION`, restored after
 controller restarts, single atomic write per boot). A creeper boom within
 `FLAG_EXPLOSION_RADIUS` of the core makes the Server overheat, dropping
-`FLAG_EXPLOSION_PENALTY` buckets of coolant. The council (`council.mjs`)
+`FLAG_EXPLOSION_PENALTY` buckets of coolant.
+The default boot cost is 40 buckets. An existing round keeps its coolant and
+residents when the controller raises a lower persisted target at startup; it
+never lowers an established target automatically. Public telemetry reports
+the persisted target used by the live round.
+
+The council (`council.mjs`)
 runs every `COUNCIL_INTERVAL_MS`: each clanker proposes a role through its
 own routed LLM and says one line in-game; assignment is deterministic policy
 that honors unique proposals (logged `council_assign` with

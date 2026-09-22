@@ -28,6 +28,7 @@ import {
   createVillageState,
   COUNCIL_INTERVAL,
   EXPLOSION_RADIUS,
+  WATER_TARGET,
   WALL_RADIUS,
   wallBlueprint,
   wallReinforcementBlueprint,
@@ -169,7 +170,7 @@ const villageFile = join(DATA_DIR, 'village.json')
 // own keys (roundSetup) while this process runs, so saves merge disk-fresh
 // values for everything this process does not own.
 const VILLAGE_OWNED_KEYS = [
-  'waterFed', 'population', 'founders', 'bootedVillagers', 'fallenVillagers',
+  'waterFed', 'waterTarget', 'population', 'founders', 'bootedVillagers', 'fallenVillagers',
   'homeLots', 'homes', 'homeUpgrades',
   'wall', 'wallUpgrade', 'gate', 'beds',
   'roles', 'processedGuestEvents', 'lastBoomAt', 'lastFedBy',
@@ -196,7 +197,11 @@ function villageUpdate(operation, update) {
     return undefined
   }
 }
-if (villageEnabled) village.initializeCast(names)
+if (villageEnabled) {
+  const raised = village.raiseWaterTarget(WATER_TARGET)
+  if (raised) log('director', 'water_target_raised', raised)
+  village.initializeCast(names)
+}
 const foundingNames = villageEnabled ? village.raw.founders : names
 const friendlyNames = new Set(['ClankerCam', 'FlagSetup', ...foundingNames])
 const isEnemyPlayer = (username) => {

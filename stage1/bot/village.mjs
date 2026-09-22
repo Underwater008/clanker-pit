@@ -15,7 +15,7 @@ import { Vec3 } from 'vec3'
 export const WALL_RADIUS = Number(process.env.WALL_RADIUS ?? 8)
 export const WALL_HEIGHT = Number(process.env.WALL_HEIGHT ?? 2)
 export const GATE_HALF_WIDTH = Number(process.env.GATE_HALF_WIDTH ?? 1)
-export const WATER_TARGET = Number(process.env.FLAG_WATER_TARGET ?? 10)
+export const WATER_TARGET = Number(process.env.FLAG_WATER_TARGET ?? 40)
 export const EXPLOSION_PENALTY = Number(process.env.FLAG_EXPLOSION_PENALTY ?? 3)
 export const EXPLOSION_RADIUS = Number(process.env.FLAG_EXPLOSION_RADIUS ?? 6)
 export const MAX_POPULATION = Number(process.env.MAX_POPULATION ?? 8)
@@ -456,6 +456,16 @@ export function createVillageState({
     flag: () => (state.flag ? v(state.flag) : null),
     anatomy: () => (state.flag ? serverAnatomy(state.flag) : null),
     save,
+    /** Raise a persisted round's boot cost without resetting its coolant or cast. */
+    raiseWaterTarget(minimum = WATER_TARGET) {
+      if (!Number.isSafeInteger(minimum) || minimum < 1 || minimum > 1000)
+        throw new Error('Water target must be an integer from 1 to 1000')
+      if (state.waterTarget >= minimum) return null
+      const before = state.waterTarget
+      state.waterTarget = minimum
+      save()
+      return { before, after: state.waterTarget }
+    },
     snapshot: () => ({
       startedAt: state.createdAt,
       flag: state.flag,

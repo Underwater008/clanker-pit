@@ -450,6 +450,26 @@ test('a constrained writer never clobbers keys owned by another process', () => 
   assert.equal(merged.raw.flag.x, 1)
 })
 
+test('raising the boot cost preserves live coolant, residents, and other writers', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'village-target-'))
+  const path = join(dir, 'village.json')
+  const round = createVillageState({ path })
+  round.adopt({ flag: { x: 1, y: 64, z: 2 }, waterTarget: 10,
+    waterFed: 7, population: ['Cinder', 'Vex'] })
+  const migration = createVillageState({ path, ownedKeys: ['waterTarget'] })
+  const controller = createVillageState({ path, ownedKeys: ['waterFed'] })
+  controller.feedCoolant('Cinder')
+  assert.deepEqual(migration.raiseWaterTarget(40), { before: 10, after: 40 })
+  assert.equal(migration.raiseWaterTarget(40), null)
+  assert.throws(() => migration.raiseWaterTarget(40.5), /integer/)
+  const persisted = JSON.parse(readFileSync(path, 'utf8'))
+  assert.equal(persisted.waterTarget, 40)
+  assert.equal(persisted.waterFed, 8)
+  assert.deepEqual(persisted.population, ['Cinder', 'Vex'])
+  assert.deepEqual(persisted.flag, { x: 1, y: 64, z: 2 })
+  rmSync(dir, { recursive: true })
+})
+
 
 test('a guest boom commits its penalty and event guard in the same persisted state', () => {
   const dir = mkdtempSync(join(tmpdir(), 'village-boom-'))
@@ -503,6 +523,7 @@ test('failed durable mutations cannot report a feed, villager boot or role updat
     () => village.setStructures({ wall: { complete: true } }),
     () => village.sawGuestEvent('event:failed'),
     () => village.adopt({ waterTarget: 20 }),
+    () => village.raiseWaterTarget(40),
   ]) {
     assert.throws(operation, { code: 'VILLAGE_PERSIST_FAILED' })
     assert.deepEqual(village.raw, before)
