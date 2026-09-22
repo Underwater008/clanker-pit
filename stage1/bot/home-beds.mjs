@@ -30,7 +30,9 @@ const rcon = await Rcon.connect({
   host: process.env.MC_HOST ?? '127.0.0.1',
   port: Number(process.env.RCON_PORT ?? 25575),
   password: process.env.RCON_PASSWORD ?? 'clanker-dev',
-  timeout: 5000,
+  // A fresh world can take several seconds to flush its first chunks when
+  // the final /save-all runs; keep the RCON response budget above that spike.
+  timeout: 30000,
 })
 const pos = (p) => `${p.x} ${p.y} ${p.z}`
 const passed = (response) => /^Test passed/.test(String(response ?? ''))
