@@ -483,24 +483,40 @@ export function installSurvival(bot, state, log, opts = {}) {
       bot.stopDigging()
     }
   })
-  function nearbyBlock(matching, radius = 18) {
-    return bot
+  const nearbyCache = new Map()
+  function nearbyBlock(matching, radius = 18, cacheKey = null, ttl = 5000, maxMove = 8) {
+    // Empty scans are costly in a treeless biome. Reuse them briefly while
+    // the clanker remains in the same area; recheck found blocks against the
+    // live world so harvested or reserved resources never stay feasible.
+    const now = Date.now()
+    const cached = cacheKey && nearbyCache.get(cacheKey)
+    if (cached && now - cached.at < ttl &&
+        bot.entity.position.distanceTo(cached.origin) < maxMove) {
+      if (!cached.position) return null
+      const block = bot.blockAt(cached.position)
+      if (block && matching(block) && usable(block)) return block
+    }
+    const found = bot
       .findBlocks({ matching, maxDistance: radius, count: 36 })
       .map((p) => bot.blockAt(p))
-      .filter(
-        (b) =>
-          b &&
-          !((isLog(b.name) || stoneNames.has(b.name) || ironOreNames.has(b.name)) &&
-            (constructionBlock(b.position) || resourceBusy(b.position))) &&
-          (blocked.get(b.position.toString()) ?? 0) < Date.now() &&
-          b.position.y >= bot.entity.position.y - 3 &&
-          b.position.y <= bot.entity.position.y + 5,
-      )
+      .filter(usable)
       .sort(
         (a, b) =>
           a.position.distanceTo(bot.entity.position) -
           b.position.distanceTo(bot.entity.position),
       )[0]
+    if (cacheKey) nearbyCache.set(cacheKey, {
+      at: now, origin: bot.entity.position.clone(), position: found?.position.clone() ?? null,
+    })
+    return found
+  }
+  function usable(b) {
+    return b &&
+      !((isLog(b.name) || stoneNames.has(b.name) || ironOreNames.has(b.name)) &&
+        (constructionBlock(b.position) || resourceBusy(b.position))) &&
+      (blocked.get(b.position.toString()) ?? 0) < Date.now() &&
+      b.position.y >= bot.entity.position.y - 3 &&
+      b.position.y <= bot.entity.position.y + 5
   }
   async function bounded(work, ms, cancel = () => {}) {
     let timer
@@ -1256,8 +1272,8 @@ export function installSurvival(bot, state, log, opts = {}) {
       (e) =>
         e !== bot.entity && e.position.distanceTo(bot.entity.position) < 24,
     )
-    const logs = nearbyBlock((b) => isLog(b.name), 24)
-    const stone = nearbyBlock((b) => stoneNames.has(b.name), 12)
+    const logs = nearbyBlock((b) => isLog(b.name), 24, 'log24')
+    const stone = nearbyBlock((b) => stoneNames.has(b.name), 12, 'stone12')
     const origin =
       state.shelter &&
       new Vec3(state.shelter.x, state.shelter.y, state.shelter.z)
@@ -1643,12 +1659,12 @@ export function installSurvival(bot, state, log, opts = {}) {
       return { ate: food.name }
     }
     if (action === 'gather_wood') {
-      const b = nearbyBlock((b) => isLog(b.name), 24)
+      const b = nearbyBlock((b) => isLog(b.name), 24, 'log24')
       if (!b) throw Error('No reachable tree')
       return dig(b, '_axe')
     }
     if (action === 'mine_stone') {
-      const b = nearbyBlock((b) => stoneNames.has(b.name), 12)
+      const b = nearbyBlock((b) => stoneNames.has(b.name), 12, 'stone12')
       if (!b) throw Error('No reachable stone')
       return dig(b, '_pickaxe')
     }
@@ -1785,7 +1801,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     if (action === 'explore') {
       const p = bot.entity.position.clone()
       // Walk toward visible resources before choosing a blind scouting bearing.
-      const landmark = nearbyBlock((b) => isLog(b.name), 64)
+      const landmark = nearbyBlock((b) => isLog(b.name), 64, 'log64', 20000, 16)
       const angle = landmark
         ? Math.atan2(landmark.position.z - p.z, landmark.position.x - p.x)
         : scoutStep * 2.39996 + (bot.username.charCodeAt(0) % 6)
