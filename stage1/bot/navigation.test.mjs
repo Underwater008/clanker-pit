@@ -450,6 +450,28 @@ test('a clanker already on an open outdoor bank clears stale underground recover
   assert.equal(skills.candidates(skills.observation()).escape_upward, undefined)
 })
 
+test('a lower outdoor bank never starts underground recovery after route failures', async () => {
+  const { bot, skills } = fixture({ village: {
+    flag: new Vec3(0, 70, 0), lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false,
+  } })
+  bot.entity.onGround = true
+  bot.pathfinder.goto = async () => { throw new Error('NoPath') }
+  await assert.rejects(skills.execute('explore'), /NoPath/)
+  assert.equal(skills.candidates(skills.observation()).escape_upward, undefined)
+})
+
+test('builders outside the graded village return before offering construction', () => {
+  const { bot, skills, state } = fixture({ inventory: [{ name: 'cobblestone', count: 12 }],
+    village: { flag: new Vec3(0, 63, 0), lotIndex: 0,
+      summary: () => ({}), isEnemyPlayer: () => false } })
+  state.role = 'builder'
+  bot.entity.position = new Vec3(10.5, 64, 6.5)
+  const options = skills.candidates(skills.observation())
+  assert.ok(options.return_to_post)
+  assert.equal(options.build_wall, undefined)
+  assert.equal(options.repair_blast_hole, undefined)
+})
+
 test('a drowned behind a solid wall does not keep villagers fleeing', () => {
   const { bot, skills, state } = fixture({ village: {
     flag: new Vec3(0, 63, 0), lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false,

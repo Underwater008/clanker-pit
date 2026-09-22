@@ -552,17 +552,20 @@ export function installSurvival(bot, state, log, opts = {}) {
   function escapeTarget() {
     const target = escapeSession ?? (villageCtx ? villageCtx.flag.offset(0, 1, 0) : state.camp)
     if (!target || bot.entity.isInWater) return null
-    // A lower outdoor bank is not an underground trap. Clear a previously
-    // latched climb only when local loaded blocks show open air above a solid
-    // foothold through the village surface level.
-    if (escapeSession && villageCtx && bot.entity.onGround) {
-      const feet = bot.entity.position.floored()
-      let open = solid(bot.blockAt(feet.offset(0, -1, 0)))
-      for (let y = feet.y; open && y <= Math.max(feet.y + 2, target.y + 2); y++) {
+    const feet = bot.entity.position.floored()
+    const roofed = () => {
+      for (let y = feet.y + 2; y <= Math.max(feet.y + 3, target.y + 2); y++) {
         const block = bot.blockAt(new Vec3(feet.x, y, feet.z))
-        open = Boolean(block) && !solid(block)
+        if (block && solid(block) && !block.name.endsWith('_leaves')) return true
       }
-      if (open) { escapeSession = null; blockedRoutes = 0; return null }
+      return false
+    }
+    // A lower outdoor bank is not an underground trap. Repeated route failures
+    // there should not latch an endless attempt to climb to monument altitude.
+    if (escapeSession && villageCtx && bot.entity.onGround) {
+      if (solid(bot.blockAt(feet.offset(0, -1, 0))) && !roofed()) {
+        escapeSession = null; blockedRoutes = 0; return null
+      }
     }
     if (bot.entity.position.y >= target.y - 0.1 ||
         Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z) > 32) {
@@ -571,6 +574,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
     if (!escapeSession && (blockedRoutes < 2 || Date.now() - lastBlockedRoute > 60000 ||
         target.y - bot.entity.position.y < 3)) return null
+    if (villageCtx && !roofed()) return null
     escapeSession ??= new Vec3(target.x, target.y, target.z)
     return escapeSession
   }
@@ -1435,8 +1439,13 @@ export function installSurvival(bot, state, log, opts = {}) {
     // does the right kind of work when Jev is unavailable.
     if (villageCtx) {
       const V = obs.village ?? {}
-      const nearVillage = V.distance_from_flag <= 32 &&
-        Math.abs(bot.entity.position.y - villageCtx.flag.y) <= 8
+      const dx = bot.entity.position.x - villageCtx.flag.x
+      const dz = bot.entity.position.z - villageCtx.flag.z
+      const onGradedFloor = (Math.abs(dx) <= WALL_RADIUS + 0.5 &&
+        Math.abs(dz) <= WALL_RADIUS + 0.5) ||
+        (dz >= WALL_RADIUS - 0.5 && dz <= WALL_RADIUS + 6.5 && Math.abs(dx) <= 2.5)
+      const nearVillage = onGradedFloor &&
+        Math.abs(bot.entity.position.y - (villageCtx.flag.y + 1)) <= 3
       const vo = {}
       const vadd = (key, description) => {
         if ((state.cooldowns[key] ?? 0) < Date.now()) vo[key] = description
