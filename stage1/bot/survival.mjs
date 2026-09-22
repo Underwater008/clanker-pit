@@ -1856,7 +1856,11 @@ export function installSurvival(bot, state, log, opts = {}) {
     if (action === 'explore') {
       const p = bot.entity.position.clone()
       // Walk toward visible resources before choosing a blind scouting bearing.
-      const landmark = nearbyBlock((b) => isLog(b.name), 64, 'log64', 20000, 16)
+      // Scanning a 64-block cube for every scouting turn can monopolize the
+      // controller event loop and delay movement packets for the whole cast.
+      // Reuse the nearby observation first, then search a smaller horizon.
+      const landmark = nearbyBlock((b) => isLog(b.name), 24, 'log24') ??
+        nearbyBlock((b) => isLog(b.name), 32, 'log32', 20000, 16)
       const angle = landmark
         ? Math.atan2(landmark.position.z - p.z, landmark.position.x - p.x)
         : scoutStep * 2.39996 + (bot.username.charCodeAt(0) % 6)
@@ -1889,7 +1893,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (action === 'harvest_wheat') return harvestWheat()
       if (action === 'pave_road') return paveRoad()
       if (action === 'gather_wheat_seeds') {
-        const grass = nearbyBlock((b) => b.name === 'short_grass', 24)
+        const grass = nearbyBlock((b) => b.name === 'short_grass', 24, 'grass24', 1500)
         if (!grass) throw new Error('No nearby wild grass for seeds')
         const result = await dig(grass)
         return { cutGrass: grass.position, collected: result.collected }
