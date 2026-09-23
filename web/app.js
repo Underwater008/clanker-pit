@@ -21,6 +21,15 @@
   var LOOK_SENS = 0.0032;          // radians per pixel
   var TOUCH_LOOK_SENS = 0.006;
   var MAX_PITCH = Math.PI / 2 - 0.03;
+  // Explicit localhost-only fixture for reviewing a populated banner before
+  // the gateway is deployed. Never fabricates participants on the public site.
+  var queuePreviewMode = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) &&
+    new URLSearchParams(location.search).get('queue-preview') === '1';
+  var playMotionPreview = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) &&
+    new URLSearchParams(location.search).get('play-motion');
+  if (['arrow', 'bounce', 'spring', 'punch'].indexOf(playMotionPreview) === -1)
+    playMotionPreview = null;
+  if (playMotionPreview) document.body.dataset.playMotion = playMotionPreview;
 
   // ---------- tiny dom utils ----------
   function $(id) { return document.getElementById(id); }
@@ -63,6 +72,7 @@
   var lastChatId = 0;
   var lastStateReceivedAt = 0;
   var pollBusy = false;
+  var focusTab = 'decisions';
 
   // ---------- hls ----------
   function feedUrl(feed) { return VIDEO_BASE + '/' + feed + '/index.m3u8'; }
@@ -81,7 +91,11 @@
       fastSocket: null, fastActive: false, fastDecoding: false, fastLast: 0,
       fastRetryAt: 0, fastOpenedAt: 0 };
     function setLive(on) {
-      if (hudEl) hudEl.classList.toggle('live', Boolean(on && (feed !== 'guest' || guest.cameraReady())));
+      if (!hudEl) return;
+      var isLive = Boolean(on && (feed !== 'guest' || guest.cameraReady()));
+      hudEl.classList.toggle('live', isLive);
+      var liveLabel = hudEl.querySelector('.camera-live-label');
+      if (liveLabel) liveLabel.textContent = isLive ? 'LIVE' : 'OFF AIR';
     }
     function overlay(show, code, msg, retry) {
       overlayEls.root.classList.toggle('hidden', !show);
@@ -125,7 +139,7 @@
     function startHls() {
       if (disposed || inst.hls) return;
       if (window.Hls && Hls.isSupported()) {
-        inst.hls = new Hls(feed === 'guest' || feed === 'arena' ? {
+        inst.hls = new Hls(feed === 'guest' || feed === 'arena' || feed === 'server' ? {
           // The stream publishes 200 ms parts inside 2 s segments. Counting
           // whole segments here pins interactive playback 2 s behind live.
           lowLatencyMode: true, liveSyncDuration: 1,
@@ -154,7 +168,8 @@
             inst.hls.recoverMediaError();
           } else {
             watchProgress = false;
-            overlay(true, 'OFF AIR', 'This camera is unreachable.', true);
+            overlay(true, 'OFF AIR', feed === 'server'
+              ? 'The Server orbit camera is offline.' : 'This camera is unreachable.', true);
           }
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -278,7 +293,8 @@
       if (inst.fastActive) return;
       watchProgress = false;
       setLive(false);
-      overlay(true, 'OFF AIR', 'This camera is unreachable.', true);
+      overlay(true, 'OFF AIR', feed === 'server'
+        ? 'The Server orbit camera is offline.' : 'This camera is unreachable.', true);
     }
     function retry(event) { event.stopPropagation(); start(); }
     video.addEventListener('playing', playing);
@@ -509,8 +525,9 @@
         return;
       }
       visible[name] = true;
-      var label = (isGuest ? 'CREEPER · ' : '') + displayName.toUpperCase();
-      var labelWidth = Math.max(62, Math.min(170, label.length * 8 + 25));
+      var role = !isGuest && (player.role || (village.roles && village.roles[name]));
+      var label = (isGuest ? 'CREEPER · ' : '') + displayName.toUpperCase() + (role ? ' · ' + role.toUpperCase() : '');
+      var labelWidth = Math.max(62, Math.min(220, label.length * 7.3 + 24));
       var offsets = [[0,-42],[-65,-50],[65,-50],[-65,18],[65,18],[0,25],[-110,-20],[110,-20],[0,-76],[0,56]];
       var box;
       for (var i = 0; i < offsets.length; i++) {
@@ -552,7 +569,7 @@
 
   function showSingle(feed, label, sub, offlineMsg) {
     $('gridStage').hidden = true;
-    $('singleStage').style.display = 'block';
+    $('singleStage').style.display = 'flex';
     $('singleLabel').textContent = label;
     singleSub.textContent = sub;
     if (attachedFeed === feed) return; // already attached: don't restart HLS
@@ -566,6 +583,7 @@
       singleOverlay.msg.textContent = offlineMsg || 'No native view for this clanker yet.';
       singleOverlay.retry.style.display = 'none';
       singleHud.classList.remove('live');
+      singleHud.querySelector('.camera-live-label').textContent = 'OFF AIR';
       return;
     }
     live.instances.push(attach(singleVideo, singleOverlay, singleHud, feed));
@@ -595,7 +613,8 @@
         var left = el('span');
         var dot = el('span', 'live-dot');
         left.appendChild(dot);
-        left.appendChild(el('span', null, feed.toUpperCase() + ' / POV'));
+        var label = el('span', 'cell-label', feed.toUpperCase());
+        left.appendChild(label);
         hud.appendChild(left);
         hud.appendChild(el('span', 'sub', 'TAP TO FOCUS'));
         cell.appendChild(aspect); cell.appendChild(hud);
@@ -605,14 +624,23 @@
           video: video,
           overlay: { root: overlayRoot, code: overlayCode, msg: overlayMsg, retry: overlayRetry },
           hud: hud,
-          feed: feed
+          feed: feed,
+          label: label
         };
       });
       gridBuilt = true;
     }
+    renderGridLabels();
     Array.prototype.forEach.call(grid.children, function (cell) {
       var a = cell._attach;
       live.instances.push(attach(a.video, a.overlay, a.hud, a.feed));
+    });
+  }
+  function renderGridLabels() {
+    Array.prototype.forEach.call($('gridStage').children, function (cell) {
+      var a = cell._attach;
+      var b = bot(a.feed);
+      a.label.textContent = a.feed.toUpperCase() + (b && b.role ? ' · ' + b.role.toUpperCase() : '');
     });
   }
 
@@ -620,8 +648,10 @@
   var modeButtons = document.querySelectorAll('.modes [data-mode]');
   function setMode(mode, clanker) {
     if (mode !== 'play') releaseMouseLook();
+    $('howItWorks').open = false;
     if (mode === 'grid') { state.mode = 'grid'; }
     else if (mode === 'arena') { state.mode = 'arena'; }
+    else if (mode === 'server') { state.mode = 'server'; }
     else if (mode === 'play') { state.mode = 'play'; }
     else if (mode === 'focus' || mode === 'pov' || FOUNDING.indexOf(mode) !== -1) {
       state.mode = 'focus';
@@ -632,21 +662,39 @@
     if (history.replaceState) {
       var q = state.mode === 'focus' ? '?v=focus&c=' + state.clanker
         : '?v=' + state.mode;
+      if (queuePreviewMode) q += '&queue-preview=1';
+      if (playMotionPreview) q += '&play-motion=' + playMotionPreview;
       history.replaceState(null, '', q);
     }
   }
   Array.prototype.forEach.call(modeButtons, function (b) {
     b.addEventListener('click', function () { setMode(b.dataset.mode); });
   });
+  $('joinChip').addEventListener('click', function () { setMode('play'); });
 
   function render() {
     var mode = state.mode;
+    document.body.dataset.mode = mode;
+    // One scoreboard follows the visible video surface, including the Grid.
+    var villageBar = $('villageBar');
+    var barHost = mode === 'grid' ? $('stageColumn') : $('singleStage').querySelector('.aspect');
+    if (villageBar.parentNode !== barHost) {
+      if (mode === 'grid') barHost.appendChild(villageBar);
+      else barHost.insertBefore(villageBar, $('arenaTitle'));
+    }
+    var roundStatus = $('roundStatus');
+    var roundHost = mode === 'grid' ? villageBar : document.querySelector('.camera-info');
+    if (roundStatus.parentNode !== roundHost) {
+      if (mode === 'grid') roundHost.appendChild(roundStatus);
+      else roundHost.insertBefore(roundStatus, roundHost.querySelector('.camera-live'));
+    }
     Array.prototype.forEach.call(modeButtons, function (b) {
       b.classList.toggle('active', b.dataset.mode === mode);
     });
     $('focusPicker').hidden = mode !== 'focus';
     $('decisionNow').hidden = mode !== 'focus';
     $('focusPanel').hidden = mode !== 'focus';
+    $('arenaTitle').hidden = mode !== 'arena';
     $('playPanel').hidden = mode !== 'play';
     renderAvailability();
     var help = $('playHelp');
@@ -658,21 +706,23 @@
       $('guestCameraOverlay').hidden = true;
       $('guestQueueOverlay').hidden = true;
     }
-    if (mode === 'arena') showSingle('arena', 'ARENA 01 / WIDE', 'CAM 01 · SPECTATOR FEED');
+    if (mode === 'arena') showSingle('arena', 'THE PIT', 'CAM 01');
+    else if (mode === 'server') showSingle('server', 'SERVER', 'CAM 02');
     else if (mode === 'grid') showGrid();
     else if (mode === 'focus') {
       var b = bot(state.clanker);
       var hasFeed = b ? b.nativeView : FOUNDING.indexOf(state.clanker) !== -1;
       showSingle(
         hasFeed ? state.clanker : null,
-        state.clanker.toUpperCase() + ' / FOCUS',
-        hasFeed ? 'POV + DECISIONS' : 'CONTROL ROOM'
+        state.clanker.toUpperCase(),
+        hasFeed ? 'POV' : 'NO CAMERA'
       );
       renderFocus();
     } else if (mode === 'play') {
       renderPlay();
     }
     renderArenaNameplates();
+    renderFocusTabs();
   }
 
   function bot(name) {
@@ -692,15 +742,44 @@
     return Boolean(telemetry && telemetry.village && telemetry.guest);
   }
   function renderAvailability() {
-    var village = Boolean(telemetry && telemetry.village);
     var guestOn = guestAvailable();
-    document.querySelector('[data-mode="play"]').hidden = !guestOn;
-    $('joinChip').hidden = !guestOn || state.mode === 'play';
-    var showMeta = state.mode === 'arena';
-    $('metaRow').hidden = !showMeta || !village;
-    $('survivalMeta').hidden = !showMeta || !telemetry || village;
-    $('roundLabel').textContent = !telemetry ? 'CONNECTING' : village ? 'VILLAGE ROUND' : 'SURVIVAL ROUND';
+    var showInvitation = (guestOn || queuePreviewMode) && state.mode !== 'play' && !guest.turnLive();
+    document.body.classList.toggle('guest-available', showInvitation);
+    $('joinBanner').hidden = !showInvitation;
+    renderBannerQueue();
     renderTelemetryStatus();
+  }
+  var bannerQueueSignature = '';
+  function renderBannerQueue() {
+    var g = telemetry && telemetry.guest;
+    if (queuePreviewMode) g = { queueLength: 4, nextTurnInMs: 12000,
+      queueEntries: ['FuseBox', 'SneakyFern', 'BoomBean', 'PixelMoth'].map(function (nickname, index) {
+        return { id: index, nickname: nickname };
+      }), active: { nickname: 'MossByte' } };
+    if (!g) return;
+    var entries = (g.queueEntries || (g.queuePreview || []).map(function (nickname) {
+      return { nickname: nickname };
+    })).slice(0, 5);
+    var signature = JSON.stringify(entries);
+    if (signature !== bannerQueueSignature) {
+      bannerQueueSignature = signature;
+      clear($('bannerQueue'));
+      var copies = entries.length > 1 ? 2 : 1;
+      for (var copy = 0; copy < copies; copy++) entries.forEach(function (entry, index) {
+        var row = el('li', 'banner-queue-row');
+        if (copy) { row.setAttribute('aria-hidden', 'true'); row.classList.add('queue-copy'); }
+        row.appendChild(el('span', 'queue-number', String(index + 1).padStart(2, '0')));
+        row.appendChild(el('b', '', entry.nickname));
+        $('bannerQueue').appendChild(row);
+      });
+      $('bannerQueue').classList.toggle('scrolling', entries.length > 1);
+      $('bannerQueue').style.animationDuration = Math.max(8, entries.length * 3) + 's';
+      $('bannerQueue').parentNode.style.maxHeight = Math.max(2, entries.length) * 29 + 'px';
+    }
+    $('bannerEmpty').hidden = entries.length > 0;
+    $('bannerCount').textContent = String(g.queueLength || 0);
+    $('bannerActiveLabel').textContent = queuePreviewMode ? 'QUEUE PREVIEW · SAMPLE' : g.active ? 'IN THE PIT' : 'NEXT SLOT';
+    $('bannerActive').textContent = g.active ? g.active.nickname : fmtClock(g.nextTurnInMs);
   }
   function renderTelemetryStatus() {
     var at = telemetry && Date.parse(telemetry.updated);
@@ -747,6 +826,9 @@
     $('currentSource').className = 'badge ' + (action.source === 'fallback' ? 'policy' : action.source === 'safety_reflex' ? 'reflex' : '');
     $('currentPlan').textContent = (brain.think && brain.think.intention) || b.goal || 'Waiting for a recorded plan…';
     var outcome = action.status === 'failed' || action.status === 'succeeded' ? action : latest;
+    $('trackPlan').textContent = brain.think && brain.think.intention ? ((b.model && b.model.provider) || 'MODEL').toUpperCase() : 'WAITING';
+    $('trackChoice').textContent = sourceLabel(action.source).replace(' POLICY', '').replace(' MODEL', '');
+    $('trackResult').textContent = running ? 'RUNNING' : outcome ? (outcome.ok === false || outcome.status === 'failed' ? 'FAILED' : 'RECORDED') : 'WAITING';
     $('currentOutcome').textContent = outcome ? 'Last result · ' + outcomeText(outcome) : 'No completed action recorded yet.';
     $('currentOutcome').classList.toggle('failed', Boolean(outcome && (outcome.ok === false || outcome.status === 'failed')));
     var providerBits = [];
@@ -761,7 +843,7 @@
     var results = $('actionResults');
     var expanded = Array.prototype.map.call(results.querySelectorAll('details[open]'), function (d) { return d.dataset.resultKey; });
     clear(results);
-    recent.slice().reverse().forEach(function (r) {
+    recent.slice(-3).reverse().forEach(function (r) {
       var row = el('div', 'action-result' + (r.ok === false ? ' failed' : ''));
       row.appendChild(el('b', null, (r.action || '').replace(/_/g, ' ') + (r.ok === false ? ' · FAILED' : partialResult(r.result) ? ' · ATTEMPT FINISHED' : ' · COMPLETED')));
       if (r.source) row.appendChild(el('span', 'badge', sourceLabel(r.source)));
@@ -785,31 +867,15 @@
   function renderVillageBar() {
     var v = telemetry && telemetry.village;
     $('villageBar').hidden = !v;
+    $('roundStatus').hidden = !v;
     if (!v) return;
     $('coolantText').textContent = v.water ? (v.water.fed + '/' + v.water.target) : '—';
     $('coolantFill').style.width = (v.water ? v.water.pct : 0) + '%';
-    $('wallText').textContent = v.wall ? (v.wall.complete ? 'DONE' : v.wall.done + '/' + v.wall.total) : '—';
-    $('gateText').textContent = v.gate ? (v.gate.complete ? 'DONE' : v.gate.done + '/' + v.gate.total) : '—';
-    $('bedsText').textContent = v.beds ? v.beds.done + '/' + v.beds.total : '—';
+    $('coolantMeter').setAttribute('aria-valuemax', v.water ? v.water.target : 40);
+    $('coolantMeter').setAttribute('aria-valuenow', v.water ? v.water.fed : 0);
+    $('villageBar').classList.toggle('coolant-critical', Boolean(v.water && v.water.pct <= 25));
+    $('villageBar').classList.toggle('coolant-warning', Boolean(v.water && v.water.pct > 25 && v.water.pct <= 50));
     renderRoundTimer();
-    var chips = $('castChips');
-    clear(chips);
-    population().forEach(function (name) {
-      var b = bot(name);
-      var chip = el('span', 'cast-chip');
-      chip.appendChild(el('b', null, name));
-      if (b && b.offline) chip.appendChild(el('span', 'dead', '×'));
-      if (b && b.role) chip.appendChild(el('span', 'role', b.role));
-      else if (v.roles && v.roles[name]) chip.appendChild(el('span', 'role', v.roles[name]));
-      chip.addEventListener('click', function () { setMode('focus', name.toLowerCase()); });
-      chips.appendChild(chip);
-    });
-    var title = $('matchTitle');
-    if (title && v.water) {
-      title.textContent = v.water.fed >= v.water.target && !v.atCapacity
-        ? 'The Server is drinking. A villager is booting…'
-        : 'The Server hums at ' + v.water.pct + '% coolant.';
-    }
   }
   function renderRoundTimer() {
     var startedAt = telemetry && telemetry.village && telemetry.village.startedAt;
@@ -875,6 +941,21 @@
     });
   }
 
+  function renderFocusTabs() {
+    document.querySelectorAll('[data-focus-tab]').forEach(function (button) {
+      var active = button.dataset.focusTab === focusTab;
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+      button.classList.toggle('active', active);
+    });
+    $('focusPanel').dataset.tab = focusTab;
+  }
+  document.querySelectorAll('[data-focus-tab]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      focusTab = button.dataset.focusTab;
+      renderFocusTabs();
+    });
+  });
+
   function renderFocus() {
     renderFocusPicker();
     var name = state.clanker;
@@ -883,6 +964,9 @@
       $('currentAction').textContent = state.clanker.toUpperCase() + ' · WAITING FOR TELEMETRY';
       $('currentPlan').textContent = 'Waiting for a recorded plan…';
       $('currentSource').textContent = 'SOURCE UNAVAILABLE';
+      $('trackPlan').textContent = 'WAITING';
+      $('trackChoice').textContent = 'WAITING';
+      $('trackResult').textContent = 'WAITING';
       $('currentOutcome').textContent = '';
       $('providerStatus').textContent = '';
       $('brainModel').textContent = 'waiting';
@@ -932,7 +1016,7 @@
     clear(list);
     var jev = (b.brain && b.brain.jev) || [];
     if (!jev.length) list.appendChild(el('div', 'jev-meta', 'no decisions recorded yet'));
-    jev.slice().reverse().forEach(function (d) {
+    jev.slice(-1).reverse().forEach(function (d) {
       list.appendChild(jevEntry(d));
     });
 
@@ -993,7 +1077,9 @@
     metaBits.push(timeAgo(d.t));
     head.appendChild(el('span', 'jev-meta', metaBits.join(' · ')));
     entry.appendChild(head);
-    if (d.reason || d.error || d.requestPending) entry.appendChild(el('div', 'jev-reason', d.reason || d.error || 'Model request pending; using a fallback choice.'));
+    if (d.reason || d.error || d.requestPending) entry.appendChild(el('div', 'jev-reason',
+      d.reason === 'single_option' ? 'One feasible action was offered.' :
+      d.reason || d.error || 'Model request pending; using a fallback choice.'));
     var options = d.options || {};
     var keys = Object.keys(options);
     if (!keys.length) {
@@ -1008,7 +1094,8 @@
       var bar = el('span', 'bar');
       var fill = el('i');
       var p = typeof opt.p === 'number' ? Math.max(0, Math.min(1, opt.p)) : 0;
-      fill.style.width = (p * 100).toFixed(1) + '%';
+      fill.style.width = typeof opt.p === 'number' ? (p * 100).toFixed(1) + '%' : (chosen ? '100%' : '0%');
+      if (chosen && typeof opt.p !== 'number') row.classList.add('unscored');
       bar.appendChild(fill);
       row.appendChild(bar);
       row.appendChild(el('span', 'pct', typeof opt.p === 'number' ? Math.round(p * 100) + '%' : (chosen ? '✓' : '—')));
@@ -1037,7 +1124,8 @@
     touch: 'ontouchstart' in window,
     turnLive: function () {
       var g = telemetry && telemetry.guest;
-      return Boolean(g && g.active && guest.nickname && g.active.nickname === guest.nickname);
+      return Boolean(g && g.active && g.camera && g.camera.status !== 'idle' && guest.token &&
+        guest.nickname && g.active.nickname === guest.nickname);
     },
     cameraReady: function () {
       var camera = telemetry && telemetry.guest && telemetry.guest.camera;
@@ -1068,9 +1156,12 @@
   }
 
   function guestStatus() {
-    return fetch(API_BASE + '/guest/status', { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .catch(function () { return null; });
+    function publicStatus() {
+      return fetch(API_BASE + '/guest/status', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; });
+    }
+    return guest.token ? guestPost('/guest/status', { token: guest.token }).catch(publicStatus) : publicStatus();
   }
 
   $('joinBtn').addEventListener('click', function () {
@@ -1163,7 +1254,7 @@
     $('guestCameraOverlay').hidden = !turn || cameraReady;
     $('guestQueueOverlay').hidden = !available || turn || !guest.token;
     if (available && !turn && guest.token) {
-      $('guestQueueCountdown').textContent = 'Arena feed while you wait. Next slot in ' +
+      $('guestQueueCountdown').textContent = 'The Pit feed while you wait. Next slot in ' +
         fmtClock(g.nextTurnInMs) + '; your camera and controls start when your turn begins.';
     }
     $('guestCrosshair').hidden = !controlsReady;
@@ -1174,9 +1265,10 @@
     if (turn && !cameraReady) {
       Object.keys(guest.keys).forEach(function (key) { guest.keys[key] = false; });
       singleHud.classList.remove('live');
+      singleHud.querySelector('.camera-live-label').textContent = 'OFF AIR';
     }
     if (!available) {
-      showSingle('arena', 'ARENA / WATCH', 'GUEST PLAY UNAVAILABLE');
+      showSingle('arena', 'THE PIT', 'CAM 01');
       return;
     }
     if (turn) {
@@ -1185,11 +1277,11 @@
         if (!guest.touch) $('singleStage').focus({ preventScroll: true });
       }
       guest.wasActive = true;
-      showSingle('guest', 'CREEPER CAM / YOUR TURN', cameraReady ? 'CREEPER FEED' : 'CAMERA STARTING');
+      showSingle('guest', 'CREEPER', 'POV');
       $('turnTimer').textContent = !cameraReady ? '—' : g && g.active ? fmtClock(g.active.remainingMs) : '0:00';
       return;
     }
-    showSingle('arena', 'ARENA / QUEUE', 'WAITING FOR CREEPER TURN');
+    showSingle('arena', 'THE PIT', 'CAM 01');
     if (guest.wasActive) {
       guest.wasActive = false;
       guest.finished = true;
@@ -1476,45 +1568,53 @@
     }, 2500).catch(function () {}).finally(function () { guest.inputInFlight = false; });
   }, 40);
 
-  // ---------- QR chip ----------
+  // ---------- play-page QR ----------
   function drawQrOn(canvas, size) {
-    var qr = qrcode(0, 'M');
+    var qr = qrcode(0, 'H');
     qr.addData(location.origin + '/?v=play', 'Byte');
     qr.make();
     var count = qr.getModuleCount();
-    var scale = Math.max(1, Math.floor(size / (count + 8)));
-    var offset = Math.floor((size - count * scale) / 2);
+    // Render at 4x resolution; CSS scales the square down without rounding
+    // individual modules into uneven or blurry pixels.
+    var pixels = size * 4;
+    canvas.width = pixels;
+    canvas.height = pixels;
+    var scale = Math.max(1, Math.floor(pixels / (count + 8)));
+    var offset = Math.floor((pixels - count * scale) / 2);
     var ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = '#c8ffb2';
+    ctx.fillRect(0, 0, pixels, pixels);
     for (var r = 0; r < count; r++)
       for (var c = 0; c < count; c++)
-        if (qr.isDark(r, c)) ctx.fillRect(offset + c * scale, offset + r * scale, scale, scale);
+        if (qr.isDark(r, c)) {
+          ctx.fillStyle = (r + c) % 7 === 0 ? '#174b25' : '#09200e';
+          ctx.fillRect(offset + c * scale, offset + r * scale, scale, scale);
+        }
+    // A thirteen-module pixel face covers the center. Error correction H
+    // protects the link; the three finder squares and quiet zone stay intact.
+    var face = [
+      '.............', '..XXX...XXX..', '..XXX...XXX..', '..XXX...XXX..',
+      '.............', '.....XXX.....', '....XXXXX....', '....XXXXX....',
+      '....XXXXX....', '....XX.XX....', '....XX.XX....', '....XX.XX....',
+      '.............'
+    ];
+    var faceStart = Math.floor((count - face.length) / 2);
+    var faceX = offset + faceStart * scale;
+    var faceY = offset + faceStart * scale;
+    ctx.fillStyle = '#91e47c';
+    ctx.fillRect(faceX, faceY, face.length * scale, face.length * scale);
+    ctx.fillStyle = '#07180a';
+    for (var y = 0; y < face.length; y++)
+      for (var x = 0; x < face[y].length; x++)
+        if (face[y][x] === 'X') ctx.fillRect(faceX + x * scale, faceY + y * scale, scale, scale);
   }
   function drawQr() {
     try {
-      drawQrOn($('qrCanvas'), 96)
+      drawQrOn($('bannerQrCanvas'), 132)
       drawQrOn($('playQrCanvas'), 110)
     } catch (e) {
-      $('qrCanvas').hidden = true
+      $('bannerQrCanvas').hidden = true
       $('playQrCanvas').hidden = true
-    }
-  }
-  $('joinChip').addEventListener('click', function () { setMode('play'); });
-
-  function renderChip() {
-    var g = telemetry && telemetry.guest;
-    $('joinChip').hidden = state.mode === 'play' || !guestAvailable();
-    if ($('joinChip').hidden) return;
-    if (g && g.active) {
-      $('chipSub').textContent = g.active.nickname + ' is playing · next slot in ' + fmtClock(g.nextTurnInMs);
-    } else if (g) {
-      $('chipSub').textContent = g.queueLength
-        ? g.queueLength + ' in queue · next slot in ' + fmtClock(g.nextTurnInMs)
-        : 'next slot in ' + fmtClock(g.nextTurnInMs);
-    } else {
-      $('chipSub').textContent = 'queue warming up…';
     }
   }
 
@@ -1553,7 +1653,7 @@
         renderAvailability();
         renderVillageBar();
         renderChat();
-        renderChip();
+        if (state.mode === 'grid') renderGridLabels();
         if (state.mode === 'focus') render();
         if (state.mode === 'play') renderPlay();
       })
@@ -1580,6 +1680,7 @@
       lastGuestStatusAt = Date.now();
       if (telemetry && telemetry.guest && telemetry.guest.queueLength !== undefined) {
         telemetry.guest.queuePreview = s.queuePreview || telemetry.guest.queuePreview;
+        telemetry.guest.queueEntries = s.queueEntries;
         telemetry.guest.queueLength = s.queueLength;
         telemetry.guest.active = s.active;
         telemetry.guest.nextTurnInMs = s.nextTurnInMs;
@@ -1587,9 +1688,9 @@
       } else if (telemetry) {
         telemetry.guest = s;
       }
+      renderBannerQueue();
       if (state.mode === 'play') renderPlay();
-      if (telemetry && telemetry.guest && telemetry.guest.active && guest.nickname &&
-          telemetry.guest.active.nickname === guest.nickname && state.mode !== 'play') {
+      if (guest.turnLive() && state.mode !== 'play') {
         // my turn started while browsing elsewhere: jump to the play view
         setMode('play');
       }
@@ -1605,7 +1706,7 @@
   var params = new URLSearchParams(location.search);
   var v = params.get('v');
   var c = params.get('c');
-  if (v === 'grid' || v === 'arena' || v === 'play' || v === 'focus' || v === 'pov')
+  if (v === 'grid' || v === 'arena' || v === 'server' || v === 'play' || v === 'focus' || v === 'pov')
     setMode(v, c ? c.toLowerCase() : 'cinder');
   else if (v && FOUNDING.indexOf(v) !== -1) setMode('focus', v);
   else setMode('focus', 'mira');

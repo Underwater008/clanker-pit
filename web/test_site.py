@@ -28,7 +28,7 @@ class WebsiteTests(unittest.TestCase):
         for src in re.findall(r'<script src="([^"]+)"', HTML):
             if src.startswith('http'):
                 continue  # hls.js CDN, matches the existing site pattern
-            self.assertTrue((ROOT / src).exists(), f'missing local script {src}')
+            self.assertTrue((ROOT / src.split('?', 1)[0]).exists(), f'missing local script {src}')
 
     def test_stylesheets_and_api_routes_exist(self):
         self.assertIn('app.css', HTML)
@@ -36,7 +36,7 @@ class WebsiteTests(unittest.TestCase):
         self.assertTrue((ROOT / 'api' / 'state.js').exists())
 
     def test_deep_link_modes_are_handled(self):
-        for mode in ['arena', 'grid', 'play', 'focus', 'cinder', 'vex', 'mira', 'tally']:
+        for mode in ['arena', 'server', 'grid', 'play', 'focus', 'cinder', 'vex', 'mira', 'tally']:
             self.assertIn(f"'{mode}'", JS)
 
 
