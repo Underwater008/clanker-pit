@@ -885,6 +885,7 @@
     boomed: false,
     wasActive: false,
     finished: false,
+    mouseFallback: false,
     touch: 'ontouchstart' in window,
     turnLive: function () {
       var g = telemetry && telemetry.guest;
@@ -980,7 +981,7 @@
     showJoin.hidden = true; showQueued.hidden = true; showDone.hidden = true;
     $('turnHud').hidden = !turn;
     $('touchPad').hidden = !(controlsReady && guest.touch);
-    $('clickCatch').hidden = !(controlsReady && !guest.touch && document.pointerLockElement !== singleVideo);
+    $('clickCatch').hidden = !(controlsReady && !guest.touch && !guest.mouseFallback && document.pointerLockElement !== singleVideo);
     $('guestCameraOverlay').hidden = !turn || cameraReady;
     $('guestQueueOverlay').hidden = !available || turn || !guest.token;
     if (available && !turn && guest.token) {
@@ -989,6 +990,9 @@
     }
     $('guestCrosshair').hidden = !controlsReady;
     $('playHelp').hidden = !turn;
+    $('playControlHint').textContent = guest.mouseFallback
+      ? 'Mouse lock is unavailable here. Drag on the video to look; WASD and SPACE still work.'
+      : 'Click the video to capture the mouse. Press Escape to release it.';
     $('boomBtn').disabled = guest.boomed || !cameraReady;
     $('boomBtn').hidden = !cameraReady;
     if (turn && !cameraReady) {
@@ -1003,8 +1007,8 @@
     if (turn) {
       if (!guest.wasActive) window.scrollTo({ top: 0, behavior: 'smooth' });
       guest.wasActive = true;
-      showSingle('guest', 'PIPER CAM / YOUR TURN', cameraReady ? 'CREEPER FEED' : 'CAMERA STARTING');
-      $('turnTimer').textContent = g && g.active ? fmtClock(g.active.remainingMs) : '0:00';
+      showSingle('guest', 'CREEPER CAM / YOUR TURN', cameraReady ? 'CREEPER FEED' : 'CAMERA STARTING');
+      $('turnTimer').textContent = !cameraReady ? '—' : g && g.active ? fmtClock(g.active.remainingMs) : '0:00';
       return;
     }
     showSingle('arena', 'ARENA / QUEUE', 'WAITING FOR CREEPER TURN');
@@ -1070,21 +1074,47 @@
     guest.dirty = true;
   });
 
+  function useMouseFallback() {
+    if (!guest.canControl()) return;
+    guest.mouseFallback = true;
+    $('clickCatch').hidden = true;
+    $('singleStage').focus({ preventScroll: true });
+    renderPlay();
+  }
   $('clickCatch').addEventListener('click', function () {
     if (!guest.canControl()) return;
-    if (singleVideo.requestPointerLock) singleVideo.requestPointerLock();
+    if (!singleVideo.requestPointerLock) { useMouseFallback(); return; }
+    var request = singleVideo.requestPointerLock();
+    if (request && request.catch) request.catch(useMouseFallback);
   });
+  document.addEventListener('pointerlockerror', useMouseFallback);
   document.addEventListener('pointerlockchange', function () {
-    $('clickCatch').hidden = !(guest.canControl() && !guest.touch && document.pointerLockElement !== singleVideo);
+    $('clickCatch').hidden = !(guest.canControl() && !guest.touch && !guest.mouseFallback && document.pointerLockElement !== singleVideo);
+  });
+  var draggingLook = false, lastDrag = null;
+  $('singleStage').addEventListener('mousedown', function (e) {
+    if (!guest.canControl() || !guest.mouseFallback || e.button !== 0 || e.target.closest('button')) return;
+    draggingLook = true;
+    lastDrag = { x: e.clientX, y: e.clientY };
+    e.preventDefault();
   });
   document.addEventListener('mousemove', function (e) {
-    if (!guest.canControl() || document.pointerLockElement !== singleVideo) return;
-    if (e.movementX || e.movementY) {
-      guest.yaw = (guest.yaw === null ? 0 : guest.yaw) - e.movementX * LOOK_SENS;
-      guest.pitch = clampPitch(guest.pitch - e.movementY * LOOK_SENS);
+    if (!guest.canControl()) return;
+    var dx = 0, dy = 0;
+    if (document.pointerLockElement === singleVideo) { dx = e.movementX; dy = e.movementY; }
+    else if (guest.mouseFallback && draggingLook && lastDrag) {
+      dx = e.clientX - lastDrag.x;
+      dy = e.clientY - lastDrag.y;
+      lastDrag = { x: e.clientX, y: e.clientY };
+    }
+    if (dx || dy) {
+      guest.yaw = (guest.y === null ? 0 : guest.yaw) - dx * LOOK_SENS;
+      guest.pitch = clampPitch(guest.pitch - dy * LOOK_SENS);
       guest.dirty = true;
     }
   });
+  document.addEventListener('mouseup', function () { draggingLook = false; lastDrag = null; });
+  window.addEventListener('blur', function () { draggingLook = false; lastDrag = null; });
   document.addEventListener('mousedown', function (e) {
     // Pointer lock hides the cursor, so the visible BOOM button cannot be
     // clicked while steering. A deliberate left click then fires the same

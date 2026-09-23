@@ -51,7 +51,7 @@
     </section>
 
     <!-- single-feed stage: arena / pov / focus video / play turn -->
-    <section class="stage" id="singleStage" aria-label="Live feed">
+    <section class="stage" id="singleStage" aria-label="Live feed" tabindex="-1">
       <div class="aspect">
         <video id="singleVideo" playsinline autoplay muted></video>
         <div id="arenaNameplates" class="arena-nameplates" aria-label="Clanker positions in the arena" hidden>
@@ -182,6 +182,7 @@
         <div class="help-row"><b>SPACE</b> jump</div>
         <div class="help-row"><b>F / LEFT CLICK / BOOM</b> explode (once!)</div>
         <div class="help-note">That is the whole creeper kit. Nothing else.</div>
+        <div class="help-note" id="playControlHint">Click the video to capture the mouse. Press Escape to release it.</div>
       </div>
     </section>
 
