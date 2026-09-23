@@ -247,6 +247,10 @@ if [ "$GPU_OK" != "1" ]; then
   native Cinder 104 25580 camcinder
   native Vex 105 25581 camvex
   native Guest 106 25584 camguest
+  # The low-latency guest preview must sample the guest's fallback display,
+  # not the now-unused tile on GPU display :10.
+  tmux kill-session -t guestpreview 2>/dev/null || true
+  tmux new-session -d -s guestpreview "NATIVE_DISPLAY=106 GUEST_PREVIEW_X=0 GUEST_PREVIEW_Y=0 python3 $ARENA/capture/guest-preview.py 2>&1 | tee -a $ARENA/logs/guest-preview.log"
   sleep 60
   capf() { tmux new-session -d -s "cap$1" "bash $ARENA/capture/run-stream.sh $1 $2 2>&1 | tee -a $ARENA/logs/cap-$2.log"; }
   capf 101 mira; capf 102 tally; capf 103 arena; capf 104 cinder; capf 105 vex; capf 106 guest

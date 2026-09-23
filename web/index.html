@@ -74,8 +74,10 @@
         </div>
         <div class="turn-hud" id="turnHud" hidden>
           <span id="turnTimer">0:00</span>
+          <button id="cameraViewBtn" class="camera-view" type="button" disabled>THIRD PERSON</button>
           <button id="boomBtn" class="boom">BOOM</button>
         </div>
+        <div id="mouseLookHint" class="mouse-look-hint" hidden>CLICK GAME TO AIM · ESC TO RELEASE</div>
         <div class="guest-crosshair" id="guestCrosshair" aria-hidden="true" hidden></div>
         <div class="touch-pad" id="touchPad" hidden>
           <div class="touch-look-hint">DRAG RIGHT SIDE TO LOOK</div>
@@ -176,15 +178,16 @@
       </div>
       <div class="panel play-panel play-help" id="playHelp" hidden>
         <div class="help-row desktop-only"><b>WASD</b> walk</div>
-        <div class="help-row desktop-only"><b>DRAG</b> look</div>
+        <div class="help-row desktop-only" id="mouseHelp"><b>CLICK GAME</b> capture mouse · <b>ESC</b> release</div>
         <div class="help-row desktop-only"><b>SPACE</b> jump</div>
+        <div class="help-row desktop-only"><b>V</b> switch camera view</div>
         <div class="help-row desktop-only"><b>B / BOOM</b> explode once</div>
         <div class="help-row touch-only"><b>LEFT PAD</b> move</div>
         <div class="help-row touch-only"><b>DRAG RIGHT</b> look</div>
         <div class="help-row touch-only"><b>JUMP</b> button</div>
         <div class="help-row touch-only"><b>BOOM</b> button, once</div>
         <div class="help-note">That is the whole creeper kit. Nothing else.</div>
-        <div class="help-note desktop-only">Drag on the video to aim while using WASD. Press B or click BOOM to explode.</div>
+        <div class="help-note desktop-only">Move the mouse to aim while using WASD. Press B or click BOOM to explode.</div>
         <button id="leaveTurnBtn" class="ghost leave-turn">LEAVE TURN</button>
       </div>
     </section>

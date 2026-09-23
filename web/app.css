@@ -175,6 +175,21 @@ video[hidden] { display: none; }
   background: rgba(6,6,8,0.75); border: 1px solid var(--panel-edge);
   border-radius: 5px; padding: 8px 12px;
 }
+.camera-view {
+  border: 1px solid rgba(232,230,225,.45); border-radius: 3px;
+  background: rgba(6,6,8,.85); color: var(--bone); padding: 7px 9px;
+  min-height: 36px; font: 600 10px var(--mono); letter-spacing: .08em; cursor: pointer;
+}
+body.touch-device .camera-view { min-height: 42px; }
+.camera-view:hover:not(:disabled) { border-color: var(--creeper); color: var(--creeper); }
+.camera-view:disabled { opacity: .5; cursor: wait; }
+.mouse-look-hint {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 5; pointer-events: none; white-space: nowrap;
+  padding: 7px 10px; border-radius: 3px; background: rgba(6,6,8,.8);
+  color: var(--bone); font: 10px var(--mono); letter-spacing: .1em;
+}
+.stage.mouse-locked { cursor: none; }
 .boom {
   font-family: var(--mono); font-weight: 600; font-size: 12px; letter-spacing: 0.2em;
   background: var(--creeper); color: #04140a; border: none; border-radius: 4px;

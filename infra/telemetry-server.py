@@ -28,7 +28,7 @@ from urllib.request import Request, urlopen
 GUEST_BODY_LIMIT = 8 * 1024
 GUEST_TIMEOUT = 10
 GUEST_GET = {'/guest/status'}
-GUEST_POST = {'/guest/join', '/guest/leave', '/guest/input'}
+GUEST_POST = {'/guest/join', '/guest/leave', '/guest/input', '/guest/camera-view'}
 WHEP_SESSION = re.compile(r'^/guest/whep/[A-Za-z0-9_-]{1,100}$')
 WEBSOCKET_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 # RunPod forwards public HTTP through shared peers. Trust a single client-IP
