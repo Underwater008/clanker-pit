@@ -14,7 +14,7 @@ stack and restart only the affected components.
 
 The guest gateway fills quiet queues with 1–5 generated clanker names. Each
 scheduled name becomes a real, named vanilla creeper. Human and automatic
-creepers start 14 blocks outside the south gate (22 blocks from the Server),
+creepers start 22 blocks outside the south gate (30 blocks from the Server),
 giving defenders an approach window. `CamCreepers` is a
 spectator observer used only by the match controller: loaded blocks drive
 bounded path searches, and RCON applies movement impulses while vanilla

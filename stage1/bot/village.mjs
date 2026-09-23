@@ -270,9 +270,9 @@ export function serverAnatomy(flag) {
     springSign: plus(f, 0, 1, 11),
     // Starter supply chest, west of the rack.
     chest: plus(f, -3, 1, 0),
-    // Give defenders an approach window: 14 blocks beyond the south gate,
+    // Give defenders an approach window: 22 blocks beyond the south gate,
     // shared by human guests and scripted creepers.
-    guestSpawn: plus(f, 0, 1, WALL_RADIUS + 14),
+    guestSpawn: plus(f, 0, 1, WALL_RADIUS + 22),
   }
 }
 
