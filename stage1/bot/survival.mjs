@@ -172,7 +172,7 @@ export function safePerchLanding(bot, villageFloorY) {
   const feet = bot.entity.position.floored()
   if (feet.y < villageFloorY + 4 || bot.health < 14) return null
   const support = bot.blockAt(feet.offset(0, -1, 0))
-  if (!solid(support) || support.name.endsWith('_leaves')) return null
+  if (!solid(support)) return null
   const neighbors = [[1, 0], [-1, 0], [0, 1], [0, -1]]
   for (const [dx, dz] of neighbors) {
     const next = feet.offset(dx, 0, dz)
@@ -193,6 +193,52 @@ export function safePerchLanding(bot, villageFloorY) {
         return { x: next.x, z: next.z, y: y + 1, drop }
       break
     }
+  }
+  return null
+}
+
+// An isolated workbench or furnace can leave a clanker one block above the
+// nearest walkable ground. Pathfinder refuses the village floor boundary here;
+// inspect the exact step instead of weakening that boundary for every route.
+export function safeLedgeLanding(bot, villageFloorY) {
+  const feet = bot.entity.position.floored()
+  if (feet.y < villageFloorY + 1 || bot.health < 8 ||
+      !solid(bot.blockAt(feet.offset(0, -1, 0)))) return null
+  const neighbors = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+  for (const [dx, dz] of neighbors) {
+    const next = feet.offset(dx, 0, dz)
+    const support = bot.blockAt(next.offset(0, -1, 0))
+    const body = bot.blockAt(next), head = bot.blockAt(next.offset(0, 1, 0))
+    if (solid(support) && body?.name === 'air' && head?.name === 'air') return null
+  }
+  for (const [dx, dz] of neighbors) {
+    const next = feet.offset(dx, 0, dz)
+    const support = bot.blockAt(next.offset(0, -2, 0))
+    const upper = bot.blockAt(next.offset(0, -1, 0))
+    const body = bot.blockAt(next), head = bot.blockAt(next.offset(0, 1, 0))
+    if (support && solid(support) &&
+        !['cactus', 'magma_block', 'sand', 'red_sand', 'gravel'].includes(support.name) &&
+        upper?.name === 'air' && body?.name === 'air' && head?.name === 'air')
+      return { x: next.x, y: feet.y - 1, z: next.z, drop: 1 }
+  }
+  return null
+}
+
+// A grown trunk can seal a bed/chest inside a home. Require rooted, vertical
+// logs and a leaf crown before clearing a doorway; never touch built fixtures.
+export function rootedTreeExit(bot) {
+  const feet = bot.entity.position.floored()
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const at = feet.offset(dx, 0, dz)
+    const root = bot.blockAt(at.offset(0, -1, 0))
+    if (!['dirt', 'grass_block'].includes(root?.name)) continue
+    if (![0, 1, 2].every((dy) => isLog(bot.blockAt(at.offset(0, dy, 0))?.name ?? ''))) continue
+    let crown = false
+    for (let dy = 3; dy <= 7; dy++) {
+      for (const [lx, lz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]])
+        crown ||= bot.blockAt(at.offset(lx, dy, lz))?.name.endsWith('_leaves') ?? false
+    }
+    if (crown) return at
   }
   return null
 }
@@ -652,7 +698,8 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
   }
   async function descendFromPerch() {
-    const landing = villageCtx && safePerchLanding(bot, villageCtx.flag.y)
+    const landing = villageCtx &&
+      (safePerchLanding(bot, villageCtx.flag.y) || safeLedgeLanding(bot, villageCtx.flag.y))
     if (!landing) throw new Error('No inspected safe descent from the current perch')
     const before = bot.entity.position.clone()
     const target = new Vec3(landing.x + 0.5, before.y + 1.62, landing.z + 0.5)
@@ -671,13 +718,37 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
     const deadline = Date.now() + 4000
     while (Date.now() < deadline && bot.health > 0 &&
-           bot.entity.position.y > landing.y + 0.3) await sleep(50)
+           bot.entity.position.y > landing.y + 0.1) await sleep(50)
     const feet = bot.entity.position.floored()
     if (feet.x !== landing.x || feet.z !== landing.z ||
-        Math.abs(bot.entity.position.y - landing.y) > 0.35)
+        Math.abs(bot.entity.position.y - landing.y) > 0.12)
       throw new Error('Inspected descent did not reach its landing')
     log('perch_descent', { from: before, position: bot.entity.position, drop: landing.drop })
     return { descended: true, drop: landing.drop, position: bot.entity.position.clone() }
+  }
+  async function clearRootedTreeExit() {
+    const at = rootedTreeExit(bot)
+    if (!at) throw new Error('No inspected rooted tree blocks the local exit')
+    bot.pathfinder.setGoal(null)
+    bot.clearControlStates()
+    let cleared = 0
+    for (const dy of [1, 0]) {
+      if (!rootedTreeExit(bot)?.equals(at)) {
+        // After the upper log is cleared, its crown proof still holds until
+        // the lower log is removed. Recheck the actual block before digging.
+        if (dy === 1) throw new Error('Tree exit changed before clearing')
+      }
+      const block = bot.blockAt(at.offset(0, dy, 0))
+      if (!isLog(block?.name ?? '') || !bot.canDigBlock(block))
+        throw new Error('Tree exit is no longer reachable')
+      await bounded(() => bot.dig(block, true), escapeDigBudget(bot.digTime(block)),
+        () => bot.stopDigging())
+      if (isLog(bot.blockAt(block.position)?.name ?? ''))
+        throw new Error('Tree exit clearing was not confirmed')
+      cleared++
+    }
+    log('tree_exit_cleared', { position: at, cleared })
+    return { cleared, position: at }
   }
   function escapeTarget() {
     const target = escapeSession ?? (villageCtx ? villageCtx.flag.offset(0, 1, 0) : state.camp)
@@ -817,10 +888,10 @@ export function installSurvival(bot, state, log, opts = {}) {
     if (!inDigReach())
       throw new Error('Block still out of reach')
   }
-  async function approach(position, range, { minY = -Infinity } = {}) {
+  async function approach(position, range, { minY = -Infinity, maxY = Infinity } = {}) {
     const target = new Vec3(position.x, position.y, position.z)
     const before = bot.entity.position.clone()
-    if (before.distanceTo(target) <= range && before.y >= minY)
+    if (before.distanceTo(target) <= range && before.y >= minY && before.y <= maxY)
       return { returned: true, remaining: 0, moved: 0 }
     const dx = target.x - before.x, dz = target.z - before.z
     const horizontal = Math.hypot(dx, dz)
@@ -832,7 +903,8 @@ export function installSurvival(bot, state, log, opts = {}) {
     await walk(goal, 9000)
     const remaining = bot.entity.position.distanceTo(target)
     const moved = before.distanceTo(bot.entity.position)
-    const returned = remaining <= range && bot.entity.position.y >= minY
+    const returned = remaining <= range && bot.entity.position.y >= minY &&
+      bot.entity.position.y <= maxY
     if (!returned && moved < 0.75)
       throw new Error('Return route made no positional progress')
     return {
@@ -1577,8 +1649,11 @@ export function installSurvival(bot, state, log, opts = {}) {
     const add = (key, description) => {
       if ((state.cooldowns[key] ?? 0) < Date.now()) options[key] = description
     }
-    if (villageCtx && safePerchLanding(bot, villageCtx.flag.y))
+    if (villageCtx && (safePerchLanding(bot, villageCtx.flag.y) ||
+        safeLedgeLanding(bot, villageCtx.flag.y)))
       return { descend_from_perch: 'Step off the isolated high block onto an inspected clear landing below.' }
+    if (blockedRoutes >= 2 && rootedTreeExit(bot))
+      return { clear_tree_exit: 'Clear the two lower logs of the rooted tree obstructing the only safe village exit.' }
     if (escapeTarget())
       return { escape_upward: 'Recover from the blocked underground route: clear one inspected natural-terrain staircase step and climb toward the remembered surface. Bare hands may clear stone slowly; preserve construction and avoid fluid or falling terrain.' }
     if (bot.food < 19 && n((name) => edible.has(name)))
@@ -1815,6 +1890,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   async function execute(action) {
     const items = bot.inventory.items()
     if (action === 'descend_from_perch') return descendFromPerch()
+    if (action === 'clear_tree_exit') return clearRootedTreeExit()
     if (action === 'escape_upward') return escapeUpward()
     if (action === 'flee') {
       const threat = threats()[0]
@@ -2078,7 +2154,9 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (action === 'feed_server') return feedServer()
       if (action === 'patrol') return patrolOnce()
       if (action === 'return_to_post') {
-        return approach(layout.flag, 6, { minY: layout.flag.y + 0.5 })
+        return approach(layout.flag, 6, {
+          minY: layout.flag.y + 0.5, maxY: layout.flag.y + 1.5,
+        })
       }
       if (action === 'attack_threat') return attackThreat()
     }
@@ -2091,7 +2169,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         'craft_table', 'place_table', 'craft_wooden_pickaxe', 'craft_stone_pickaxe',
         'craft_stone_axe', 'craft_furnace', 'place_furnace', 'hunt_food',
         'plant_tree', 'collect_drops', 'return_to_camp', 'explore', 'escape_upward',
-        'descend_from_perch',
+        'descend_from_perch', 'clear_tree_exit',
         ...(villageCtx
           ? ['build_wall', 'gather_wall_earth', 'build_gate', 'build_home', 'reinforce_wall',
               'expand_home', 'repair_blast_hole', 'till_farm', 'plant_wheat',
