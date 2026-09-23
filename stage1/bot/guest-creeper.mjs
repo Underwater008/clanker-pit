@@ -19,6 +19,12 @@ export function creeperSummon(uuid, nickname, p) {
   return `summon minecraft:creeper ${p.x} ${p.y} ${p.z} {UUID:[I;${ints.join(',')}],Tags:["cp_auto_creeper"],CustomName:'{"text":"${nickname}"}',CustomNameVisible:1b,PersistenceRequired:1b,Attributes:[{Name:"minecraft:generic.movement_speed",Base:0d},{Name:"minecraft:generic.follow_range",Base:0d}],Fuse:20s,ExplosionRadius:3b}`
 }
 
+// Native mobs retain momentum between controller ticks. Cardinal waypoints
+// leave room to clear a wall corner before turning toward the next cell.
+class CreeperMovements extends pathfinder.Movements {
+  getMoveDiagonal() {}
+}
+
 export class NativeCreeperDirector {
   constructor({ observer, send, sendOnce = send, onBoom = () => {}, onEnd = () => {}, log = () => {} }) {
     this.observer = observer
@@ -30,7 +36,7 @@ export class NativeCreeperDirector {
     this.active = null
     this.busy = false
     observer.loadPlugin(pathfinder.pathfinder)
-    this.movements = new pathfinder.Movements(observer)
+    this.movements = new CreeperMovements(observer)
     Object.assign(this.movements, { canDig: false, allow1by1towers: false,
       allowParkour: false, allowSprinting: false, allowEntityDetection: false,
       canOpenDoors: false, maxDropDown: 2, infiniteLiquidDropdownDistance: false })
@@ -106,7 +112,7 @@ export class NativeCreeperDirector {
       await this.ignite(a, p)
       return
     }
-    if (Date.now() >= a.replanAt || !a.path.length) this.replan(a, p)
+    if (!a.path.length || (Date.now() >= a.replanAt && Date.now() - a.lastMovedAt > 2500)) this.replan(a, p)
     while (a.path.length && Math.hypot(a.path[0].x + .5 - p.x, a.path[0].z + .5 - p.z) < .13 &&
       Math.abs(a.path[0].y - p.y) < .6) a.path.shift()
     const next = a.path[0]
