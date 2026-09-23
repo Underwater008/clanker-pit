@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { makePlanner, jevChoose } from './llm.mjs'
+import { makePlanner, jevChoose, post } from './llm.mjs'
 
 const identity = { name: 'Cinder', dispositions: ['careful'], current_goal: 'Build a shelter' }
 const planner = () => makePlanner({ name: 'test', baseUrl: 'https://example.invalid/v1', apiKey: 'test-key', model: 'test-model' })
@@ -54,6 +54,22 @@ test('an already-aborted planner request never reaches the provider', async (t) 
   const result = await planner().plan({ ...input(), signal: controller.signal })
   assert.match(result.error, /cancelled/)
   assert.equal(calls, 0)
+})
+
+test('a transport that ignores abort still releases its request slot at the deadline', async (t) => {
+  t.mock.method(globalThis, 'fetch', () => new Promise(() => {}))
+  const started = Date.now()
+  const result = await post('https://example.invalid/v1/chat/completions', 'test-key', {}, 30)
+  assert.match(result.error, /deadline exceeded/)
+  assert.ok(Date.now() - started < 500)
+})
+
+test('a response body that hangs after headers is also bounded', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: true, status: 200, text: () => new Promise(() => {}),
+  }))
+  const result = await post('https://example.invalid/v1/chat/completions', 'test-key', {}, 30)
+  assert.match(result.error, /deadline exceeded/)
 })
 
 test('Jev missing credentials fail locally and explicitly', async (t) => {

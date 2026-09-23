@@ -223,8 +223,9 @@ The founding four clankers respawn, but a Server-booted clanker's death is final
 The vacated home lot is assigned to the next booted clanker without removing
 the house blocks from the world. `home-beds.mjs` places labeled beds in the
 founders' homes and sets their server respawn points beside those beds after
-they join; its `bot-state/home-beds.json` marker prevents replacing later
-player construction.
+they join. Each run rechecks the blocks, clears only leaves that grew into
+respawn tiles, and restores the spawn points. It refuses to replace other
+construction.
 
 `lab-placement.mjs` is another isolated-server regression: the bot must place
 the complete 23-block shelter from an uneven approach, with every block checked
@@ -252,6 +253,11 @@ fixture-mutating labs finish, with no production guest queue involved.
 each receives its own server-confirmed drop. `lab-escape.mjs` verifies retreat
 from water continues when the server delivers damage during movement. Both
 use only Minecraft 25566/RCON 25576 and require the isolated lab above.
+`lab-perch.mjs` uses those same isolated ports to verify a stranded clanker
+steps off an elevated crafting table onto inspected ground while preserving
+the table.
+`lab-home-beds.mjs` uses the isolated server to verify that a second fixture
+run clears new leaves from a founder's respawn tile even with a complete marker.
 
 ## Village round: protect the Server
 

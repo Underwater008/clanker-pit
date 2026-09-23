@@ -15,11 +15,20 @@ const KIMI_MODEL = process.env.KIMI_MODEL ?? 'kimi-k3'
 const TYPESAFE_URL = process.env.TYPESAFE_BASE_URL ?? 'https://api.typesafe.ai'
 const JEV_MODEL = process.env.JEV_MODEL ?? 'jev-latest'
 
-async function post(url, key, body, deadlineMs, signal) {
+export async function post(url, key, body, deadlineMs, signal) {
+  if (signal?.aborted) return { ok: false, status: null, error: 'Request cancelled' }
   const ctrl = new AbortController()
-  const abort = () => ctrl.abort()
-  if (signal?.aborted) abort()
-  else signal?.addEventListener('abort', abort, { once: true })
+  let rejectDeadline
+  const deadline = new Promise((_, reject) => { rejectDeadline = reject })
+  deadline.catch(() => {}) // An abort just before the first race must not leak a rejection.
+  const abort = () => {
+    ctrl.abort()
+    // Some fetch implementations and proxies never settle after abort. Race
+    // both the headers and body against the deadline so the controller can
+    // release its request slot even when the transport ignores cancellation.
+    rejectDeadline(new Error('Request aborted'))
+  }
+  signal?.addEventListener('abort', abort, { once: true })
   // One deadline covers retries as well as response-body reads. A controller
   // cancellation must never be retried as a transient network failure.
   const timer = setTimeout(abort, deadlineMs)
@@ -27,7 +36,7 @@ async function post(url, key, body, deadlineMs, signal) {
   try {
     for (let attempt = 0; attempt < 2 && !ctrl.signal.aborted; attempt++) {
       try {
-        const res = await fetch(url, {
+        const res = await Promise.race([fetch(url, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${key}`,
@@ -35,9 +44,9 @@ async function post(url, key, body, deadlineMs, signal) {
           },
           body: JSON.stringify(body),
           signal: ctrl.signal,
-        })
+        }), deadline])
         lastStatus = res.status
-        const text = await res.text()
+        const text = await Promise.race([res.text(), deadline])
         if (res.ok) return { ok: true, json: JSON.parse(text), status: res.status }
         lastErr = new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`)
         if (res.status >= 400 && res.status < 500) break

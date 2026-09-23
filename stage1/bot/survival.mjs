@@ -164,6 +164,39 @@ export function localEscapeReposition(bot, target, protectedBlock = () => false)
   return null
 }
 
+// A displaced respawn can put a clanker on an isolated block above the village.
+// Find an inspected one-block step off that perch with a clear, bounded fall.
+// Never break the support (which may be player construction) or trust unloaded
+// terrain. The actual landing is checked after the movement.
+export function safePerchLanding(bot, villageFloorY) {
+  const feet = bot.entity.position.floored()
+  if (feet.y < villageFloorY + 4 || bot.health < 14) return null
+  const support = bot.blockAt(feet.offset(0, -1, 0))
+  if (!solid(support) || support.name.endsWith('_leaves')) return null
+  const neighbors = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+  for (const [dx, dz] of neighbors) {
+    const next = feet.offset(dx, 0, dz)
+    const ground = bot.blockAt(next.offset(0, -1, 0))
+    if (!ground) return null
+    if (solid(ground) && !['magma_block', 'cactus'].includes(ground.name)) return null
+  }
+  for (const [dx, dz] of neighbors) {
+    const next = feet.offset(dx, 0, dz)
+    if (bot.blockAt(next)?.name !== 'air' ||
+        bot.blockAt(next.offset(0, 1, 0))?.name !== 'air') continue
+    for (let y = feet.y - 2; y >= feet.y - 9; y--) {
+      const block = bot.blockAt(new Vec3(next.x, y, next.z))
+      if (!block || ['water', 'lava', 'cactus', 'magma_block'].includes(block.name)) break
+      if (!solid(block)) continue
+      const drop = feet.y - y - 1
+      if (drop >= 3 && drop <= 8)
+        return { x: next.x, z: next.z, y: y + 1, drop }
+      break
+    }
+  }
+  return null
+}
+
 function sightToThreat(bot, entity) {
   const from = bot.entity.position.offset(0, bot.entity.eyeHeight ?? 1.62, 0)
   const to = entity.position.offset(0, 0.7, 0)
@@ -617,6 +650,34 @@ export function installSurvival(bot, state, log, opts = {}) {
     } finally {
       if (movements && normalDrop != null) movements.maxDropDown = normalDrop
     }
+  }
+  async function descendFromPerch() {
+    const landing = villageCtx && safePerchLanding(bot, villageCtx.flag.y)
+    if (!landing) throw new Error('No inspected safe descent from the current perch')
+    const before = bot.entity.position.clone()
+    const target = new Vec3(landing.x + 0.5, before.y + 1.62, landing.z + 0.5)
+    await bot.lookAt(target)
+    try {
+      bot.setControlState('forward', true)
+      const edgeDeadline = Date.now() + 1800
+      while (Date.now() < edgeDeadline && bot.health > 0) {
+        await sleep(50)
+        const feet = bot.entity.position.floored()
+        if ((feet.x === landing.x && feet.z === landing.z) ||
+            bot.entity.position.y < before.y - 0.2) break
+      }
+    } finally {
+      bot.setControlState('forward', false)
+    }
+    const deadline = Date.now() + 4000
+    while (Date.now() < deadline && bot.health > 0 &&
+           bot.entity.position.y > landing.y + 0.3) await sleep(50)
+    const feet = bot.entity.position.floored()
+    if (feet.x !== landing.x || feet.z !== landing.z ||
+        Math.abs(bot.entity.position.y - landing.y) > 0.35)
+      throw new Error('Inspected descent did not reach its landing')
+    log('perch_descent', { from: before, position: bot.entity.position, drop: landing.drop })
+    return { descended: true, drop: landing.drop, position: bot.entity.position.clone() }
   }
   function escapeTarget() {
     const target = escapeSession ?? (villageCtx ? villageCtx.flag.offset(0, 1, 0) : state.camp)
@@ -1380,6 +1441,17 @@ export function installSurvival(bot, state, log, opts = {}) {
   }
   function observation() {
     const items = bot.inventory.items()
+    const feet = bot.entity.position.floored()
+    const nearbyTerrain = Object.fromEntries([
+      ['east', 1, 0], ['west', -1, 0], ['south', 0, 1], ['north', 0, -1],
+    ].map(([direction, dx, dz]) => {
+      const next = feet.offset(dx, 0, dz)
+      return [direction, {
+        feet: bot.blockAt(next)?.name ?? 'unloaded',
+        head: bot.blockAt(next.offset(0, 1, 0))?.name ?? 'unloaded',
+        support: bot.blockAt(next.offset(0, -1, 0))?.name ?? 'unloaded',
+      }]
+    }))
     const near = Object.values(bot.entities).filter(
       (e) =>
         e !== bot.entity && e.position.distanceTo(bot.entity.position) < 24,
@@ -1401,6 +1473,11 @@ export function installSurvival(bot, state, log, opts = {}) {
         distance: Math.round(e.position.distanceTo(bot.entity.position)),
       })),
       position: bot.entity.position,
+      terrain: {
+        standing_on: bot.blockAt(feet.offset(0, -1, 0))?.name ?? 'unloaded',
+        adjacent: nearbyTerrain,
+        inspected_descent: villageCtx ? safePerchLanding(bot, villageCtx.flag.y) : null,
+      },
       inventory: items.map((i) => ({ name: i.name, count: i.count })),
       resources: {
         tree: logs ? { name: logs.name, position: logs.position } : null,
@@ -1500,6 +1577,8 @@ export function installSurvival(bot, state, log, opts = {}) {
     const add = (key, description) => {
       if ((state.cooldowns[key] ?? 0) < Date.now()) options[key] = description
     }
+    if (villageCtx && safePerchLanding(bot, villageCtx.flag.y))
+      return { descend_from_perch: 'Step off the isolated high block onto an inspected clear landing below.' }
     if (escapeTarget())
       return { escape_upward: 'Recover from the blocked underground route: clear one inspected natural-terrain staircase step and climb toward the remembered surface. Bare hands may clear stone slowly; preserve construction and avoid fluid or falling terrain.' }
     if (bot.food < 19 && n((name) => edible.has(name)))
@@ -1735,6 +1814,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   }
   async function execute(action) {
     const items = bot.inventory.items()
+    if (action === 'descend_from_perch') return descendFromPerch()
     if (action === 'escape_upward') return escapeUpward()
     if (action === 'flee') {
       const threat = threats()[0]
@@ -2011,6 +2091,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         'craft_table', 'place_table', 'craft_wooden_pickaxe', 'craft_stone_pickaxe',
         'craft_stone_axe', 'craft_furnace', 'place_furnace', 'hunt_food',
         'plant_tree', 'collect_drops', 'return_to_camp', 'explore', 'escape_upward',
+        'descend_from_perch',
         ...(villageCtx
           ? ['build_wall', 'gather_wall_earth', 'build_gate', 'build_home', 'reinforce_wall',
               'expand_home', 'repair_blast_hole', 'till_farm', 'plant_wheat',
@@ -2023,7 +2104,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       ],
       navigation: {
         observations: 'loaded local blocks and entities; darkness does not hide them',
-        max_drop_blocks: 2,
+        max_drop_blocks: villageCtx ? 1 : 2,
         pillar_climbing: false,
         recovery: 'short alternate routes; safe terrain clearing; preserve construction',
       },

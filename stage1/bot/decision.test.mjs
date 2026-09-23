@@ -27,6 +27,18 @@ const makeDm = (jevChoose, skills) =>
     minRequestIntervalMs: 0,
   })
 
+test('one executable action is labeled as policy and never billed to Jev', async () => {
+  let calls = 0
+  const dm = makeDm(async () => { calls++; return { choice: 'explore' } },
+    fakeSkills({ options: { descend_from_perch: 'Step to inspected landing' } }))
+  const result = await dm.next()
+  assert.equal(result.choice, 'descend_from_perch')
+  assert.equal(result.source, 'fallback')
+  assert.equal(result.reason, 'single_option')
+  assert.equal(calls, 0)
+  dm.close()
+})
+
 test('choices come from jev and consecutive decisions overlap instead of idling', async () => {
   let calls = 0
   const dm = makeDm(async () => {
