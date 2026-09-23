@@ -12,6 +12,7 @@ import {
   localShelter,
   localEscapePlans,
   localEscapeReposition,
+  safePerchLanding,
   escapeDigBudget,
   navigationReached,
   navigationGoalSummary,
@@ -243,6 +244,51 @@ test('a high leaf canopy temporarily permits a safe two-block descent', async ()
   }
   await skills.execute('explore')
   assert.equal(bot.pathfinder.movements.maxDropDown, 1)
+})
+
+test('an isolated high respawn offers a verified descent without breaking its support', async () => {
+  const { bot, skills } = fixture({ village: {
+    flag: new Vec3(0, 66, 0), lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false,
+  } })
+  bot.entity.position = new Vec3(0.5, 74, 0.5)
+  bot.blockAt = (p) => {
+    const q = p.floored()
+    const table = q.equals(new Vec3(0, 73, 0))
+    const ground = q.y <= 67 && q.x === 1 && q.z === 0
+    return { position: q, name: table ? 'crafting_table' : ground ? 'grass_block' : 'air',
+      boundingBox: table || ground ? 'block' : 'empty' }
+  }
+  const landing = safePerchLanding(bot, 66)
+  assert.deepEqual(landing, { x: 1, z: 0, y: 68, drop: 6 })
+  const observation = skills.observation()
+  assert.equal(observation.terrain.standing_on, 'crafting_table')
+  assert.deepEqual(observation.terrain.inspected_descent, landing)
+  assert.equal(observation.terrain.adjacent.east.support, 'air')
+  assert.deepEqual(Object.keys(skills.candidates(observation)), ['descend_from_perch'])
+  bot.lookAt = async () => {}
+  bot.setControlState = (key, active) => {
+    if (key === 'forward' && active) bot.entity.position = new Vec3(1.5, 68, 0.5)
+  }
+  const result = await skills.execute('descend_from_perch')
+  assert.equal(result.descended, true)
+  assert.deepEqual(bot.entity.position, new Vec3(1.5, 68, 0.5))
+  assert.equal(bot.blockAt(new Vec3(0, 73, 0)).name, 'crafting_table')
+})
+
+test('perch descent rejects fluid landings and a clanker too hurt to fall', () => {
+  const { bot } = fixture()
+  bot.entity.position = new Vec3(0.5, 74, 0.5)
+  bot.blockAt = (p) => {
+    const q = p.floored()
+    const table = q.equals(new Vec3(0, 73, 0))
+    const fluid = q.x === 1 && q.y === 70
+    const ground = q.y <= 67
+    return { position: q, name: table ? 'crafting_table' : fluid ? 'water' : ground ? 'grass_block' : 'air',
+      boundingBox: table || ground ? 'block' : 'empty' }
+  }
+  assert.equal(safePerchLanding(bot, 66)?.x, -1, 'another inspected dry landing is allowed')
+  bot.health = 10
+  assert.equal(safePerchLanding(bot, 66), null)
 })
 
 test('returning to the village does not report success from beneath its floor', async () => {

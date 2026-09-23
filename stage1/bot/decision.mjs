@@ -38,7 +38,9 @@ export function createDecisionMaker({
     providerPause = null
     const observation = skills.observation()
     const options = skills.candidates(observation)
-    if (!Object.keys(options).length) return
+    // A model cannot make a meaningful choice from one action. Save the call
+    // and report the deterministic selection honestly.
+    if (Object.keys(options).length <= 1) return
     const request = {
       startedAt: Date.now(),
       controller: new AbortController(),
@@ -118,7 +120,8 @@ export function createDecisionMaker({
         model: result.model, options: withProbs,
       })
     } else {
-      reason = providerPause ? 'billing_unavailable' : request?.invalidated ?? (result?.error ? 'provider_error'
+      reason = Object.keys(options).length === 1 ? 'single_option'
+        : providerPause ? 'billing_unavailable' : request?.invalidated ?? (result?.error ? 'provider_error'
         : result && age > maxChoiceAgeMs ? 'expired_observation'
         : result ? 'stale_choice'
         : request ? 'request_pending' : 'request_interval')

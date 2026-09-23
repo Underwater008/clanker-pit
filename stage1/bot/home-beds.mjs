@@ -15,10 +15,9 @@ if (!state.flag || state.founders?.length !== 4)
   throw new Error('Village and founding four must be initialized before placing home beds')
 let previous = null
 try { previous = JSON.parse(readFileSync(marker, 'utf8')) } catch {}
-if (previous?.complete && previous.flag?.x === state.flag.x && previous.flag?.y === state.flag.y && previous.flag?.z === state.flag.z) {
-  console.log(JSON.stringify({ event: 'home_beds_skipped', reason: 'already installed for this round' }))
-  process.exit(0)
-}
+// The marker records an earlier installation, not the current block state.
+// Trees can grow into a spawn tile later and make Minecraft fall back to the
+// world spawn. Recheck the actual blocks and reset each founder's spawnpoint.
 
 const homes = state.founders.map((name) => {
   if (!/^[A-Za-z0-9_]{1,16}$/.test(name)) throw new Error('Invalid founder Minecraft name')
@@ -37,7 +36,7 @@ const rcon = await Rcon.connect({
 const pos = (p) => `${p.x} ${p.y} ${p.z}`
 const passed = (response) => /^Test passed/.test(String(response ?? ''))
 async function blockIs(p, block) {
-  return passed(await rcon.send(`execute if block ${pos(p)} minecraft:${block}`))
+  return passed(await rcon.send(`execute if block ${pos(p)} ${block.startsWith('#') ? block : `minecraft:${block}`}`))
 }
 try {
   // Inspect every site before changing any one of them. The bed occupies the
@@ -49,13 +48,22 @@ try {
         throw new Error(`${home.name} bed site ${pos(p)} is occupied; no construction was replaced`)
     }
     for (const p of [home.spawn, home.spawn.offset(0, 1, 0)])
-      if (!await blockIs(p, 'air'))
+      if (!await blockIs(p, 'air') && !await blockIs(p, '#minecraft:leaves'))
         throw new Error(`${home.name} respawn tile ${pos(p)} is blocked`)
   }
+  const clearedLeaves = []
   for (const home of homes) {
     for (const [p, part] of [[home.foot, 'foot'], [home.head, 'head']]) {
       const bed = `red_bed[facing=${home.facing},part=${part}]`
       if (!await blockIs(p, bed)) await rcon.send(`setblock ${pos(p)} minecraft:${bed}`)
+    }
+    for (const p of [home.spawn, home.spawn.offset(0, 1, 0)]) {
+      if (await blockIs(p, '#minecraft:leaves')) {
+        await rcon.send(`setblock ${pos(p)} minecraft:air`)
+        clearedLeaves.push({ name: home.name, position: p })
+      }
+      if (!await blockIs(p, 'air'))
+        throw new Error(`${home.name} respawn tile ${pos(p)} did not clear`)
     }
     for (const [p, part] of [[home.foot, 'foot'], [home.head, 'head']])
       if (!await blockIs(p, `red_bed[facing=${home.facing},part=${part}]`))
@@ -79,11 +87,13 @@ try {
   }
   if (pending.size) throw new Error(`Founders not online for spawn points: ${[...pending].join(', ')}`)
   await rcon.send('save-all flush')
-  const complete = { complete: true, flag: state.flag, founders: state.founders, installedAt: new Date().toISOString() }
+  const complete = { complete: true, flag: state.flag, founders: state.founders,
+    installedAt: previous?.installedAt ?? new Date().toISOString(), checkedAt: new Date().toISOString() }
   writeFileSync(`${marker}.${process.pid}.tmp`, JSON.stringify(complete))
   renameSync(`${marker}.${process.pid}.tmp`, marker)
   await rcon.send('say [Round fixture] Founding home beds and respawn points are ready.').catch(() => {})
-  console.log(JSON.stringify({ event: 'home_beds_ready', founders: state.founders, homes: homes.map(({ name, spawn }) => ({ name, spawn })) }))
+  console.log(JSON.stringify({ event: 'home_beds_ready', founders: state.founders,
+    clearedLeaves, homes: homes.map(({ name, spawn }) => ({ name, spawn })) }))
 } finally {
   await rcon.end().catch(() => {})
 }
