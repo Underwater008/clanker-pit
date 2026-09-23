@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Vec3 } from 'vec3'
-import { MirrorCache } from './native-mirror.mjs'
+import { MirrorCache, replayConfigurationBeforeFinish } from './native-mirror.mjs'
 import { shelterBlueprint, countItems } from './survival.mjs'
 import minecraftData from 'minecraft-data'
 import mc from 'minecraft-protocol'
@@ -71,6 +71,33 @@ test('respawn clears old world state and player removal prevents stale players',
   c.accept('respawn', {})
   assert.equal(c.chunks.size, 0)
   assert.equal(c.entities.size, 0)
+})
+test('mirror retains self air, pose and armor for late viewers without a self spawn packet', () => {
+  const c = new MirrorCache()
+  c.accept('login', { entityId: 42 })
+  c.accept('entity_metadata', { entityId: 42, metadata: [
+    { key: 1, type: 'int', value: 120 }, { key: 6, type: 'pose', value: 3 },
+  ] })
+  c.accept('entity_metadata', { entityId: 42, metadata: [{ key: 1, type: 'int', value: 80 }] })
+  c.accept('entity_update_attributes', { entityId: 42, properties: [{ key: 'generic.armor', value: 6, modifiers: [] }] })
+  c.accept('entity_update_attributes', { entityId: 42, properties: [{ key: 'generic.max_health', value: 20, modifiers: [] }] })
+  assert.equal(c.selfMetadata.get(1).value, 80)
+  assert.equal(c.selfMetadata.get(6).value, 3)
+  assert.equal(c.selfAttributes.get('generic.armor').value, 6)
+  c.accept('respawn', {})
+  assert.equal(c.selfMetadata.size, 0)
+  assert.equal(c.selfAttributes.size, 0)
+})
+test('native viewers receive fluid tags in configuration before the phase ends', () => {
+  const sent = []
+  const client = { write: (name, data) => sent.push([name, data]) }
+  const tags = { tags: [{ tagType: 'minecraft:fluid', tags: [{ tagName: 'minecraft:water', entries: [1, 2] }] }] }
+  replayConfigurationBeforeFinish(client, new Map([['feature_flags', { features: ['minecraft:vanilla'] }], ['tags', tags]]))
+  client.write('registry_data', {})
+  client.write('finish_configuration', {})
+  client.write('login', {})
+  assert.deepEqual(sent.map(([name]) => name), ['registry_data', 'feature_flags', 'tags', 'finish_configuration', 'login'])
+  assert.equal(sent[2][1], tags)
 })
 test('pinned protocol decodes velocity as a vector consumed by current Mineflayer', () => {
   const data = minecraftData('1.21.1')

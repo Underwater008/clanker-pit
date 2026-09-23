@@ -89,11 +89,22 @@ export class MirrorCache {
   clearWorld() {
     this.chunks = new Map()
     this.entities = new Map()
+    this.selfMetadata = new Map()
+    this.selfAttributes = new Map()
     this.window = null
   }
   accept(name, data) {
     if (name === 'respawn') this.clearWorld()
     if (singleton.has(name)) this.base.set(name, data)
+    // The server never sends spawn_entity for the receiving player. Cache
+    // their air/pose and armor attributes separately for viewers joining
+    // after those updates. Preserve fields omitted by partial updates.
+    if (data.entityId === this.base.get('login')?.entityId) {
+      if (name === 'entity_metadata')
+        for (const entry of data.metadata) this.selfMetadata.set(entry.key, entry)
+      if (name === 'entity_update_attributes')
+        for (const entry of data.properties) this.selfAttributes.set(entry.key, entry)
+    }
     if (name === 'map_chunk')
       this.chunks.set(`${data.x},${data.z}`, {
         packet: data,
@@ -171,6 +182,20 @@ export class MirrorCache {
   }
 }
 
+// minecraft-protocol supplies registries but does not send the real server's
+// configuration tags. Without minecraft:water fluid tags, the vanilla client
+// draws water surfaces but cannot recognize submersion for fog or air bubbles.
+export function replayConfigurationBeforeFinish(client, packets) {
+  const write = client.write.bind(client)
+  client.write = (name, data) => {
+    if (name === 'finish_configuration') {
+      for (const [packet, payload] of packets) write(packet, payload)
+      client.write = write
+    }
+    return write(name, data)
+  }
+}
+
 export function createNativeMirror({ port, name, statePath, log = () => {} }) {
   let bot,
     cache,
@@ -179,6 +204,7 @@ export function createNativeMirror({ port, name, statePath, log = () => {} }) {
     generation = 0,
     teleportId = 0
   const registryCodec = {}
+  const configuration = new Map()
   const server = mc.createServer({
     host: '127.0.0.1',
     port,
@@ -189,6 +215,7 @@ export function createNativeMirror({ port, name, statePath, log = () => {} }) {
     hideErrors: true,
     motd: `${name} native view`,
     beforeLogin(client) {
+      replayConfigurationBeforeFinish(client, configuration)
       if (bot) {
         client.uuid = bot._client.uuid
         client.username = bot.username
@@ -368,6 +395,12 @@ export function createNativeMirror({ port, name, statePath, log = () => {} }) {
       if (e.equipment) send('entity_equipment', e.equipment)
     }
     if (cache.window) send('open_window', cache.window)
+    if (cache.selfMetadata.size) send('entity_metadata', {
+      entityId: bot.entity.id, metadata: [...cache.selfMetadata.values()],
+    })
+    if (cache.selfAttributes.size) send('entity_update_attributes', {
+      entityId: bot.entity.id, properties: [...cache.selfAttributes.values()],
+    })
     inventory()
     position()
     publish()
@@ -421,11 +454,14 @@ export function createNativeMirror({ port, name, statePath, log = () => {} }) {
       dig = null
       resetCamera()
       for (const key of Object.keys(registryCodec)) delete registryCodec[key]
+      configuration.clear()
       const thisCache = cache
       bot._client.on('packet', (data, meta) => {
         if (bot !== nextBot) return
         if (meta.state === 'configuration' && meta.name === 'registry_data')
           registryCodec[data.id] = data
+        if (meta.state === 'configuration' && ['tags', 'feature_flags'].includes(meta.name))
+          configuration.set(meta.name, data)
         if (meta.state !== 'play' || excluded.has(meta.name)) return
         thisCache.accept(meta.name, data)
         if (meta.name === 'entity_velocity' && data.entityId === bot.entity?.id)

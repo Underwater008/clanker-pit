@@ -468,6 +468,7 @@ export function createVillageState({
     snapshot: () => ({
       startedAt: state.createdAt,
       flag: state.flag,
+      coolantSource: state.coolantSource ?? null,
       water: {
         fed: state.waterFed,
         target: state.waterTarget,

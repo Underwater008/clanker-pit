@@ -456,6 +456,7 @@ function actor(name, index) {
   const villageCtx = villageEnabled
     ? {
         flag: village.flag(),
+        coolantSource: village.raw.coolantSource,
         lotIndex: Number.isInteger(state.homeLot) ? state.homeLot : index,
         summary: () => village.snapshot(),
         isEnemyPlayer,

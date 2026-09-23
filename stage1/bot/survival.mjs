@@ -2,6 +2,7 @@ import pathfinderPkg from 'mineflayer-pathfinder'
 import { Vec3 } from 'vec3'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { craftConfirmed, craftableRecipe } from './crafting.mjs'
+import { coolantSource, coolantCells, isCoolantBucket } from './coolant.mjs'
 import {
   wallBlueprint,
   wallReinforcementBlueprint,
@@ -49,7 +50,7 @@ export const GOALS = {
   improve_village:
     'Repair shallow blast holes, tend spring-fed wheat, pave the planned lanes, reinforce the wall, and enlarge homes only within their lots.',
   stockpile_defense:
-    'Prepare stone swords, torches, raw iron and buckets so the village can defend itself.',
+    'Upgrade stone tools and weapons to iron, craft and wear armor, and supply torches and coolant buckets.',
 }
 export const countItems = (items, match) =>
   items
@@ -95,6 +96,26 @@ const edible = new Set([
 ])
 const solid = (b) =>
   b && b.boundingBox === 'block' && !['magma_block', 'cactus'].includes(b.name)
+// Collision is not construction quality. Leaves, sand, glass panes and
+// furniture must never satisfy a wall/roof just because they occupy its cell.
+export const structuralBlock = (b) => Boolean(solid(b) &&
+  (isShelterMaterial(b.name) || ['grass_block', 'cobbled_deepslate', 'granite',
+    'stone_bricks', 'deepslate_bricks', 'bricks', 'obsidian'].includes(b.name)))
+const gearTier = (name) => ({ wooden: 1, golden: 1, leather: 1, chainmail: 2,
+  stone: 2, iron: 3, diamond: 4, netherite: 5 })[name.split('_')[0]] ?? 0
+export function bestEquipment(items, suffix) {
+  return items.filter((i) => i.name.endsWith(suffix))
+    .sort((a, b) => gearTier(b.name) - gearTier(a.name))[0]
+}
+const armorSlots = { helmet: ['head', 5], chestplate: ['torso', 6], leggings: ['legs', 7], boots: ['feet', 8] }
+function armorUpgrade(bot) {
+  for (const [suffix, [destination, slot]] of Object.entries(armorSlots)) {
+    const item = bestEquipment(bot.inventory.items(), `_${suffix}`)
+    if (item && gearTier(item.name) > gearTier(bot.inventory.slots?.[slot]?.name ?? ''))
+      return { item, destination, slot }
+  }
+  return null
+}
 
 export function woodForTools(items, hasWorkbench) {
   const n = (match) => countItems(items, match)
@@ -407,6 +428,8 @@ export function installSurvival(bot, state, log, opts = {}) {
   // snapshot of shared village state, and how to recognize guest creeper
   // players so guards can fight them without hidden world knowledge.
   const villageCtx = opts.village ?? null
+  const remoteSpring = villageCtx ? coolantSource(villageCtx.flag, villageCtx.coolantSource) : null
+  const coolantItem = (item) => remoteSpring ? isCoolantBucket(item) : item?.name === 'water_bucket'
   const layout = villageCtx
     ? {
         flag: villageCtx.flag,
@@ -957,10 +980,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (bot.blockAt(block.position)?.name !== block.name)
         throw new Error('Resource changed before gathering began')
       const items = bot.inventory.items()
-      const tools = items.filter((i) =>
-        i.name.endsWith(toolSuffix ?? '_pickaxe'),
-      )
-      const tool = tools.find((i) => i.name.startsWith('stone_')) ?? tools[0]
+      const tool = bestEquipment(items, toolSuffix ?? '_pickaxe')
       if (tool) await bot.equip(tool, 'hand')
       if (!bot.canDigBlock(block))
         throw new Error('Block cannot be dug from here')
@@ -1138,10 +1158,12 @@ export function installSurvival(bot, state, log, opts = {}) {
     const positions = nearest ? blueprint.slice().sort((a, b) =>
       a.y - b.y || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position)) : blueprint
     for (const p of positions) {
-      if (solid(bot.blockAt(p))) continue
+      if (structuralBlock(bot.blockAt(p))) continue
       const occupant = bot.blockAt(p)
-      if (['short_grass', 'tall_grass'].includes(occupant?.name))
-        await dig(occupant, '_axe').catch(() => {})
+      if (['short_grass', 'tall_grass'].includes(occupant?.name) || occupant?.name.endsWith('_leaves'))
+        await dig(occupant, '_axe')
+      else if (solid(occupant))
+        throw new Error(`Unsuitable ${occupant.name} occupies construction at ${p}; preserve it for replanning`)
       const material = firstBuildMaterial(allowDirt)
       if (!material) break
       try {
@@ -1356,7 +1378,9 @@ export function installSurvival(bot, state, log, opts = {}) {
   }
   /** Fill an empty bucket at a known water source (the coolant spring). */
   async function scoopWater() {
-    const water = layout.anatomy.spring
+    if (remoteSpring && bot.entity.position.distanceTo(remoteSpring) > 5)
+      throw new Error('Travel to the remote coolant spring before scooping')
+    const water = (remoteSpring ? coolantCells(remoteSpring) : layout.anatomy.spring)
       .map((p) => bot.blockAt(p))
       .filter((b) => b?.name === 'water')
       .sort(
@@ -1375,6 +1399,21 @@ export function installSurvival(bot, state, log, opts = {}) {
     const fullBefore = countItems(bot.inventory.items(), 'water_bucket')
     const emptyBefore = countItems(bot.inventory.items(), 'bucket')
     await bot.equip(bucket, 'hand')
+    if (remoteSpring && bot.heldItem.count > 1) {
+      // A stack of empty buckets sends its filled result to another slot.
+      // Hold one so the server rule can tag precisely the newly filled item.
+      if (bot.inventory.firstEmptySlotRange(9, 45) === null)
+        throw new Error('Need one free inventory slot to carry expedition coolant')
+      await bot.unequip('hand')
+      const slot = bot.quickBarSlot + 36
+      const stack = bot.inventory.items().find((i) => i.name === 'bucket' && i.slot !== slot)
+      if (!stack || bot.inventory.slots[slot]) throw new Error('No free hand slot to split an empty bucket')
+      await bot.transfer({ itemType: bot.registry.itemsByName.bucket.id, count: 1,
+        sourceStart: stack.slot, sourceEnd: stack.slot + 1, destStart: slot, destEnd: slot + 1 })
+      await sleep(150)
+    }
+    if (remoteSpring && (bot.heldItem?.name !== 'bucket' || bot.heldItem.count !== 1))
+      throw new Error('Could not prepare one empty bucket for coolant')
     // Buckets use the held-item packet, not block placement. An infinite
     // spring can refill within the same tick, so inventory is the proof.
     await bot.lookAt(water.position.offset(0.5, 0.8, 0.5), true)
@@ -1382,7 +1421,8 @@ export function installSurvival(bot, state, log, opts = {}) {
     const deadline = Date.now() + 5000
     while (Date.now() < deadline) {
       if (countItems(bot.inventory.items(), 'water_bucket') > fullBefore &&
-          countItems(bot.inventory.items(), 'bucket') < emptyBefore)
+          countItems(bot.inventory.items(), 'bucket') < emptyBefore &&
+          (!remoteSpring || isCoolantBucket(bot.heldItem)))
         return { filledBucket: true }
       await sleep(50)
     }
@@ -1393,7 +1433,7 @@ export function installSurvival(bot, state, log, opts = {}) {
    * cauldron and the emptied bucket must be confirmed by the server. The
    * match controller empties the deposit later so the next feed can start.
    */
-  async function feedServer() {
+  async function feedServer({ disposeOrdinary = false } = {}) {
     const cycle = async () => {
       const { deposit } = layout.anatomy
       await walk(new goals.GoalLookAtBlock(deposit, bot.world, { reach: 4.25 }))
@@ -1401,8 +1441,9 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (block?.name === 'water_cauldron')
         throw new Error('The Server is still drinking the last bucket')
       if (block?.name !== 'cauldron') throw new Error('Server coolant deposit is missing')
-      const full = bot.inventory.items().find((i) => i.name === 'water_bucket')
-      if (!full) throw new Error('No water bucket to feed the Server')
+      const full = bot.inventory.items().find((item) => disposeOrdinary
+        ? item.name === 'water_bucket' && !coolantItem(item) : coolantItem(item))
+      if (!full) throw new Error(disposeOrdinary ? 'No ordinary water to empty' : 'No eligible coolant bucket to feed the Server')
       const fullBefore = countItems(bot.inventory.items(), 'water_bucket')
       const emptyBefore = countItems(bot.inventory.items(), 'bucket')
       await bot.equip(full, 'hand')
@@ -1412,7 +1453,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         if (bot.blockAt(deposit)?.name === 'water_cauldron' &&
             countItems(bot.inventory.items(), 'water_bucket') < fullBefore &&
             countItems(bot.inventory.items(), 'bucket') > emptyBefore)
-          return { fedCoolant: true }
+          return disposeOrdinary ? { disposedOrdinaryWater: true } : { fedCoolant: true }
         await sleep(50)
       }
       throw new Error('Server deposit was not confirmed filled with an emptied bucket')
@@ -1445,10 +1486,8 @@ export function installSurvival(bot, state, log, opts = {}) {
     const target = targets[0]
     if (!target) return { peaceful: true }
     const weapon =
-      bot.inventory.items().find((i) => i.name === 'iron_sword') ??
-      bot.inventory.items().find((i) => i.name === 'stone_sword') ??
-      bot.inventory.items().find((i) => i.name.endsWith('_sword')) ??
-      bot.inventory.items().find((i) => i.name === 'stone_axe')
+      bestEquipment(bot.inventory.items(), '_sword') ??
+      bestEquipment(bot.inventory.items(), '_axe')
     if (weapon) await bot.equip(weapon, 'hand')
     const deadline = Date.now() + 20000
     while (
@@ -1593,7 +1632,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         ? (() => {
             const progress = (list) => {
               let done = 0
-              for (const p of list) if (solid(bot.blockAt(p))) done++
+              for (const p of list) if (structuralBlock(bot.blockAt(p))) done++
               return { done, total: list.length, complete: done === list.length }
             }
             return {
@@ -1602,6 +1641,10 @@ export function installSurvival(bot, state, log, opts = {}) {
                 distance_from_flag: Math.round(
                   bot.entity.position.distanceTo(villageCtx.flag),
                 ),
+                coolant_source: remoteSpring ? { position: remoteSpring,
+                  distance: Math.round(bot.entity.position.distanceTo(remoteSpring)),
+                  rule: 'Only Cryo Coolant filled at the cyan remote spring powers the Server. Ordinary water is for farming and survival.',
+                  carried: bot.inventory.items().filter(isCoolantBucket).length } : null,
                 my_home: progress(layout.home),
                 my_home_upgrade: layout.homeUpgrade.length ? progress(layout.homeUpgrade) : null,
                 wall: progress(layout.wall),
@@ -1644,6 +1687,8 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
   }
   function candidates(obs) {
+    const items = bot.inventory.items()
+    const ownedGear = [...items, ...(bot.inventory.slots?.slice(5, 9) ?? []).filter(Boolean)]
     const options = {}
     const n = (match) => countItems(obs.inventory, match)
     const add = (key, description) => {
@@ -1689,9 +1734,9 @@ export function installSurvival(bot, state, log, opts = {}) {
         'Mine one reachable stone/coal block with a pickaxe and collect the drop.',
       )
     if (obs.resources.workbench && n('cobblestone') >= 3 && n('stick') >= 2) {
-      if (!n('stone_pickaxe'))
+      if (gearTier(bestEquipment(items, '_pickaxe')?.name ?? '') < 2)
         add('craft_stone_pickaxe', 'Upgrade to a durable stone pickaxe.')
-      if (!n('stone_axe'))
+      if (gearTier(bestEquipment(items, '_axe')?.name ?? '') < 2)
         add('craft_stone_axe', 'Craft a stone axe to chop trees faster.')
     }
     if (
@@ -1811,7 +1856,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         obs.resources.workbench &&
         n('cobblestone') >= 2 &&
         n('stick') >= 1 &&
-        !n((name) => name.endsWith('_sword'))
+        gearTier(bestEquipment(items, '_sword')?.name ?? '') < 2
       )
         vadd('craft_stone_sword', 'Craft a stone sword for guard duty.')
       if (n('coal') >= 1 && n('stick') >= 1 && n('torch') < 8)
@@ -1828,27 +1873,42 @@ export function installSurvival(bot, state, log, opts = {}) {
           !name.startsWith('wooden_') &&
           !name.startsWith('golden_'),
       )
-      if (!hasBucket && !V.atCapacity) {
-        if (n('iron_ingot') >= 3 && obs.resources.workbench)
+      const upgrades = [
+        ['iron_sword', 2, 1], ['iron_pickaxe', 3, 2],
+        ['iron_chestplate', 8, 0], ['iron_leggings', 7, 0],
+        ['iron_helmet', 5, 0], ['iron_boots', 4, 0], ['iron_axe', 3, 2],
+      ].filter(([name]) => gearTier(bestEquipment(ownedGear, `_${name.split('_')[1]}`)?.name ?? '') < 3)
+      for (const [name, iron, sticks] of upgrades)
+        if (obs.resources.workbench && n('iron_ingot') >= iron && n('stick') >= sticks)
+          vadd(`craft_${name}`, `Upgrade to ${name.replaceAll('_', ' ')} using ${iron} iron ingots.`)
+      if (armorUpgrade(bot)) vadd('equip_armor', 'Wear your best available armor; carrying it does not protect you.')
+      if ((!hasBucket && !V.atCapacity) || upgrades.length) {
+        if (!hasBucket && !V.atCapacity && n('iron_ingot') >= 3 && obs.resources.workbench)
           vadd(
             'craft_bucket',
             'Craft a bucket from three iron ingots to carry coolant.',
           )
-        if (n('raw_iron') >= 1 && furnaceNearby())
-          vadd('smelt_iron', 'Smelt raw iron in the furnace toward a bucket.')
-        if (ironPick && oreNearby() && n('raw_iron') + n('iron_ingot') < 6)
+        if (n('raw_iron') >= 1 && furnaceNearby() && n((name) => name === 'coal' || isPlank(name) || isLog(name)))
+          vadd('smelt_iron', 'Smelt raw iron for better tools, weapons, armor, or a bucket.')
+        if (ironPick && oreNearby() && n('raw_iron') + n('iron_ingot') < 32)
           vadd(
             'mine_iron_ore',
-            'Mine one iron ore with your stone pickaxe; raw iron smelts into buckets.',
+            'Mine one iron ore with a stone-or-better pickaxe for equipment upgrades and buckets.',
           )
       }
-      if (nearVillage && !V.atCapacity) {
-        if (n('water_bucket') === 0 && n('bucket') > 0)
+      const hasCoolant = items.some(coolantItem)
+      if (remoteSpring && nearVillage && !hasCoolant && !n('bucket') && n('water_bucket'))
+        vadd('empty_ordinary_water', 'Empty an ordinary water bucket into the drain without coolant credit, freeing the bucket for an expedition.')
+      const atSpring = remoteSpring && bot.entity.position.distanceTo(remoteSpring) <= 5
+      if (!V.atCapacity) {
+        if (remoteSpring && !hasCoolant && n('bucket') > 0 && !atSpring)
+          vadd('travel_to_coolant', 'Take one short, verified step toward the marked remote coolant spring; reassess terrain and threats en route.')
+        if ((remoteSpring ? atSpring : nearVillage && !hasCoolant) && n('bucket') > 0)
           vadd(
             'scoop_water',
-            'Fill your bucket at the coolant spring south of the front gate.',
+            remoteSpring ? 'Fill one empty bucket at the cyan remote spring to obtain Cryo Coolant.' : 'Fill your bucket at the coolant spring south of the front gate.',
           )
-        if (n('water_bucket') > 0)
+        if (nearVillage && hasCoolant)
           vadd(
             'feed_server',
             `Feed the Server one bucket of coolant; it boots a new villager at ${V.water?.target ?? '?'} buckets (now ${V.water?.fed ?? 0}).`,
@@ -1856,16 +1916,17 @@ export function installSurvival(bot, state, log, opts = {}) {
       }
       if (nearVillage && (state.role ?? null) === 'guard')
         vadd('patrol', 'Walk the perimeter on watch for creepers and guests.')
-      if (!nearVillage)
+      if (!nearVillage && (!remoteSpring || hasCoolant || V.atCapacity || !n('bucket')))
         vadd('return_to_post', 'Head back toward the Server and the village.')
       const preferred = {
         guard: ['repair_blast_hole', 'attack_threat', 'build_gate', 'build_wall', 'patrol', 'reinforce_wall', 'place_torch', 'return_to_post'],
         builder: ['repair_blast_hole', 'build_home', 'build_wall', 'gather_wood', 'gather_wall_earth', 'build_gate', 'reinforce_wall', 'expand_home', 'pave_road', 'craft_stone_shovel', 'place_torch', 'return_to_post'],
-        smith: ['craft_stone_sword', 'craft_torch', 'craft_bucket', 'smelt_iron', 'mine_iron_ore', 'return_to_post'],
-        coolant: ['scoop_water', 'feed_server', 'craft_bucket', 'mine_iron_ore', 'smelt_iron', 'return_to_post'],
+        smith: ['equip_armor', 'craft_iron_sword', 'craft_iron_pickaxe', 'craft_iron_chestplate', 'craft_iron_leggings', 'craft_iron_helmet', 'craft_iron_boots', 'craft_iron_axe', 'craft_stone_sword', 'smelt_iron', 'mine_iron_ore', 'craft_torch', 'craft_bucket', 'return_to_post'],
+        coolant: ['feed_server', 'empty_ordinary_water', 'scoop_water', 'travel_to_coolant', 'return_to_post', 'craft_bucket', 'mine_iron_ore', 'smelt_iron'],
         farmer: ['harvest_wheat', 'plant_wheat', 'till_farm', 'craft_stone_hoe', 'gather_wheat_seeds', 'craft_bread', 'hunt_food', 'plant_tree', 'return_to_post'],
       }[state.role ?? ''] ?? ['build_wall', 'build_home', 'reinforce_wall', 'expand_home', 'feed_server', 'scoop_water']
       const ordered = {}
+      if (vo.equip_armor) ordered.equip_armor = vo.equip_armor
       const toolPrerequisites = !n(isPick) || !obs.resources.workbench || state.plan.goal === 'equip_tools'
       if (toolPrerequisites) {
         for (const key of ['place_table', 'craft_table', 'craft_wooden_pickaxe', 'craft_stone_pickaxe',
@@ -2097,6 +2158,19 @@ export function installSurvival(bot, state, log, opts = {}) {
       throw lastError
     }
     if (villageCtx) {
+      if (action === 'equip_armor') {
+        const upgrade = armorUpgrade(bot)
+        if (!upgrade) throw new Error('No armor upgrade available')
+        await bot.equip(upgrade.item, upgrade.destination)
+        if (bot.inventory.slots[upgrade.slot]?.name !== upgrade.item.name)
+          throw new Error('Armor equip was not confirmed')
+        return { equipped: upgrade.item.name, destination: upgrade.destination }
+      }
+      if (action === 'travel_to_coolant') {
+        if (!remoteSpring) throw new Error('No remote coolant spring configured')
+        const result = await approach(remoteSpring, 4)
+        return { ...result, destination: 'coolant_spring', arrived: result.returned }
+      }
       if (action === 'repair_blast_hole') return repairBlastHole()
       if (action === 'till_farm') return tendFarm()
       if (action === 'plant_wheat') return sowWheat()
@@ -2152,6 +2226,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (action === 'smelt_iron') return smeltIron()
       if (action === 'scoop_water') return scoopWater()
       if (action === 'feed_server') return feedServer()
+      if (action === 'empty_ordinary_water') return feedServer({ disposeOrdinary: true })
       if (action === 'patrol') return patrolOnce()
       if (action === 'return_to_post') {
         return approach(layout.flag, 6, {
@@ -2177,6 +2252,9 @@ export function installSurvival(bot, state, log, opts = {}) {
               'craft_stone_hoe', 'craft_stone_shovel', 'craft_bread', 'place_torch',
               'craft_stone_sword', 'craft_torch', 'craft_bucket', 'mine_iron_ore',
               'smelt_iron', 'scoop_water', 'feed_server', 'patrol',
+              'travel_to_coolant', 'empty_ordinary_water', 'craft_iron_sword', 'craft_iron_pickaxe',
+              'craft_iron_axe', 'craft_iron_helmet', 'craft_iron_chestplate',
+              'craft_iron_leggings', 'craft_iron_boots', 'equip_armor',
               'return_to_post', 'attack_threat']
           : ['build_shelter', 'relocate_shelter']),
       ],
