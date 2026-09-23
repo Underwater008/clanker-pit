@@ -188,6 +188,30 @@ Validation:
   25576. It builds fixtures and exercises survival skills. It is not an autonomous
   model benchmark and must never be aimed at the production arena.
 
+### Remote coolant expedition
+
+`coolant-setup.mjs --source x,y,z --server-dir /workspace/arena/server` adds a
+small cyan spring 100–150 blocks from an existing village. Stop the controller
+first. The tool rejects unfamiliar blocks, backs up the selected world and bot
+state, installs a vanilla 1.21.1 datapack, and records `coolantSource` without
+resetting coolant, homes, or population. The near spring continues to irrigate
+the farm. Subsequent clanker starts read the persisted source.
+
+The server refines a single bucket filled at the remote spring into **Cryo
+Coolant**, identified by its `custom_data` component and aqua item name. This
+is a custom game rule and cyan landmark, not a new fluid block or texture.
+Only tagged buckets earn deposit credit; ordinary water can be emptied into
+the drain without credit. Clankers hold one empty bucket when filling so the
+rule tags the actual filled item. They navigate the expedition in short local
+steps and return with the load. This does not guarantee a route across every
+natural terrain: verify actual live travel after choosing a source.
+
+`LAB_SERVER_DIR=/path/to/isolated/server node lab-coolant.mjs` verifies the
+120-block round trip, ordinary-water rejection, physical deposit, iron crafting,
+and armor equip on 25566/25576. `lab-native-water.mjs` exposes an isolated
+mirror on 25590 for native land/submerged visual checks. Stop lab processes
+and their temporary viewer afterward.
+
 The bots use structured local game state. Their native video is a viewer feed;
 this implementation does not claim the models are playing from screenshots.
 

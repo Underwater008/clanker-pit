@@ -36,7 +36,7 @@ evidence before relying on historical notes or another agent's claims.
 | --- | --- |
 | Controller | `stage1/bot/ambient.mjs`: cast lifecycle, planning, village scenario, council, chat/brain telemetry, reconnects; `decision.mjs`: overlapped Jev scheduling |
 | Gameplay | `stage1/bot/survival.mjs`: perception, feasible actions, navigation, survival and village skills (build wall/gate/home/torches, iron→bucket, coolant feeding, guard/patrol/attack); `crafting.mjs`: server-confirmed crafting |
-| Village | `stage1/bot/village.mjs`: layout blueprints (wall, front gate, home lots, Server anatomy), shared coolant economy and villager booting; `council.mjs`: role discussion + deterministic assignment; `flag-setup.mjs` + `fixture-grant.mjs`: idempotent round fixtures (labeled, RCON) |
+| Village | `stage1/bot/village.mjs`: layout blueprints and economy; `coolant.mjs` + `coolant-setup.mjs`: remote spring datapack and backed-up fixture migration; `council.mjs`: role discussion + deterministic assignment; `flag-setup.mjs` + `fixture-grant.mjs`: idempotent round fixtures (labeled, RCON) |
 | Home beds | `stage1/bot/home-beds.mjs`: labeled, idempotent founder bed and respawn-point fixture after the cast joins |
 | Model routing | `stage1/bot/models.mjs` + `llm.mjs`: per-clanker OpenAI-compatible planners (Kimi default), Jev choice client, thinking extraction |
 | Guests | `stage1/bot/guest-gateway.mjs` (match controller): viewer queue, 3-minute creeper turns, guest input (move/look/jump/boom only), guest mirror on 25584; `guest-queue.mjs` handles scheduling, `guest-boom.mjs` verifies a single summon using server explosion packets; public entry is the allowlisted `/guest/*` telemetry proxy |
@@ -73,6 +73,10 @@ never controls the contestants. This is not a screenshot-driven model agent.
   and isolated verification, rather than giving bots hidden world knowledge.
 - Keep mirrors loopback-only and read-only. Preserve packet caches and player
   state when handling partial updates; the native HUD must match the contestant.
+- Replay configuration fluid tags before finishing viewer configuration. Dropping
+  these makes vanilla underwater fog and air bubbles disappear. Remote coolant
+  uses a vanilla datapack item component; ordinary or merely renamed water buckets
+  must never earn coolant credit. Keep the near spring for irrigation.
 - Use Node **22+**, Java **21**, and Minecraft **1.21.1** for the current stack.
   Keep compatible protocol dependencies pinned with the committed lockfile.
   Investigate packet/schema or non-finite movement bugs instead of weakening

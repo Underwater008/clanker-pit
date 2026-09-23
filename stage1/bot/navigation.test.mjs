@@ -73,6 +73,54 @@ function fixture({ inventory = [], shelter = null, blocks = [], village = null }
   return { bot, state, skills }
 }
 
+test('remote coolant travel remains offered en route and ordinary water is not creditable', () => {
+  const village = { flag: new Vec3(0, 63, 0), lotIndex: 0, coolantSource: { x: 0, y: 63, z: 120 },
+    summary: () => ({ atCapacity: false }) }
+  const { bot, skills } = fixture({ village, inventory: [{ name: 'bucket', count: 2 }] })
+  bot.entity.position = new Vec3(0.5, 64, 48.5)
+  let options = skills.candidates(skills.observation())
+  assert.ok(options.travel_to_coolant)
+  assert.equal(options.return_to_post, undefined)
+  assert.equal(options.scoop_water, undefined)
+  bot.entity.position = new Vec3(0.5, 64, 118.5)
+  options = skills.candidates(skills.observation())
+  assert.ok(options.scoop_water)
+  assert.equal(options.travel_to_coolant, undefined)
+  const ordinary = fixture({ village, inventory: [{ name: 'water_bucket', count: 1 }] })
+  options = ordinary.skills.candidates(ordinary.skills.observation())
+  assert.equal(options.feed_server, undefined)
+  assert.ok(options.empty_ordinary_water)
+})
+
+test('owning a bucket does not disable iron weapon and armor progression', () => {
+  const village = { flag: new Vec3(0, 63, 0), lotIndex: 0, summary: () => ({ atCapacity: true }) }
+  const blocks = [{ name: 'crafting_table', position: new Vec3(2, 64, 0), boundingBox: 'block' },
+    { name: 'iron_ore', position: new Vec3(4, 64, 0), boundingBox: 'block' }]
+  const { skills } = fixture({ village, blocks, inventory: [
+    { name: 'bucket', count: 1 }, { name: 'stone_pickaxe', count: 1 },
+    { name: 'stone_sword', count: 1 }, { name: 'iron_ingot', count: 8 }, { name: 'stick', count: 2 },
+  ] })
+  const options = skills.candidates(skills.observation())
+  assert.ok(options.craft_iron_sword)
+  assert.ok(options.craft_iron_chestplate)
+  assert.ok(options.mine_iron_ore)
+})
+
+test('armor is worn and equipped armor does not cause endless duplicate crafting', async () => {
+  const gear = { name: 'iron_chestplate', count: 1 }
+  const inventory = [gear, { name: 'iron_ingot', count: 8 }]
+  const { bot, skills } = fixture({ inventory,
+    blocks: [{ name: 'crafting_table', position: new Vec3(2, 64, 0), boundingBox: 'block' }],
+    village: { flag: new Vec3(0, 63, 0), lotIndex: 0, summary: () => ({}) } })
+  bot.inventory.slots = Array(46).fill(null)
+  bot.equip = async (item, destination) => {
+    assert.equal(destination, 'torso'); bot.inventory.slots[6] = item; inventory.splice(inventory.indexOf(item), 1)
+  }
+  assert.ok(skills.candidates(skills.observation()).equip_armor)
+  assert.equal((await skills.execute('equip_armor')).equipped, 'iron_chestplate')
+  assert.equal(skills.candidates(skills.observation()).craft_iron_chestplate, undefined)
+})
+
 test('empty noPath from the pinned dependency cannot become a successful walk', async () => {
   const bot = new EventEmitter()
   bot.entity = { position: new Vec3(0.5, 64, 0.5) }
