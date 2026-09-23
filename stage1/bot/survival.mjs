@@ -119,8 +119,7 @@ export function escapeDigBudget(digTime) {
     throw new Error('Escape block would take too long to clear safely')
   return Math.max(2500, digTime + 2000) // Ordinary ore by hand takes 15s; cap work at 18s.
 }
-export function localEscapePlans(bot, target, protectedBlock = () => false) {
-  const origin = bot.entity.position.floored()
+export function localEscapePlans(bot, target, protectedBlock = () => false, origin = bot.entity.position.floored()) {
   const hazards = new Set(['water', 'lava', 'sand', 'red_sand', 'gravel'])
   const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]]
     .sort(([ax, az], [bx, bz]) =>
@@ -146,6 +145,23 @@ export function localEscapePlans(bot, target, protectedBlock = () => false) {
     }
     return { destination: step.offset(0, 1, 0), clear }
   }).filter(Boolean)
+}
+
+// A dry side step can expose a safe stair when water or a cave wall blocks
+// every stair from the current square. Inspect only loaded adjacent blocks;
+// movement to the selected square is still verified by Pathfinder.
+export function localEscapeReposition(bot, target, protectedBlock = () => false) {
+  const origin = bot.entity.position.floored()
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const next = origin.offset(dx, 0, dz)
+    const floor = bot.blockAt(next.offset(0, -1, 0))
+    const feet = bot.blockAt(next), head = bot.blockAt(next.offset(0, 1, 0))
+    if (!solid(floor) || ['sand', 'red_sand', 'gravel'].includes(floor.name) ||
+        !feet || !head || feet.name === 'water' || head.name === 'water' ||
+        feet.name === 'lava' || head.name === 'lava' || solid(feet) || solid(head)) continue
+    if (localEscapePlans(bot, target, protectedBlock, next).length) return next
+  }
+  return null
 }
 
 function sightToThreat(bot, entity) {
@@ -617,9 +633,30 @@ export function installSurvival(bot, state, log, opts = {}) {
     const interrupted = () => revision !== skillRevision || bot.health <= 0 || emergency()
     const target = escapeTarget()
     if (!target) throw new Error('No blocked underground route to recover')
-    const protectedBlock = (position) => constructionBlock(position) || resourceBusy(position)
+    const protectedBlock = (position) => {
+      if (resourceBusy(position)) return true
+      const block = bot.blockAt(position)
+      // Natural ground over a trapped clanker is an escape hatch, even when
+      // the village floor is otherwise protected from routine path digging.
+      // Never clear a placed wall/home block or a fixture to make that hatch.
+      if (villageCtx && position.y === layout.flag.y &&
+          ['dirt', 'grass_block'].includes(block?.name) &&
+          !villageConstruction.has(position.toString())) return false
+      return constructionBlock(position)
+    }
     const plan = localEscapePlans(bot, target, protectedBlock)[0]
     if (!plan) {
+      const next = localEscapeReposition(bot, target, protectedBlock)
+      if (next) {
+        const before = bot.entity.position.clone()
+        await walk(new goals.GoalBlock(next.x, next.y, next.z), 5000)
+        if (interrupted()) throw new Error('Escape reposition interrupted')
+        if (Math.hypot(bot.entity.position.x - next.x - 0.5,
+          bot.entity.position.z - next.z - 0.5) > 0.8)
+          throw new Error('Escape reposition did not reach the safe square')
+        log('escape_reposition', { from: before, position: bot.entity.position })
+        return { repositioned: true, position: bot.entity.position.clone() }
+      }
       log('escape_blocked', { position: bot.entity.position, target, reason: 'No inspected safe staircase step' })
       await sleep(1500)
       throw new Error('No safe local staircase step; holding recovery position')

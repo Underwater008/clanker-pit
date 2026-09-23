@@ -11,6 +11,7 @@ import {
   installSurvival,
   localShelter,
   localEscapePlans,
+  localEscapeReposition,
   escapeDigBudget,
   navigationReached,
   navigationGoalSummary,
@@ -401,6 +402,54 @@ test('recovery refuses fluid pockets, falling terrain, unloaded space and constr
   }
   bot.blockAt = natural
   assert.equal(localEscapePlans(bot, new Vec3(4, 70, 0), () => true).length, 0)
+})
+
+test('recovery can step sideways to a safe stair without digging the wet corner', () => {
+  const { bot } = fixture()
+  bot.blockAt = (p) => {
+    const q = p.floored()
+    const air = (q.x === 0 && q.z === 0 || q.x === 0 && q.z === -1) &&
+      (q.y === 64 || q.y === 65)
+    return { position: q, name: air ? 'air' : q.equals(new Vec3(0, 66, 0)) ? 'bedrock' : 'stone',
+      boundingBox: air ? 'empty' : 'block' }
+  }
+  const target = new Vec3(4, 70, 0)
+  assert.equal(localEscapePlans(bot, target).length, 0)
+  assert.deepEqual(localEscapeReposition(bot, target), new Vec3(0, 64, -1))
+  assert.ok(localEscapePlans(bot, target, () => false, new Vec3(0, 64, -1)).length)
+})
+
+test('a buried clanker can clear natural village ground as an escape hatch', async () => {
+  const { bot, skills } = fixture({ village: {
+    flag: new Vec3(0, 66, 0), lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false,
+  } })
+  bot.entity.position = new Vec3(2.5, 64, 2.5)
+  const removed = new Set()
+  bot.blockAt = (p) => {
+    const q = p.floored(), key = q.toString()
+    const current = q.x === 2 && q.z === 2 && (q.y === 64 || q.y === 65)
+    const name = removed.has(key) || current || q.y >= 67 ? 'air' :
+      q.y === 66 ? 'grass_block' : q.y === 65 || q.y === 64 ? 'dirt' : 'stone'
+    return { position: q, name, boundingBox: name === 'air' ? 'empty' : 'block' }
+  }
+  bot.pathfinder.goto = async () => { throw new Error('NoPath') }
+  await assert.rejects(skills.execute('explore'), /NoPath/)
+  bot._client = new EventEmitter()
+  bot.canDigBlock = () => true
+  bot.dig = async (block) => {
+    removed.add(block.position.toString())
+    bot._client.emit('block_change', {
+      location: block.position, type: bot.registry.blocksByName.air.minStateId,
+    })
+  }
+  bot.pathfinder.goto = async (goal) => {
+    bot.entity.position = new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5)
+  }
+  const result = await skills.execute('escape_upward')
+  assert.equal(result.escapedUpward, true)
+  assert.equal(result.cleared, 3)
+  assert.equal(result.rose, 1)
+  assert.ok([...removed].every((key) => !key.includes(', 67, ')))
 })
 
 test('recovery takes priority while a guard is buried under an unreachable threat, but real hurt preempts it', async () => {
