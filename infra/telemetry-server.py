@@ -198,12 +198,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 header = self.rfile.read(2)
                 if len(header) != 2:
+                    print('guest_control_closed', 'eof', len(header), flush=True)
                     break
                 opcode = header[0] & 0x0f
                 masked = bool(header[1] & 0x80)
                 size = header[1] & 0x7f
                 if size == 126:
                     size = struct.unpack('!H', self.rfile.read(2))[0]
+                print('guest_control_frame', opcode, masked, size, flush=True)
                 if not (header[0] & 0x80) or not masked or size > 4096 or size == 127:
                     break
                 mask = self.rfile.read(4)
@@ -237,7 +239,8 @@ class Handler(BaseHTTPRequestHandler):
                 except (ValueError, UnicodeDecodeError, TimeoutError, socket.timeout) as error:
                     print('guest_control_invalid_input', type(error).__name__, flush=True)
                     break
-            except (OSError, struct.error):
+            except (OSError, struct.error) as error:
+                print('guest_control_closed', type(error).__name__, flush=True)
                 break
         self.close_connection = True
 
