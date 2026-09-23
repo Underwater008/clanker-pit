@@ -116,10 +116,11 @@ shared display (3840×1440), not a single 1280×720 fallback screen.
 Other paths: `cinder`, `vex`, `tally`, and `arena` (wide spectator).
 The website's stream and telemetry URLs must target the same current pod.
 
-- The guest play view has a WebRTC path with HLS fallback, but it stays
-  disabled on the current pod until a public ICE media route is verified.
-  The current playable feed uses LL-HLS with 1 s guest keyframes. Other
-  feeds use hls.js or native HLS.
+- During an active guest turn, the browser receives the newest JPEG camera
+  frame over an authenticated WebSocket on port 19123. The preview drops old
+  frames when a client is slow. HLS remains the fallback and public spectator
+  feed; the disabled WebRTC path still needs a public ICE media route.
+- The guest HLS feed uses 1 s keyframes. Other feeds use hls.js or native HLS.
 - The camera account `ClankerCam` is a spectator-mode, invisible client joined via
   `--quickPlayMultiplayer 127.0.0.1:25565` (the legacy `--server/--port` args no longer auto-join).
 - Capture config: 1280x720 @ 30fps, NVENC when available (otherwise x264 with
@@ -138,6 +139,7 @@ The website's stream and telemetry URLs must target the same current pod.
 | `mc` | Vanilla 1.21.1 server console (send commands with `tmux send-keys -t mc`) |
 | `bots` | Village survival controller, native protocol mirrors, council + brain telemetry |
 | `guest` | Guest creeper gateway: viewer queue, 3-minute turns, guest mirror (25584) |
+| `guestpreview` | Authenticated latest-frame guest camera on HTTP port 19123 |
 | `cam{arena,cinder,vex,mira,tally,guest}` | Wide client or native-view watcher on GPU Xorg :10 |
 | `cap{arena,cinder,vex,mira,tally,guest}` | FFmpeg x11grab → RTMP, one publisher per feed |
 | `mtx` | mediamtx HLS server |
@@ -384,3 +386,6 @@ on port 25584 (state file `bot-state/mirror-Guest.json`); `camguest` runs the
 `run-native-view.py Guest` watcher on tile `[2560,720]` and `capguest` captures
 it to the `guest` HLS path. Between turns the watcher idles with no client
 running; a turn starting adds ~30-40 s of Java client startup to the guest cam.
+The `guestpreview` service captures that same tile only for an authenticated
+active guest browser, checks its token against the loopback-only gateway every
+two seconds, and exposes only `/health` and `/frames`. It never serves files.

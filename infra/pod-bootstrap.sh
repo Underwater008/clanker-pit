@@ -95,7 +95,7 @@ wlog "step: fetch capture + bot code from github"
 SOURCE_SHA=${CLANKER_SOURCE_SHA:-$(curl -fsSL https://api.github.com/repos/Underwater008/clanker-pit/commits/main | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')}
 [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Expected a full source commit SHA'; exit 1; }
 RAW=https://raw.githubusercontent.com/Underwater008/clanker-pit/$SOURCE_SHA
-for f in run-client.sh run-stream.sh run-native-view.py display.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
+for f in run-client.sh run-stream.sh run-native-view.py guest-preview.py display.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
   curl -fsSL "$RAW/infra/capture/$f" -o "$ARENA/capture/$f"
 done
 for f in ambient.mjs survival.mjs crafting.mjs native-mirror.mjs llm.mjs memory.mjs env.mjs decision.mjs village.mjs coolant.mjs coolant-setup.mjs council.mjs models.mjs guest-queue.mjs guest-boom.mjs guest-camera.mjs guest-gateway.mjs spring-repair.mjs flag-setup.mjs fixture-grant.mjs home-beds.mjs deposit-migrate.mjs identity.cinder.json package.json package-lock.json; do
@@ -206,6 +206,7 @@ wlog "step: founding home beds and respawn points (idempotent fixture)"
 
 wlog "step: guest creeper gateway (viewer queue + turns + guest mirror)"
 tmux new-session -d -s guest "cd $ARENA/bots && BOT_DATA_DIR=$ARENA/bot-state RCON_PASSWORD=clanker-dev node guest-gateway.mjs 2>&1 | tee -a $ARENA/logs/guest.log"
+tmux new-session -d -s guestpreview "python3 $ARENA/capture/guest-preview.py 2>&1 | tee -a $ARENA/logs/guest-preview.log"
 
 wlog "step: start stream services"
 tmux new-session -d -s mtx "cd $ARENA/capture && $ARENA/stream/mediamtx mediamtx.yml 2>&1 | tee $ARENA/logs/mtx.log"
