@@ -226,6 +226,25 @@ test('village navigation does not excavate the graded floor or trample planned f
   assert.equal(movements.exclusionStep({ name: 'air', position: flag.offset(20, 0, 20) }), 0)
 })
 
+test('a high leaf canopy temporarily permits a safe two-block descent', async () => {
+  const { bot, skills } = fixture({ village: {
+    flag: new Vec3(0, 64, 0), lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false,
+  } })
+  bot.entity.position = new Vec3(0.5, 70, 0.5)
+  bot.blockAt = (p) => {
+    const q = p.floored()
+    const name = q.equals(new Vec3(0, 69, 0)) ? 'oak_leaves' : q.y <= 64 ? 'grass_block' : 'air'
+    return { position: q, name, boundingBox: name === 'air' ? 'empty' : 'block' }
+  }
+  bot.emit('spawn')
+  bot.pathfinder.goto = async (goal) => {
+    assert.equal(bot.pathfinder.movements.maxDropDown, 2)
+    bot.entity.position = new Vec3(goal.x + 0.5, 67, goal.z + 0.5)
+  }
+  await skills.execute('explore')
+  assert.equal(bot.pathfinder.movements.maxDropDown, 1)
+})
+
 test('returning to the village does not report success from beneath its floor', async () => {
   const flag = new Vec3(0, 63, 0)
   const { bot, skills } = fixture({ village: {

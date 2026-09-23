@@ -598,6 +598,14 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
   }
   const walk = async (goal, ms = 11000) => {
+    const feet = bot.entity.position.floored()
+    const standingOnLeaves = bot.blockAt(feet.offset(0, -1, 0))?.name.endsWith('_leaves')
+    const normalDrop = movements?.maxDropDown
+    // A clanker on a high canopy needs a short downward step to reach lower
+    // leaves. Keep the stricter limit for ordinary village routes and pits.
+    if (villageCtx && standingOnLeaves &&
+        bot.entity.position.y >= villageCtx.flag.y + 5 && movements)
+      movements.maxDropDown = 2
     try {
       const result = await navigateWithRecovery({ bot, goal, ms, run: walkOnce, emergency, log })
       blockedRoutes = 0
@@ -606,6 +614,8 @@ export function installSurvival(bot, state, log, opts = {}) {
       blockedRoutes++
       lastBlockedRoute = Date.now()
       throw error
+    } finally {
+      if (movements && normalDrop != null) movements.maxDropDown = normalDrop
     }
   }
   function escapeTarget() {
