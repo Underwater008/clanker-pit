@@ -1,0 +1,101 @@
+{
+  "scripted": {
+    "event": "LAB_ACCESS_COMPLETE",
+    "results": [
+      {
+        "lot": 2,
+        "choice": "recover_passage:-4:-59:2",
+        "source": "scripted",
+        "moved": 2,
+        "server": "AccessLab has the following entity data: [-3.499999999999874d, -59.0d, 2.5d]",
+        "suppliesPreserved": true,
+        "roofPreserved": true,
+        "bedPreserved": true,
+        "doorwaySurvivesReload": true
+      },
+      {
+        "lot": 0,
+        "choice": "recover_passage:4:-59:2",
+        "source": "scripted",
+        "moved": 2,
+        "server": "AccessLab has the following entity data: [4.500000000000038d, -59.0d, 2.5d]",
+        "suppliesPreserved": true,
+        "roofPreserved": true,
+        "bedPreserved": true,
+        "doorwaySurvivesReload": true
+      },
+      {
+        "lot": 1,
+        "choice": "recover_passage:2:-59:-4",
+        "source": "scripted",
+        "moved": 2,
+        "server": "AccessLab has the following entity data: [2.5d, -59.0d, -3.50000000000026d]",
+        "suppliesPreserved": true,
+        "roofPreserved": true,
+        "bedPreserved": true,
+        "doorwaySurvivesReload": true
+      },
+      {
+        "lot": 3,
+        "choice": "recover_passage:-4:-59:4",
+        "source": "scripted",
+        "moved": 2,
+        "server": "AccessLab has the following entity data: [-3.5d, -59.0d, 4.499999999999656d]",
+        "suppliesPreserved": true,
+        "roofPreserved": true,
+        "bedPreserved": true,
+        "doorwaySurvivesReload": true
+      }
+    ],
+    "limitation": "Bounded Minecraft skills. A model choice is not evidence of superiority over scripted or random choices."
+  },
+  "model": {
+    "latencyMs": 18273,
+    "nextAction": "recover_passage:-4:-59:2",
+    "intention": "Break out of the blocked home through the south sidewall so I can reach the village and resume real work.",
+    "result": {
+      "event": "ACCESS_CASE_PASS",
+      "lot": 2,
+      "choice": "recover_passage:-4:-59:2",
+      "source": "planner",
+      "moved": 2,
+      "server": "AccessLab has the following entity data: [-3.499999999999874d, -59.0d, 2.5d]",
+      "suppliesPreserved": true,
+      "roofPreserved": true,
+      "bedPreserved": true,
+      "doorwaySurvivesReload": true
+    },
+    "limitation": "Only the west-home model case is counted. Later scripted fixtures in that invocation were interrupted by an overlapping lab reset; all four were rerun sequentially."
+  },
+  "regression": {
+    "event": "LAB_PROGRESS_COMPLETE",
+    "results": [
+      {
+        "policy": "scripted",
+        "choice": "recover_walk:4:-60:1",
+        "plannerMs": 0,
+        "actionMs": 966,
+        "moved": 4.12,
+        "outside": true,
+        "serverPosition": "ProgressLab has the following entity data: [4.5d, -60.0d, 1.5076830272319883d]",
+        "passed": true
+      },
+      {
+        "policy": "random",
+        "choice": "recover_walk:-2:-60:2",
+        "plannerMs": 0,
+        "actionMs": 614,
+        "moved": 2.55,
+        "outside": false,
+        "serverPosition": "ProgressLab has the following entity data: [-1.3007651106920621d, -60.0d, 2.3007652066071467d]",
+        "passed": true
+      }
+    ],
+    "limitation": "One fixture and one seeded random draw. Does not establish general model superiority."
+  },
+  "unitTests": {
+    "passed": 164,
+    "failed": 0
+  },
+  "limitation": "Both scripted and model choices can solve these offered passages. No claim of model superiority or human-like reasoning."
+}

@@ -5,18 +5,23 @@ export function createProgressMemory(state, { now = Date.now } = {}) {
   const data = state.progressMemory ??= { attempts: [], places: [], lastProgressAt: now() }
   data.attempts ??= []
   data.places ??= []
+  data.accessFailures ??= []
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
   function failures(context, action) {
     return data.attempts.filter((a) => a.context === context && (!action || a.action === action) &&
       !a.progress && now() - a.at < 180000)
   }
   return {
-    record({ context, action, before, after, changed, ok, error, source = null }) {
+    record({ context, accessContext = context, action, before, after, changed, ok, error, source = null }) {
       const moved = distance(before, after)
       const progress = moved >= 0.75 || Boolean(changed)
       const entry = { context, action, at: now(), position: { ...before },
         moved: Math.round(moved * 100) / 100, progress, ok, source,
         error: error ? String(error).slice(0, 180) : null }
+      if (moved < 0.75 && /path|navigation|goalchanged|deadline/i.test(entry.error ?? '')) {
+        data.accessFailures.push({ context: accessContext, action, at: now(), error: entry.error })
+        data.accessFailures = data.accessFailures.slice(-24)
+      }
       data.attempts.push(entry)
       data.attempts = data.attempts.slice(-48)
       if (progress) {
@@ -27,6 +32,7 @@ export function createProgressMemory(state, { now = Date.now } = {}) {
       }
       return entry
     },
+    accessBlocked: (context) => data.accessFailures.filter((f) => f.context === context).length >= 2,
     blocked: (context, action) => failures(context, action).length >= 2,
     stalled: (context) => failures(context).length >= 2 &&
       !data.attempts.slice(-2).some((a) => a.progress),
