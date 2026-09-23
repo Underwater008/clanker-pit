@@ -157,7 +157,7 @@ class TelemetryTests(unittest.TestCase):
         # per-IP limit is enforced at this public boundary.
         StubGateway.next_payload = {'ok': True, 'token': 't'}
         headers = {'Content-Type': 'text/plain', 'Content-Length': '2'}
-        for expected in [200, 200, 429, 429]:
+        for expected in [200] * telemetry.JOIN_MAX_PER_IP + [429, 429]:
             req = urllib.request.Request(self.base + '/guest/join', method='POST',
                                          data=b'{}', headers=headers)
             with self.subTest(expected=expected):
@@ -173,8 +173,9 @@ class TelemetryTests(unittest.TestCase):
             'TELEMETRY_TRUSTED_PROXY_CIDRS': '127.0.0.1/32',
             'TELEMETRY_CLIENT_IP_HEADER': 'CF-Connecting-IP',
         }):
-            for visitor, expected in [('203.0.113.1', 200), ('203.0.113.1', 200),
-                                      ('203.0.113.1', 429), ('203.0.113.2', 200)]:
+            attempts = [('203.0.113.1', 200)] * telemetry.JOIN_MAX_PER_IP + [
+                ('203.0.113.1', 429), ('203.0.113.2', 200)]
+            for visitor, expected in attempts:
                 try:
                     response, _ = self.request('/guest/join', method='POST', body=b'{}',
                                                headers={'CF-Connecting-IP': visitor})

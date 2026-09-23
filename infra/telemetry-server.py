@@ -28,7 +28,9 @@ GUEST_POST = {'/guest/join', '/guest/leave', '/guest/input'}
 # header only when the socket peer belongs to an explicitly configured proxy
 # network; direct clients cannot choose their own limiter identity.
 JOIN_WINDOW_SECONDS = 600
-JOIN_MAX_PER_IP = 2
+# A guest may die during arrival or finish a short turn and need to rejoin.
+# Keep a bounded per-client limit without locking them out after two tries.
+JOIN_MAX_PER_IP = 6
 JOIN_MAX_IDENTITIES = 10000
 JOIN_PRUNE_INTERVAL_SECONDS = 30
 _join_times = OrderedDict()

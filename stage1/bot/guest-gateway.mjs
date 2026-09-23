@@ -111,6 +111,10 @@ function publicStatus() {
     attachedAt: guestBot ? guestMirrorAttachedAt : null,
     mirror: mirrorState,
   })
+  // A mirror can attach before the player has survived placement. Only start
+  // the human's turn once the guest is alive at the gate.
+  camera.ready = camera.ready && Boolean(queue.active?.placed && guestBot?.isAlive)
+  if (!camera.ready && camera.status === 'connected') camera.status = 'starting'
   if (camera.ready) queue.markCameraReady(queue.active?.token)
   const status = queue.status()
   const position = guestBot?.entity?.position
@@ -297,17 +301,20 @@ function spawnGuest(entry) {
   mirror.attach(bot)
   guestBot = bot
   let ended = false
+  let arrivalDeaths = 0
+  let setupEpoch = 0
   const finish = (reason) => {
     if (ended) return
     ended = true
     endTurn(reason, { token: entry.token })
     setTimeout(() => teardownBot(bot, reason), reason === 'died' ? 3000 : 0)
   }
-  bot.once('spawn', async () => {
+  bot.on('spawn', async () => {
     if (ended || queue.active?.token !== entry.token) {
       teardownBot(bot, 'stale spawn')
       return
     }
+    const epoch = ++setupEpoch
     queue.markSpawned(botName, entry.token)
     log('guest_spawned', { nickname: entry.nickname, botName, position: bot.entity.position })
     // The official Minecraft client takes ~25 seconds to launch on this pod.
@@ -317,6 +324,7 @@ function spawnGuest(entry) {
       client.send(`effect give ${botName} minecraft:resistance 120 4 true`),
     )
     entry.arrivalProtected = Boolean(protectedAt && !/no entity|error|unknown/i.test(protectedAt))
+    if (ended || setupEpoch !== epoch) return
     if (!entry.arrivalProtected) log('guest_arrival_protection_failed', { nickname: entry.nickname })
     // Place the guest at the front gate, verified. The bot spawns at world
     // spawn (outside the gate by round design), but an unverified teleport
@@ -326,6 +334,7 @@ function spawnGuest(entry) {
     for (let attempt = 1; attempt <= 3 && !ended; attempt++) {
       await placeAtGate(botName)
       await sleep(600)
+      if (setupEpoch !== epoch) return
       const p = bot.entity?.position
       if (gate && p && Math.hypot(p.x - (gate.x + 0.5), p.z - (gate.z + 0.5)) < 8) {
         entry.placed = true
@@ -333,7 +342,7 @@ function spawnGuest(entry) {
       }
       log('gate_tp_retry', { nickname: entry.nickname, attempt, position: p ?? null })
     }
-    if (ended || queue.active?.token !== entry.token) return
+    if (ended || setupEpoch !== epoch || queue.active?.token !== entry.token) return
     if (!entry.placed) {
       log('guest_gate_refused', { nickname: entry.nickname })
       emitChat('gate', `${entry.nickname}'s creeper could not be placed at the gate. Turn skipped.`)
@@ -341,11 +350,24 @@ function spawnGuest(entry) {
       return
     }
     await wearCreeperCostume(bot)
-    if (ended || queue.active?.token !== entry.token) return
+    if (ended || setupEpoch !== epoch || queue.active?.token !== entry.token) return
     emitChat('gate', `${entry.nickname} became a creeper near the front gate.`)
     writeGuestState()
   })
-  bot.once('death', () => {
+  bot.on('death', () => {
+    if (ended) return
+    // Minecraft saves player data by offline username. A returning guest may
+    // log in with Health:0 from their last explosion and receive a death
+    // packet before Mineflayer's first spawn event. Recover that state, and
+    // bounded early deaths, before the viewer's camera becomes usable.
+    if (!entry.cameraReadyAt && ++arrivalDeaths <= 2) {
+      setupEpoch++
+      entry.placed = false
+      entry.arrivalProtected = false
+      log('guest_arrival_respawn', { nickname: entry.nickname, attempt: arrivalDeaths })
+      bot.respawn()
+      return
+    }
     log('guest_died', { nickname: entry.nickname })
     finish('died')
   })

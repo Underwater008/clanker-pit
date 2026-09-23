@@ -326,7 +326,7 @@ every 3 minutes even after a full-length turn.
 Abuse controls: guest nicknames may never match clanker/villager/camera names
 (offline-mode name collisions would kick the real player), `View*`/`Cam*`/
 `FlagSetup*` prefixes are reserved, guest tokens are crypto-derived, and
-joins are throttled per visitor IP at the public proxy (two per ten minutes —
+joins are throttled per visitor IP at the public proxy (six per ten minutes —
 the gateway only ever sees the proxy's loopback address). The queue lives
 in gateway memory — a gateway restart clears it (viewers re-join; the
 event-id sequence and unconsumed event buffers are restored from `guest.json`
@@ -337,6 +337,8 @@ exactly once by the controller, which applies overheat penalties and
 publishes queue status + guest chat in `state.json` for the website.
 An uncertain explosion attempt consumes the turn and is never automatically
 repeated. Late callbacks from an old guest cannot finish a newer guest's turn.
+If a returning nickname has saved `Health:0`, the gateway respawns that
+player before starting their camera and allows two bounded arrival retries.
 
 The guest POV is a sixth native view: the gateway attaches a read-only mirror
 on port 25584 (state file `bot-state/mirror-Guest.json`); `camguest` runs the
