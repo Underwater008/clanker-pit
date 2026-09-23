@@ -269,9 +269,9 @@ test('server anatomy: deposit is beside the monument, spring is south of the gat
   assert.equal(a.spring.length, 4)
   for (const cell of a.spring) {
     assert.ok(cell.z > flag.z + WALL_RADIUS, 'spring must sit outside the wall')
-    assert.ok(cell.distanceTo(a.guestSpawn) < 12, 'spring near the gate road')
+    assert.ok(cell.z < a.guestSpawn.z, 'guests approach from beyond the spring')
   }
-  assert.deepEqual(a.guestSpawn, flag.offset(0, 1, WALL_RADIUS + 2))
+  assert.deepEqual(a.guestSpawn, flag.offset(0, 1, WALL_RADIUS + 14))
   assert.ok(patrolNodes(flag).length >= 4)
 })
 
