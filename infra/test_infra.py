@@ -136,9 +136,11 @@ class TelemetryTests(unittest.TestCase):
                             f'Upgrade: websocket\r\nConnection: Upgrade\r\n'
                             f'Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {key}\r\n\r\n').encode())
             self.assertIn(b'101 Switching Protocols', client.recv(1024))
-            body = b'{"token":"test","keys":{"forward":true}}'
+            body = json.dumps({'token': 'a' * 64, 'keys': {'forward': True, 'back': False,
+                                                       'left': False, 'right': False, 'jump': False},
+                               'look': {'yaw': 0.1, 'pitch': 0}}).encode()
             mask = b'ABCD'
-            frame = bytes([0x81, 0x80 | len(body)]) + mask + bytes(
+            frame = bytes([0x81, 0xfe]) + struct.pack('!H', len(body)) + mask + bytes(
                 value ^ mask[i % 4] for i, value in enumerate(body))
             client.sendall(frame)
             for _ in range(30):

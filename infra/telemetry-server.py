@@ -231,7 +231,11 @@ class Handler(BaseHTTPRequestHandler):
                                       {'Content-Type': 'application/json'}, method='POST')
                     with urlopen(request, timeout=2) as response:
                         response.read(128)
-                except (ValueError, UnicodeDecodeError, URLError, TimeoutError, socket.timeout):
+                except URLError as error:
+                    print('guest_control_upstream_closed', getattr(error, 'code', None), flush=True)
+                    break
+                except (ValueError, UnicodeDecodeError, TimeoutError, socket.timeout) as error:
+                    print('guest_control_invalid_input', type(error).__name__, flush=True)
                     break
             except (OSError, struct.error):
                 break
