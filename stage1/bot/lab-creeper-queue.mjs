@@ -28,6 +28,7 @@ async function until(check, timeout = 20000) {
   throw new Error('Queue lab condition timed out')
 }
 try {
+  await r.send('difficulty normal')
   await r.send('fill -15 -60 -15 15 -55 15 air')
   await r.send('fill -15 -61 -15 15 -61 15 bedrock')
   gateway = spawn(process.execPath, [fileURLToPath(new URL('./guest-gateway.mjs', import.meta.url))], {
