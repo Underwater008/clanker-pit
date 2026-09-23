@@ -91,7 +91,6 @@ try {
     installedAt: previous?.installedAt ?? new Date().toISOString(), checkedAt: new Date().toISOString() }
   writeFileSync(`${marker}.${process.pid}.tmp`, JSON.stringify(complete))
   renameSync(`${marker}.${process.pid}.tmp`, marker)
-  await rcon.send('say [Round fixture] Founding home beds and respawn points are ready.').catch(() => {})
   console.log(JSON.stringify({ event: 'home_beds_ready', founders: state.founders,
     clearedLeaves, homes: homes.map(({ name, spawn }) => ({ name, spawn })) }))
 } finally {
