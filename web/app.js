@@ -9,6 +9,7 @@
   // ---------- config ----------
   var VIDEO_BASE = 'https://fse8ccos5kangj-8080.proxy.runpod.net';
   var API_BASE = 'https://fse8ccos5kangj-8081.proxy.runpod.net';
+  var WEBRTC_BASE = API_BASE;
   var STATE_FALLBACK = '/api/state';
   var FOUNDING = ['cinder', 'vex', 'mira', 'tally'];
   var TOKEN_KEY = 'clankerpit-guest-token';
@@ -70,7 +71,7 @@
   function attach(video, overlayEls, hudEl, feed) {
     var failures = 0, MAX = 6, disposed = false, watchProgress = false;
     var lastTime = -1, lastProgress = Date.now();
-    var inst = { hls: null, retryTimer: null };
+    var inst = { hls: null, peer: null, sessionUrl: null, rtcFallback: null, retryTimer: null };
     function setLive(on) {
       if (hudEl) hudEl.classList.toggle('live', Boolean(on && (feed !== 'guest' || guest.cameraReady())));
     }
@@ -84,26 +85,28 @@
     function stopPlayer() {
       if (inst.retryTimer) clearTimeout(inst.retryTimer);
       inst.retryTimer = null;
+      if (inst.rtcDeadline) clearTimeout(inst.rtcDeadline);
+      inst.rtcDeadline = null;
       if (inst.hls) inst.hls.destroy();
       inst.hls = null;
+      if (inst.peer) inst.peer.close();
+      inst.peer = null;
+      inst.rtcFallback = null;
+      if (inst.sessionUrl) fetch(inst.sessionUrl, { method: 'DELETE', keepalive: true }).catch(function () {});
+      inst.sessionUrl = null;
+      video.srcObject = null;
       video.removeAttribute('src');
       video.load();
     }
     function playing() {
+      if (inst.peer && inst.rtcDeadline) clearTimeout(inst.rtcDeadline);
       lastProgress = Date.now();
       failures = 0;
       overlay(false);
       setLive(true);
     }
-    function start() {
+    function startHls() {
       if (disposed) return;
-      stopPlayer();
-      failures = 0;
-      watchProgress = true;
-      lastTime = -1;
-      lastProgress = Date.now();
-      overlay(true, 'SIGNAL', 'Tuning the feed…', false);
-      setLive(false);
       if (window.Hls && Hls.isSupported()) {
         inst.hls = new Hls(feed === 'guest' || feed === 'arena' ? {
           lowLatencyMode: true, liveSyncDurationCount: 1,
@@ -145,6 +148,61 @@
         overlay(true, 'UNSUPPORTED', 'This browser cannot play the feed.', false);
       }
     }
+    function startWebRtc() {
+      if (!window.RTCPeerConnection) { startHls(); return; }
+      var peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      inst.peer = peer;
+      inst.rtcDeadline = setTimeout(fallback, 8000);
+      inst.rtcFallback = fallback;
+      function fallback() {
+        if (inst.peer !== peer || disposed) return;
+        clearTimeout(inst.rtcDeadline);
+        stopPlayer();
+        lastProgress = Date.now();
+        startHls();
+      }
+      peer.ontrack = function (event) {
+        if (inst.peer !== peer) return;
+        video.srcObject = event.streams[0];
+        video.play().catch(fallback);
+      };
+      peer.oniceconnectionstatechange = function () {
+        if (peer.iceConnectionState === 'failed' || peer.iceConnectionState === 'disconnected') fallback();
+      };
+      peer.addTransceiver('video', { direction: 'recvonly' });
+      peer.createOffer().then(function (offer) { return peer.setLocalDescription(offer); })
+        .then(function () {
+          return new Promise(function (resolve) {
+            if (peer.iceGatheringState === 'complete') return resolve();
+            var timeout = setTimeout(resolve, 2000);
+            peer.addEventListener('icegatheringstatechange', function () {
+              if (peer.iceGatheringState === 'complete') { clearTimeout(timeout); resolve(); }
+            });
+          });
+        }).then(function () {
+          if (inst.peer !== peer) return;
+          return fetch(WEBRTC_BASE + '/guest/whep', { method: 'POST',
+            headers: { 'Content-Type': 'application/sdp' }, body: peer.localDescription.sdp });
+        }).then(function (response) {
+          if (!response || !response.ok) throw new Error('WebRTC camera unavailable');
+          inst.sessionUrl = new URL(response.headers.get('Location'), WEBRTC_BASE).toString();
+          return response.text();
+        }).then(function (sdp) {
+          if (inst.peer === peer) return peer.setRemoteDescription({ type: 'answer', sdp: sdp });
+        }).catch(fallback);
+    }
+    function start() {
+      if (disposed) return;
+      stopPlayer();
+      failures = 0;
+      watchProgress = true;
+      lastTime = -1;
+      lastProgress = Date.now();
+      overlay(true, 'SIGNAL', 'Tuning the feed…', false);
+      setLive(false);
+      if (feed === 'guest') startWebRtc();
+      else startHls();
+    }
     function videoError() {
       watchProgress = false;
       setLive(false);
@@ -160,6 +218,8 @@
         lastTime = video.currentTime;
         lastProgress = Date.now();
         overlay(false); setLive(true);
+      } else if (inst.peer && Date.now() - lastProgress > 6000) {
+        inst.rtcFallback();
       } else if (Date.now() - lastProgress > 12000) {
         setLive(false);
         overlay(true, 'BUFFERING', 'Video has stopped advancing. Reconnect the camera.', true);
@@ -886,6 +946,8 @@
     dirty: true,
     lastSend: 0,
     inputInFlight: false,
+    controlSocket: null,
+    controlRetryAt: 0,
     boomed: false,
     wasActive: false,
     finished: false,
@@ -1212,11 +1274,45 @@
     };
   }
 
+  function guestControlSocket() {
+    if (!guest.canControl() || !guest.token) {
+      if (guest.controlSocket) guest.controlSocket.close();
+      guest.controlSocket = null;
+      return null;
+    }
+    if (guest.controlSocket && guest.controlSocket.readyState <= WebSocket.OPEN)
+      return guest.controlSocket;
+    if (!window.WebSocket || Date.now() < guest.controlRetryAt) return null;
+    guest.controlRetryAt = Date.now() + 5000;
+    var socket = new WebSocket(API_BASE.replace(/^http/, 'ws') + '/guest/control');
+    guest.controlSocket = socket;
+    socket.onopen = function () { guest.dirty = true; };
+    socket.onclose = socket.onerror = function () {
+      if (guest.controlSocket === socket) {
+        guest.controlSocket = null;
+        guest.dirty = true;
+      }
+    };
+    return socket;
+  }
+
   setInterval(function () {
-    if (!guest.canControl() || !guest.token || guest.inputInFlight || guest.boomed) return;
+    var socket = guestControlSocket();
+    if (!guest.canControl() || !guest.token || guest.boomed) return;
     var now = Date.now();
     var wantSend = guest.dirty || now - guest.lastSend > 500;
     if (!wantSend || now - guest.lastSend < 80) return;
+    if (socket && socket.readyState === WebSocket.OPEN && socket.bufferedAmount < 4096) {
+      guest.lastSend = now;
+      guest.dirty = false;
+      var liveYaw = guest.yaw;
+      if (liveYaw !== null) liveYaw = ((liveYaw % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+      socket.send(JSON.stringify({ token: guest.token, keys: snapshotKeys(),
+        look: { yaw: liveYaw === null ? undefined : liveYaw, pitch: guest.pitch } }));
+      return;
+    }
+    if (socket && socket.readyState === WebSocket.CONNECTING) return;
+    if (guest.inputInFlight) return;
     guest.lastSend = now;
     guest.dirty = false;
     guest.inputInFlight = true;

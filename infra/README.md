@@ -92,7 +92,9 @@ fallback screen. The corrected scripts validate display dimensions, require the
 shared display for tiled clients, and fail readiness if a playlist is unavailable.
 
 Port 8081 runs `telemetry-server.py`, which serves **only** the state snapshot
-and allowlisted guest API routes. Behind RunPod, configure
+and allowlisted guest API routes, including the guest control WebSocket and
+guest WHEP signaling. WebRTC media uses an ICE connection from MediaMTX;
+the WHEP proxy does not expose the pod filesystem. Behind RunPod, configure
 `TELEMETRY_TRUSTED_PROXY_CIDRS=100.64.1.0/24` and
 `TELEMETRY_CLIENT_IP_HEADER=CF-Connecting-IP`: these were verified against the
 current proxy's socket peer and overwritten client-IP header. Untrusted peers
@@ -106,7 +108,7 @@ Offline regression checks: `python3 -B -m unittest discover -s infra -p 'test_*.
 ## Live stream (capture path)
 
 Chain: official Minecraft clients on a shared GPU Xorg display → FFmpeg x11grab →
-RTMP → MediaMTX (`mtx`) → LL-HLS on :8080 → RunPod proxy → website player.
+RTMP → MediaMTX (`mtx`) → LL-HLS on :8080 or guest WebRTC via WHEP on :8081.
 Independent Xvfb displays are a fallback; tiled capture requires a correctly sized
 shared display (3840×1440), not a single 1280×720 fallback screen.
 
@@ -114,7 +116,8 @@ shared display (3840×1440), not a single 1280×720 fallback screen.
 Other paths: `cinder`, `vex`, `tally`, and `arena` (wide spectator).
 The website's stream and telemetry URLs must target the same current pod.
 
-- The website uses hls.js where supported, with native HLS as a fallback.
+- The guest play view attempts WebRTC and falls back to HLS when its media
+  connection cannot establish. Other feeds use hls.js or native HLS.
 - The camera account `ClankerCam` is a spectator-mode, invisible client joined via
   `--quickPlayMultiplayer 127.0.0.1:25565` (the legacy `--server/--port` args no longer auto-join).
 - Capture config: 1280x720 @ 30fps, NVENC when available (otherwise x264 with
@@ -320,8 +323,9 @@ labeled `planner_fallback` log and policy behavior — never a silent switch.
 
 `guest-gateway.mjs` (tmux `guest`) owns the human side of the game. The public
 enters through the allowlisted proxy on port 8081: `GET /guest/status`,
-`POST /guest/join|/guest/leave|/guest/input` (the Python telemetry server
-forwards to the loopback-only gateway on 8090 and caps request bodies). Every
+`POST /guest/join|/guest/leave|/guest/input`, and `GET /guest/control` WebSocket.
+The Python telemetry server forwards controls to the loopback-only gateway on
+8090 and caps input size. WHEP is limited to the guest camera path. Every
 `GUEST_TURN_EVERY_MS` (3 minutes) the queue head becomes a creeper-costumed
 guest bot just outside the front gate: creeper head via RCON, real player, real
 death, teleport verified before controls arm. The guest's entire control set is

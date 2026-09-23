@@ -4,6 +4,9 @@ from email.message import Message
 import importlib.util
 import json
 import os
+import base64
+import socket
+import struct
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 import subprocess
@@ -124,6 +127,25 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(response.headers['Access-Control-Allow-Origin'], '*')
         self.assertEqual(payload['queueLength'], 2)
         self.assertEqual(StubGateway.requests, [('GET', '/status', None)])
+
+    def test_websocket_control_forwards_masked_input_only_to_gateway(self):
+        with socket.create_connection(('127.0.0.1', self.server.server_port), timeout=2) as client:
+            client.settimeout(2)
+            key = base64.b64encode(b'0123456789abcdef').decode()
+            client.sendall((f'GET /guest/control HTTP/1.1\r\nHost: localhost\r\n'
+                            f'Upgrade: websocket\r\nConnection: Upgrade\r\n'
+                            f'Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {key}\r\n\r\n').encode())
+            self.assertIn(b'101 Switching Protocols', client.recv(1024))
+            body = b'{"token":"test","keys":{"forward":true}}'
+            mask = b'ABCD'
+            frame = bytes([0x81, 0x80 | len(body)]) + mask + bytes(
+                value ^ mask[i % 4] for i, value in enumerate(body))
+            client.sendall(frame)
+            for _ in range(30):
+                if StubGateway.requests:
+                    break
+                threading.Event().wait(0.01)
+        self.assertEqual(StubGateway.requests, [('POST', '/input', body)])
 
     def test_guest_join_forwards_the_body(self):
         StubGateway.next_payload = {'ok': True, 'token': 't'}

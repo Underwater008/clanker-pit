@@ -9,9 +9,14 @@ Paths served:
 The gateway itself binds loopback only; this server is the public gatekeeper.
 """
 from collections import OrderedDict
+import base64
+import hashlib
 from ipaddress import ip_address, ip_network
 import json
 import os
+import socket
+import struct
+import re
 import time
 from threading import Lock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,6 +29,8 @@ GUEST_BODY_LIMIT = 8 * 1024
 GUEST_TIMEOUT = 10
 GUEST_GET = {'/guest/status'}
 GUEST_POST = {'/guest/join', '/guest/leave', '/guest/input'}
+WHEP_SESSION = re.compile(r'^/guest/whep/[A-Za-z0-9_-]{1,100}$')
+WEBSOCKET_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 # RunPod forwards public HTTP through shared peers. Trust a single client-IP
 # header only when the socket peer belongs to an explicitly configured proxy
 # network; direct clients cannot choose their own limiter identity.
@@ -158,14 +165,126 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == '/arena/state.json':
             self._state_snapshot()
+        elif path == '/guest/control':
+            self._guest_control()
         elif path in GUEST_GET:
             self._proxy_guest('GET')
         else:
             self.send_error(404)
 
+    def _guest_control(self):
+        """A bounded WebSocket input pipe; the gateway still owns authorization."""
+        key = self.headers.get('Sec-WebSocket-Key', '')
+        if (self.headers.get('Upgrade', '').lower() != 'websocket' or
+                self.headers.get('Connection', '').lower().find('upgrade') < 0 or
+                self.headers.get('Sec-WebSocket-Version') != '13'):
+            self.send_error(400, 'WebSocket upgrade required')
+            return
+        try:
+            if len(base64.b64decode(key, validate=True)) != 16:
+                raise ValueError('invalid WebSocket key')
+        except (ValueError, base64.binascii.Error):
+            self.send_error(400, 'Invalid WebSocket key')
+            return
+        accept = base64.b64encode(hashlib.sha1((key + WEBSOCKET_MAGIC).encode()).digest()).decode()
+        self.send_response(101)
+        self.send_header('Upgrade', 'websocket')
+        self.send_header('Connection', 'Upgrade')
+        self.send_header('Sec-WebSocket-Accept', accept)
+        self.end_headers()
+        self.connection.settimeout(12)
+        last_input = 0.0
+        for _ in range(5000):  # turn lifetime plus a generous reconnect window
+            try:
+                header = self.rfile.read(2)
+                if len(header) != 2:
+                    break
+                opcode = header[0] & 0x0f
+                masked = bool(header[1] & 0x80)
+                size = header[1] & 0x7f
+                if size == 126:
+                    size = struct.unpack('!H', self.rfile.read(2))[0]
+                if not (header[0] & 0x80) or not masked or size > 4096 or size == 127:
+                    break
+                mask = self.rfile.read(4)
+                data = self.rfile.read(size)
+                if len(mask) != 4 or len(data) != size:
+                    break
+                if opcode == 8:
+                    break
+                if opcode == 9:
+                    self.wfile.write(bytes((0x8a, size)) + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
+                    self.wfile.flush()
+                    continue
+                if opcode != 1:
+                    break
+                now = time.monotonic()
+                if now - last_input < 0.035:
+                    continue
+                last_input = now
+                decoded = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+                try:
+                    message = json.loads(decoded)
+                    if not isinstance(message, dict) or not isinstance(message.get('token'), str):
+                        break
+                    request = Request(guest_upstream() + '/input', decoded,
+                                      {'Content-Type': 'application/json'}, method='POST')
+                    with urlopen(request, timeout=2) as response:
+                        response.read(128)
+                except (ValueError, UnicodeDecodeError, URLError, TimeoutError, socket.timeout):
+                    break
+            except (OSError, struct.error):
+                break
+        self.close_connection = True
+
+    def _guest_whep(self, method):
+        """Expose guest WHEP signaling only; MediaMTX media uses ICE directly."""
+        path = urlsplit(self.path).path
+        if not (path == '/guest/whep' and method == 'POST' or
+                WHEP_SESSION.fullmatch(path) and method == 'DELETE'):
+            self.send_error(404)
+            return
+        body = None
+        if method == 'POST':
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+            except ValueError:
+                length = -1
+            if length < 1 or length > 65536:
+                self.send_error(413)
+                return
+            body = self.rfile.read(length)
+        request = Request('http://127.0.0.1:8889' + path, body, method=method,
+                          headers={'Content-Type': 'application/sdp'} if body else {})
+        try:
+            response = urlopen(request, timeout=8)
+        except URLError as error:
+            if getattr(error, 'code', None):
+                response = error
+            else:
+                self.send_error(502, 'Guest WebRTC unavailable')
+                return
+        with response:
+            payload = response.read(65537)
+            if len(payload) > 65536:
+                self.send_error(502, 'WHEP response too large')
+                return
+            self.send_response(response.status)
+            self.send_header('Content-Type', response.headers.get('Content-Type', 'application/sdp'))
+            self._cors()
+            location = response.headers.get('Location')
+            if location:
+                session_path = urlsplit(location).path
+                if WHEP_SESSION.fullmatch(session_path):
+                    self.send_header('Location', session_path)
+                    self.send_header('Access-Control-Expose-Headers', 'Location')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
     def do_OPTIONS(self):
         path = urlsplit(self.path).path
-        if path == '/arena/state.json' or path in GUEST_GET or path in GUEST_POST:
+        if path == '/arena/state.json' or path in GUEST_GET or path in GUEST_POST or path == '/guest/whep':
             self.send_response(204)
             self._cors()
             self.end_headers()
@@ -174,6 +293,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlsplit(self.path).path
+        if path == '/guest/whep':
+            self._guest_whep('POST')
+            return
         if path not in GUEST_POST:
             self.send_error(404)
             return
@@ -206,6 +328,9 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
             return
         self._proxy_guest('POST', body)
+
+    def do_DELETE(self):
+        self._guest_whep('DELETE')
 
 
 if __name__ == '__main__':

@@ -77,6 +77,11 @@ hlsAllowOrigin: "*"
 hlsSegmentCount: 7
 hlsSegmentDuration: 1s
 hlsPartDuration: 200ms
+webrtcAddress: :8889
+webrtcAllowOrigin: "*"
+webrtcLocalUDPAddress: ""
+webrtcICEServers2:
+  - url: stun:stun.l.google.com:19302
 paths:
   arena: {source: publisher}
   cinder: {source: publisher}
