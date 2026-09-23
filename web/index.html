@@ -68,6 +68,10 @@
           <div class="code">STARTING CAMERA</div>
           <div class="msg">Your Minecraft view is loading. This can take about 30 seconds.<br>Controls appear when the camera connects.</div>
         </div>
+        <div class="overlay queue-overlay" id="guestQueueOverlay" role="status" hidden>
+          <div class="code">WAITING FOR YOUR CREEPER TURN</div>
+          <div class="msg" id="guestQueueCountdown">The arena is on screen while you wait.</div>
+        </div>
         <div class="turn-hud" id="turnHud" hidden>
           <span id="turnTimer">0:00</span>
           <button id="boomBtn" class="boom">BOOM</button>

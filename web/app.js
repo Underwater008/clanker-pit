@@ -507,6 +507,7 @@
       $('touchPad').hidden = true;
       $('clickCatch').hidden = true;
       $('guestCameraOverlay').hidden = true;
+      $('guestQueueOverlay').hidden = true;
     }
     if (mode === 'arena') showSingle('arena', 'ARENA 01 / WIDE', 'CAM 01 · SPECTATOR FEED');
     else if (mode === 'grid') showGrid();
@@ -883,6 +884,7 @@
     inputInFlight: false,
     boomed: false,
     wasActive: false,
+    finished: false,
     touch: 'ontouchstart' in window,
     turnLive: function () {
       var g = telemetry && telemetry.guest;
@@ -935,6 +937,7 @@
       localStorage.setItem(TOKEN_KEY, r.token);
       localStorage.setItem(NAME_KEY, r.nickname);
       guest.boomed = false;
+      guest.finished = false;
       renderPlay();
     }).catch(function (e) {
       joinError((e && e.error) || 'Could not reach the gate.');
@@ -957,10 +960,11 @@
     clearGuest();
     renderPlay();
   });
-  function clearGuest() {
+  function clearGuest(keepFinished) {
     guest.token = null;
     guest.nickname = null;
     guest.boomed = false;
+    if (!keepFinished) guest.finished = false;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(NAME_KEY);
   }
@@ -978,6 +982,11 @@
     $('touchPad').hidden = !(controlsReady && guest.touch);
     $('clickCatch').hidden = !(controlsReady && !guest.touch && document.pointerLockElement !== singleVideo);
     $('guestCameraOverlay').hidden = !turn || cameraReady;
+    $('guestQueueOverlay').hidden = !available || turn || !guest.token;
+    if (available && !turn && guest.token) {
+      $('guestQueueCountdown').textContent = 'Arena feed while you wait. Next slot in ' +
+        fmtClock(g.nextTurnInMs) + '; your camera and controls start when your turn begins.';
+    }
     $('guestCrosshair').hidden = !controlsReady;
     $('playHelp').hidden = !turn;
     $('boomBtn').disabled = guest.boomed || !cameraReady;
@@ -1001,14 +1010,14 @@
     showSingle('arena', 'ARENA / QUEUE', 'WAITING FOR CREEPER TURN');
     if (guest.wasActive) {
       guest.wasActive = false;
-      showDone.hidden = false;
+      guest.finished = true;
       $('doneTitle').textContent = guest.boomed ? 'GG. YOU EXPLODED.' : 'TURN OVER.';
       $('doneLine').textContent = guest.boomed
         ? 'The Server felt that. Watch the chat — did the wall hold?'
         : 'Your creeper was pulled off the field. The queue is always open.';
-      clearGuest();
-      return;
+      clearGuest(true);
     }
+    if (guest.finished) { showDone.hidden = false; return; }
     if (guest.token) {
       showQueued.hidden = false;
       var position = 0;

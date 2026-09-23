@@ -149,6 +149,19 @@ test('a turn ends on timeout and an idle guest frees the slot', () => {
   assert.ok(spawn.token)
 })
 
+test('camera startup does not consume the playable turn', () => {
+  const { queue, advance } = makeQueue({ turnMaxMs: 3 * minute })
+  queue.join('Ada')
+  const { spawn } = queue.tick()
+  const originalEnd = queue.active.endsAt
+  advance(30_000)
+  queue.markCameraReady(spawn.token)
+  assert.equal(queue.active.endsAt, originalEnd + 30_000)
+  assert.equal(queue.status().active.remainingMs, 3 * minute)
+  queue.markCameraReady(spawn.token)
+  assert.equal(queue.active.endsAt, originalEnd + 30_000, 'repeated status reads cannot extend a turn')
+})
+
 test('queue capacity and duplicate names are enforced', () => {
   const { queue } = makeQueue()
   assert.equal(queue.join('Ada').ok, true)

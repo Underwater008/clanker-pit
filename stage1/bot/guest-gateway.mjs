@@ -41,6 +41,7 @@ const MIRROR_PORT =
 const GUEST_STATE = join(DATA_DIR, 'guest.json')
 const MIRROR_STATE = join(DATA_DIR, 'mirror-Guest.json')
 const BOOM_GRACE_MS = 2500
+const ARRIVAL_GRACE_MS = 10000
 const BODY_LIMIT = 4096
 
 mkdirSync(DATA_DIR, { recursive: true })
@@ -304,6 +305,14 @@ function spawnGuest(entry) {
     }
     queue.markSpawned(botName, entry.token)
     log('guest_spawned', { nickname: entry.nickname, botName, position: bot.entity.position })
+    // The official Minecraft client takes ~25 seconds to launch on this pod.
+    // A guest can be killed by mobs before they can see or steer; protect
+    // that arrival, then remove the effect shortly after the camera connects.
+    const protectedAt = await withRcon((client) =>
+      client.send(`effect give ${botName} minecraft:resistance 120 4 true`),
+    )
+    entry.arrivalProtected = Boolean(protectedAt && !/no entity|error|unknown/i.test(protectedAt))
+    if (!entry.arrivalProtected) log('guest_arrival_protection_failed', { nickname: entry.nickname })
     // Place the guest at the front gate, verified. The bot spawns at world
     // spawn (outside the gate by round design), but an unverified teleport
     // could leave it near the Server core — controls and boom stay disabled
@@ -527,6 +536,16 @@ server.on('error', (e) => log('gateway_error', { error: String(e) }))
 setInterval(() => {
   const active = queue.active
   const bot = guestBot
+  if (active?.cameraReadyAt && active.arrivalProtected && !active.protectionReleaseScheduled) {
+    active.protectionReleaseScheduled = true
+    const token = active.token
+    const botName = active.botName
+    setTimeout(() => {
+      if (queue.active?.token !== token) return
+      void withRcon((client) => client.send(`effect clear ${botName} minecraft:resistance`))
+        .then((result) => log('guest_arrival_protection_ended', { nickname: active.nickname, ok: Boolean(result) }))
+    }, ARRIVAL_GRACE_MS)
+  }
   if (active && queue.isInputStale(active) && bot) {
     // Browser went quiet: stop the creeper instead of walking into a wall.
     active.controls = null

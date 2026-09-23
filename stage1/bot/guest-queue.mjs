@@ -103,7 +103,7 @@ export class GuestQueue {
             remainingMs: Math.max(0, this.active.endsAt - now),
           }
         : null,
-      nextTurnInMs: Math.max(0, this.nextSlotAt - now),
+      nextTurnInMs: Math.max(0, Math.max(this.nextSlotAt, this.active?.endsAt ?? 0) - now),
       turnEveryMs: this.turnEveryMs,
       turnMaxMs: this.turnMaxMs,
       acceptingJoins: this.queue.length < this.maxQueue,
@@ -206,6 +206,9 @@ export class GuestQueue {
     if (this.active.cameraReadyAt) return
     this.active.cameraReadyAt = this.now()
     this.active.lastInputAt = this.active.cameraReadyAt
+    // Loading an official Minecraft client can take tens of seconds. Give
+    // the human the full turn after the camera actually connects.
+    this.active.endsAt = Math.max(this.active.endsAt, this.active.cameraReadyAt + this.turnMaxMs)
   }
 
   /** Explicit turn end: boom, death, or the human disconnected. */
