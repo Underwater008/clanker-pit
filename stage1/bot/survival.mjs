@@ -391,7 +391,10 @@ export function installSurvival(bot, state, log, opts = {}) {
     moves.canDig = true
     moves.digCost = 2 // Prefer going around; clear ordinary terrain when needed.
     moves.exclusionAreasBreak.push((block) => {
-      if (constructionBlock(block.position) || resourceBusy(block.position)) return 100
+      // Leaves can grow into a planned wall/home cell without becoming player
+      // construction. Let navigation clear that natural obstruction.
+      if ((constructionBlock(block.position) && !block.name.endsWith('_leaves')) ||
+          resourceBusy(block.position)) return 100
       const soft =
         [
           'dirt',

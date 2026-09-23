@@ -237,7 +237,13 @@ export function homeExtensionBlueprint(flag, index) {
         }
       }
       if (extension.every((p) => !reserved.has(key(p)))) {
-        selected = extension
+        // Keep exits beside the cauldron and the west homes. Without these
+        // side openings, completed extensions can turn alleys into dead ends.
+        const accessGaps = new Set([
+          ...(i === 0 ? [plus(flag, 3, 1, 1), plus(flag, 3, 2, 1)] : []),
+          ...(i === 5 ? [plus(flag, -4, 1, 2), plus(flag, -4, 2, 2)] : []),
+        ].map(key))
+        selected = extension.filter((p) => !accessGaps.has(key(p)))
         break
       }
     }

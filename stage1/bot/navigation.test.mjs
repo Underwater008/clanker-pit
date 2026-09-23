@@ -219,6 +219,7 @@ test('village navigation does not excavate the graded floor or trample planned f
   const bed = homeBed(flag, 0)
   assert.equal(forbidden({ name: 'red_bed', position: bed.foot }), 100)
   assert.equal(forbidden({ name: 'red_bed', position: bed.head }), 100)
+  assert.equal(forbidden({ name: 'oak_leaves', position: bed.foot }), 0)
   assert.equal(movements.exclusionAreasStep[0]({ name: 'farmland', position: flag.offset(2, 0, 12) }), 100)
   assert.equal(movements.exclusionStep({ name: 'air', position: flag.offset(1, 0, 1) }), 100)
   assert.equal(movements.exclusionStep({ name: 'air', position: flag.offset(1, 1, 1) }), 0)

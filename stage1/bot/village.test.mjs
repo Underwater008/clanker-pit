@@ -244,6 +244,13 @@ test('planned home extensions join the doorway and never consume another lot or 
   const extension = new Set(homeExtensionBlueprint(flag, 1).map(key))
   assert.ok(!extension.has(key(lot.offset(0, 1, 3))))
   assert.ok(!extension.has(key(lot.offset(0, 2, 3))))
+  const cauldronSideDoor = new Set(homeExtensionBlueprint(flag, 0).map(key))
+  assert.ok(!cauldronSideDoor.has(key(flag.offset(3, 1, 1))))
+  assert.ok(!cauldronSideDoor.has(key(flag.offset(3, 2, 1))))
+  const westPassage = new Set(homeExtensionBlueprint(flag, 5).map(key))
+  assert.ok(westPassage.size > 0)
+  assert.ok(!westPassage.has(key(flag.offset(-4, 1, 2))))
+  assert.ok(!westPassage.has(key(flag.offset(-4, 2, 2))))
 })
 
 test('rotateXZ turns clockwise seen from above', () => {
