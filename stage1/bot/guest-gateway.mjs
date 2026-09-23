@@ -28,6 +28,7 @@ import { createNativeMirror } from './native-mirror.mjs'
 import { GuestQueue, restoreGuestHistory } from './guest-queue.mjs'
 import { guestCameraStatus } from './guest-camera.mjs'
 import { confirmGuestExplosion } from './guest-boom.mjs'
+import { NativeCreeperDirector } from './guest-creeper.mjs'
 import { repairSpring } from './spring-repair.mjs'
 import { readVillageFixture, serverAnatomy, VILLAGER_POOL } from './village.mjs'
 
@@ -45,6 +46,7 @@ const CAMERA_VIEW_STATE = join(DATA_DIR, 'guest-camera-view.json')
 const BOOM_GRACE_MS = 2500
 const ARRIVAL_GRACE_MS = 10000
 const BODY_LIMIT = 4096
+const FILLERS_ENABLED = process.env.GUEST_FILLERS !== '0'
 
 mkdirSync(DATA_DIR, { recursive: true })
 const log = (event, data = {}) =>
@@ -105,11 +107,11 @@ function writeGuestState() {
   }
 }
 
-function publicStatus() {
+function publicStatus(token = null) {
   let mirrorState = null
   try { mirrorState = JSON.parse(readFileSync(MIRROR_STATE, 'utf8')) } catch {}
   const camera = guestCameraStatus({
-    active: Boolean(queue.active),
+    active: queue.active?.kind === 'human',
     attachedAt: guestBot ? guestMirrorAttachedAt : null,
     mirror: mirrorState,
   })
@@ -123,8 +125,8 @@ function publicStatus() {
   camera.viewMode = camera.ready && requestedView?.generation === mirrorState?.generation &&
     requestedView?.mode === 'first' ? 'first' : 'third'
   const status = queue.status()
-  const position = guestBot?.entity?.position
-  if (status.active && queue.active?.placed && position &&
+  const position = queue.active?.kind === 'clanker' ? nativeDirector?.position() : guestBot?.entity?.position
+  if (status.active && (queue.active?.placed || queue.active?.kind === 'clanker') && position &&
       [position.x, position.y, position.z].every(Number.isFinite))
     status.active.position = { x: position.x, y: position.y, z: position.z }
   if (status.active && Number.isFinite(guestBot?.entity?.yaw) &&
@@ -134,7 +136,7 @@ function publicStatus() {
     ...status,
     feed: 'guest',
     gateReady: Boolean(anatomy),
-    camera,
+    ...(queue.controlsFor(token) ? { camera } : {}),
   }
 }
 
@@ -219,6 +221,71 @@ let guestBot = null
 let guestMirrorAttachedAt = null
 let boomLatched = false
 const usedBotNames = new Set()
+let autoObserver = null
+let nativeDirector = null
+let nextObserverAttempt = 0
+let stopping = false
+
+function ensureNativeObserver() {
+  if (!FILLERS_ENABLED || stopping || !anatomy || autoObserver || Date.now() < nextObserverAttempt) return
+  nextObserverAttempt = Date.now() + 10000
+  const bot = mineflayer.createBot({ host: MC_HOST, port: MC_PORT, version: '1.21.1',
+    username: 'CamCreepers', auth: 'offline', hideErrors: true })
+  autoObserver = bot
+  bot.once('spawn', async () => {
+    try {
+      bot.physicsEnabled = false
+      const p = anatomy.base
+      const mode = await withRcon((client) => client.send('gamemode spectator CamCreepers'))
+      if (!mode || /no player|unknown|error/i.test(mode)) throw new Error('Observer spectator setup failed')
+      await withRcon((client) => client.send(`tp CamCreepers ${p.x + .5} ${p.y + 12} ${p.z + .5}`))
+      await bot.waitForChunksToLoad()
+      if (autoObserver !== bot || stopping) return
+      // On gateway recovery only remove our own orphaned automatic entities.
+      await withRcon((client) => client.send('kill @e[type=minecraft:creeper,tag=cp_auto_creeper]'))
+      nativeDirector = new NativeCreeperDirector({ observer: bot,
+        send: (command) => withRcon((client) => client.send(command)),
+        sendOnce: (command) => withRconOnce((client) => client.send(command)), log,
+        onBoom: (entry, position) => {
+          if (queue.active?.token !== entry.token) return
+          emitEvent('boom', { nickname: entry.nickname, position, source: 'scripted_creeper' })
+          endTurn('boom', { token: entry.token })
+        },
+        onEnd: (entry, reason) => endTurn(reason, { token: entry.token }),
+      })
+      queue.setFillersEnabled(true)
+      log('auto_creepers_ready', { source: 'scripted_native_creeper' })
+    } catch (e) {
+      log('auto_observer_error', { error: String(e) })
+      bot.quit()
+    }
+  })
+  bot.on('error', (e) => log('auto_observer_error', { error: String(e) }))
+  bot.once('end', () => {
+    if (autoObserver !== bot) return
+    autoObserver = null
+    queue.setFillersEnabled(false)
+    const old = nativeDirector
+    nativeDirector = null
+    void old?.close()
+    if (queue.active?.kind === 'clanker') endTurn('failed')
+  })
+}
+
+async function spawnNative(entry) {
+  const director = nativeDirector
+  if (!director) { endTurn('failed', { token: entry.token }); return }
+  try {
+    if (await director.spawn(entry, anatomy)) {
+      queue.markSpawned(entry.nickname, entry.token)
+      emitChat('gate', `${entry.nickname} became a creeper near the front gate.`)
+    }
+  } catch (error) {
+    log('auto_creeper_spawn_error', { nickname: entry.nickname, error: String(error) })
+    await director.stop('failed', entry.token)
+    endTurn('failed', { token: entry.token })
+  }
+}
 
 function guestSpawnPoint() {
   return anatomy?.guestSpawn ?? null
@@ -528,12 +595,13 @@ const server = createServer(async (req, res) => {
       // Its public WebSocket never receives the queue or guest state files.
       const body = parseJsonBody(await readBody(req))
       const token = typeof body?.token === 'string' ? body.token : ''
-      const allowed = Boolean(queue.controlsFor(token) && publicStatus().camera.ready)
+      const allowed = Boolean(queue.controlsFor(token) && publicStatus(token).camera.ready)
       return send(res, allowed ? 200 : 403, { ok: allowed })
     }
-    if (req.method === 'POST' && (path === '/join' || path === '/leave' || path === '/input' || path === '/camera-view')) {
+    if (req.method === 'POST' && (path === '/status' || path === '/join' || path === '/leave' || path === '/input' || path === '/camera-view')) {
       const body = parseJsonBody(await readBody(req))
       if (!body) return send(res, 400, { error: 'invalid JSON body' })
+      if (path === '/status') return send(res, 200, { ok: true, ...publicStatus(String(body.token ?? '')) })
       if (path === '/join') {
         // Per-IP throttling happens at the public boundary
         // (telemetry-server.py) — behind the proxy every request arrives
@@ -560,7 +628,7 @@ const server = createServer(async (req, res) => {
       if (path === '/camera-view') {
         if (body.mode !== 'first' && body.mode !== 'third')
           return send(res, 400, { error: 'invalid camera view' })
-        if (!publicStatus().camera.ready)
+        if (!publicStatus(entry.token).camera.ready)
           return send(res, 409, { error: 'camera is starting' })
         let mirror = null
         try { mirror = JSON.parse(readFileSync(MIRROR_STATE, 'utf8')) } catch {}
@@ -593,6 +661,8 @@ server.on('error', (e) => log('gateway_error', { error: String(e) }))
 
 /* ---------- main loop ------------------------------------------------------ */
 setInterval(() => {
+  if (stopping) return
+  ensureNativeObserver()
   const active = queue.active
   const bot = guestBot
   if (active?.cameraReadyAt && active.arrivalProtected && !active.protectionReleaseScheduled) {
@@ -618,15 +688,19 @@ setInterval(() => {
       emitChat('gate', `${transition.spawn.nickname} was turned away — the gate is not ready yet.`)
       queue.finishActive('no-village')
       writeGuestState()
-    } else spawnGuest(transition.spawn)
+    } else if (transition.spawn.kind === 'clanker') void spawnNative(transition.spawn)
+    else spawnGuest(transition.spawn)
   }
   if (transition.end) {
     const { entry, reason } = transition.end
     log('turn_end', { nickname: entry.nickname, reason })
-    if (reason === 'idle')
+    if (reason === 'yield')
+      emitChat('gate', `${entry.nickname} left the arena. The next creeper is up.`)
+    else if (reason === 'idle')
       emitChat('gate', `${entry.nickname}'s creeper wandered off.`)
     else emitChat('gate', `${entry.nickname}'s turn ran out.`)
-    teardownBot(guestBot, 'timeout')
+    if (entry.kind === 'clanker') void nativeDirector?.stop(reason, entry.token)
+    else teardownBot(guestBot, 'timeout')
   }
   writeGuestState()
 }, 500)
@@ -648,7 +722,12 @@ setInterval(() => {
   })
 }, 20000)
 
-function stop() {
+async function stop() {
+  if (stopping) return
+  stopping = true
+  queue.setFillersEnabled(false)
+  await nativeDirector?.close()
+  autoObserver?.quit()
   teardownBot(guestBot, 'shutdown')
   mirror.close()
   server.close()

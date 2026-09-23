@@ -10,6 +10,26 @@ and capture/stream services. Vercel serves the separate website. Start with
 do not rerun the entire bootstrap as a routine code update. Inspect the running
 stack and restart only the affected components.
 
+## Automatic creeper queue
+
+The guest gateway fills quiet queues with 1–5 generated clanker names. Each
+scheduled name becomes a real, named vanilla creeper. `CamCreepers` is a
+spectator observer used only by the match controller: loaded blocks drive
+bounded path searches, and RCON applies movement impulses while vanilla
+physics handles collisions and damage. No blocks are cleared for navigation.
+A trapped creeper may explode to breach an obstacle. Coolant is debited only
+after a server explosion packet is observed through the existing event pipeline.
+
+Human joins go ahead of waiting clankers and preserve human FIFO order.
+Existing clanker names remain behind them, and quiet queues refill gradually. An
+active filler yields within eight seconds; its cooldown does not delay the
+human. Fillers have a 60-second cap and use the existing three-minute spawn cadence.
+Set `GUEST_FILLERS=0` to disable them. An unavailable observer disables filler
+entries; the website never invents live queue names. The public queue carries
+names and positions without identifying the scheduling source. A player's
+camera state is returned only to their own token through `POST /guest/status`;
+tokens and controller instructions stay private.
+
 ## Prereqs
 
 - `stage0/.env` contains `RUNPOD_API_KEY` with **Read & Write** permission
