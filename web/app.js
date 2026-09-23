@@ -8,6 +8,7 @@
 
   // ---------- config ----------
   var VIDEO_BASE = 'https://fse8ccos5kangj-8080.proxy.runpod.net';
+  var GUEST_FAST_URL = 'wss://fse8ccos5kangj-19123.proxy.runpod.net/frames';
   var API_BASE = 'https://fse8ccos5kangj-8081.proxy.runpod.net';
   var WEBRTC_BASE = API_BASE;
   // The current pod has no public ICE port. Enable after a world-safe network
@@ -74,7 +75,11 @@
   function attach(video, overlayEls, hudEl, feed) {
     var failures = 0, MAX = 6, disposed = false, watchProgress = false;
     var lastTime = -1, lastProgress = Date.now();
-    var inst = { hls: null, peer: null, sessionUrl: null, rtcFallback: null, retryTimer: null };
+    var fastCanvas = feed === 'guest' ? $('guestFastCanvas') : null;
+    var fastContext = fastCanvas && window.createImageBitmap ? fastCanvas.getContext('2d') : null;
+    var inst = { hls: null, peer: null, sessionUrl: null, rtcFallback: null, retryTimer: null,
+      fastSocket: null, fastActive: false, fastDecoding: false, fastLast: 0,
+      fastRetryAt: 0, fastOpenedAt: 0 };
     function setLive(on) {
       if (hudEl) hudEl.classList.toggle('live', Boolean(on && (feed !== 'guest' || guest.cameraReady())));
     }
@@ -88,6 +93,15 @@
     function stopPlayer() {
       if (inst.retryTimer) clearTimeout(inst.retryTimer);
       inst.retryTimer = null;
+      if (inst.fastSocket) {
+        var socket = inst.fastSocket;
+        inst.fastSocket = null;
+        socket.close();
+      }
+      inst.fastActive = false;
+      inst.fastDecoding = false;
+      if (fastCanvas) fastCanvas.hidden = true;
+      video.hidden = false;
       if (inst.rtcDeadline) clearTimeout(inst.rtcDeadline);
       inst.rtcDeadline = null;
       if (inst.hls) inst.hls.destroy();
@@ -109,7 +123,7 @@
       setLive(true);
     }
     function startHls() {
-      if (disposed) return;
+      if (disposed || inst.hls) return;
       if (window.Hls && Hls.isSupported()) {
         inst.hls = new Hls(feed === 'guest' || feed === 'arena' ? {
           // The stream publishes 200 ms parts inside 2 s segments. Counting
@@ -152,6 +166,57 @@
         watchProgress = false;
         overlay(true, 'UNSUPPORTED', 'This browser cannot play the feed.', false);
       }
+    }
+    function maybeStartFast() {
+      if (!fastContext || disposed || inst.fastSocket || Date.now() < inst.fastRetryAt ||
+          !guest.token || !guest.canControl() || !window.WebSocket) return;
+      var socket = new WebSocket(GUEST_FAST_URL);
+      inst.fastSocket = socket;
+      inst.fastRetryAt = Date.now() + 5000;
+      inst.fastOpenedAt = Date.now();
+      socket.binaryType = 'arraybuffer';
+      socket.onopen = function () {
+        if (inst.fastSocket === socket) socket.send(JSON.stringify({ token: guest.token }));
+      };
+      socket.onmessage = function (event) {
+        if (inst.fastSocket !== socket || inst.fastDecoding || !(event.data instanceof ArrayBuffer) ||
+            event.data.byteLength < 12) return;
+        inst.fastDecoding = true;
+        createImageBitmap(new Blob([event.data.slice(8)], { type: 'image/jpeg' })).then(function (bitmap) {
+          if (inst.fastSocket === socket && !disposed) {
+            fastContext.drawImage(bitmap, 0, 0, fastCanvas.width, fastCanvas.height);
+            inst.fastLast = Date.now();
+            lastProgress = inst.fastLast;
+            if (!inst.fastActive) {
+              inst.fastActive = true;
+              fastCanvas.hidden = false;
+              video.hidden = true;
+              if (inst.hls) inst.hls.destroy();
+              inst.hls = null;
+              video.pause();
+              video.removeAttribute('src');
+              video.load();
+            }
+            overlay(false);
+            setLive(true);
+          }
+          bitmap.close();
+        }).catch(function () {
+          if (inst.fastSocket === socket) socket.close();
+        }).finally(function () { inst.fastDecoding = false; });
+      };
+      socket.onclose = function () {
+        if (inst.fastSocket !== socket || disposed) return;
+        inst.fastSocket = null;
+        if (inst.fastActive) {
+          inst.fastActive = false;
+          fastCanvas.hidden = true;
+          video.hidden = false;
+          lastProgress = Date.now();
+          startHls();
+        }
+      };
+      socket.onerror = function () { socket.close(); };
     }
     function startWebRtc() {
       if (!window.RTCPeerConnection) { startHls(); return; }
@@ -203,12 +268,14 @@
       watchProgress = true;
       lastTime = -1;
       lastProgress = Date.now();
+      inst.fastRetryAt = 0;
       overlay(true, 'SIGNAL', 'Tuning the feed…', false);
       setLive(false);
       if (feed === 'guest' && TRY_GUEST_WEBRTC) startWebRtc();
       else startHls();
     }
     function videoError() {
+      if (inst.fastActive) return;
       watchProgress = false;
       setLive(false);
       overlay(true, 'OFF AIR', 'This camera is unreachable.', true);
@@ -217,8 +284,15 @@
     video.addEventListener('playing', playing);
     video.addEventListener('error', videoError);
     overlayEls.retry.addEventListener('click', retry);
+    var fastWatch = feed === 'guest' ? setInterval(maybeStartFast, 500) : null;
     var watchdog = setInterval(function () {
       if (!watchProgress) return;
+      if (inst.fastSocket && !inst.fastActive && Date.now() - inst.fastOpenedAt > 4000)
+        inst.fastSocket.close();
+      if (inst.fastActive) {
+        if (Date.now() - inst.fastLast > 3000 && inst.fastSocket) inst.fastSocket.close();
+        return;
+      }
       if (video.currentTime > lastTime && video.readyState >= 2) {
         lastTime = video.currentTime;
         lastProgress = Date.now();
@@ -233,6 +307,7 @@
     inst.destroy = function () {
       disposed = true;
       clearInterval(watchdog);
+      if (fastWatch) clearInterval(fastWatch);
       video.removeEventListener('playing', playing);
       video.removeEventListener('error', videoError);
       overlayEls.retry.removeEventListener('click', retry);

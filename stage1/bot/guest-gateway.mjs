@@ -515,6 +515,14 @@ const server = createServer(async (req, res) => {
       send(res, 200, { ok: true, ...publicStatus() })
       return
     }
+    if (req.method === 'POST' && path === '/video-auth') {
+      // Loopback-only check for the separate low-latency camera service.
+      // Its public WebSocket never receives the queue or guest state files.
+      const body = parseJsonBody(await readBody(req))
+      const token = typeof body?.token === 'string' ? body.token : ''
+      const allowed = Boolean(queue.controlsFor(token) && publicStatus().camera.ready)
+      return send(res, allowed ? 200 : 403, { ok: allowed })
+    }
     if (req.method === 'POST' && (path === '/join' || path === '/leave' || path === '/input')) {
       const body = parseJsonBody(await readBody(req))
       if (!body) return send(res, 400, { error: 'invalid JSON body' })
