@@ -236,8 +236,11 @@ function ensureNativeObserver() {
     try {
       bot.physicsEnabled = false
       const p = anatomy.base
-      const mode = await withRcon((client) => client.send('gamemode spectator CamCreepers'))
-      if (!mode || /no player|unknown|error/i.test(mode)) throw new Error('Observer spectator setup failed')
+      await withRcon((client) => client.send('gamemode spectator CamCreepers'))
+      // Minecraft returns an empty reply when this returning observer is
+      // already a spectator. Verify persisted game state, not command output.
+      const mode = await withRcon((client) => client.send('data get entity CamCreepers playerGameType'))
+      if (!/entity data: 3\s*$/.test(mode ?? '')) throw new Error('Observer spectator setup failed')
       await withRcon((client) => client.send(`tp CamCreepers ${p.x + .5} ${p.y + 12} ${p.z + .5}`))
       await bot.waitForChunksToLoad()
       if (autoObserver !== bot || stopping) return
