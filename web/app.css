@@ -127,6 +127,7 @@ video { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
   white-space: nowrap; cursor: pointer; pointer-events: auto;
 }
 .arena-nameplate:hover, .arena-nameplate:focus-visible { background: var(--plate-color); color: #08090a; outline: none; }
+.arena-nameplate.guest { color: var(--creeper); border-color: var(--creeper); cursor: default; pointer-events: none; }
 .arena-nameplate.underground { border-style: dashed; }
 .arena-offscreen {
   position: absolute; right: 8px; bottom: 8px; max-width: calc(100% - 16px);
@@ -185,17 +186,13 @@ video { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
   background: #fff; box-shadow: 0 0 5px rgba(0, 0, 0, .8);
   pointer-events: none;
 }
-.click-catch {
-  position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
-  background: rgba(6,6,8,0.55); cursor: pointer;
-}
-.click-catch span {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; color: var(--bone);
-  background: rgba(6,6,8,0.8); border: 1px solid var(--panel-edge); border-radius: 4px; padding: 10px 16px;
-}
-
 /* ---------- touch pad ---------- */
 .touch-pad { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+.touch-look-hint {
+  position: absolute; right: 18px; bottom: 98px; padding: 5px 7px;
+  font: 600 10px var(--mono); letter-spacing: .08em; color: var(--bone);
+  background: rgba(6,6,8,.7); border-radius: 3px;
+}
 .stick {
   position: absolute; left: 18px; bottom: 18px; width: 108px; height: 108px;
   border: 2px solid rgba(232,230,225,0.35); border-radius: 50%; pointer-events: auto;
@@ -210,9 +207,10 @@ video { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
 .touch-actions button {
   font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em;
   background: rgba(6,6,8,0.6); color: var(--bone); border: 1px solid var(--panel-edge);
-  border-radius: 6px; padding: 14px 18px; touch-action: manipulation;
+  border-radius: 6px; min-width: 60px; min-height: 54px; padding: 12px 15px; touch-action: manipulation;
 }
 .touch-actions .boom { background: var(--creeper); color: #04140a; border: none; }
+.touch-actions .boom:disabled { background: var(--red); color: #fff; }
 
 /* ---------- grid ---------- */
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -363,9 +361,35 @@ video { position: absolute; inset: 0; width: 100%; height: 100%; display: block;
 .queued-eta { font-family: var(--mono); font-size: 12px; color: var(--ash); margin-top: 8px; }
 .play-help { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 @media (max-width: 720px) { .play-help { grid-template-columns: repeat(2, 1fr); } }
+.touch-only { display: none; }
+body.touch-device .touch-only { display: block; }
+body.touch-device .desktop-only { display: none; }
 .help-row { font-size: 12px; color: var(--ash); border: 1px solid var(--panel-edge); border-radius: 4px; padding: 10px; }
 .help-row b { color: var(--bone); font-family: var(--mono); }
-.help-note { grid-column: 1 / -1; font-family: var(--mono); font-size: 10px; color: #55534e; letter-spacing: 0.12em; }
+.help-note { grid-column: 1 / -1; font-family: var(--mono); font-size: 10px; color: var(--ash); letter-spacing: 0.08em; }
+
+@media (max-width: 640px) {
+  .join-qr { display: none; }
+  .join-row { display: grid; grid-template-columns: 1fr; }
+  #nickInput, .join-row .cta { width: 100%; min-height: 46px; }
+  body.guest-turn #villageBar, body.guest-turn .view-status { display: none; }
+  body.guest-turn header { padding: 8px 10px; }
+  body.guest-turn .wordmark { font-size: 13px; }
+  body.guest-turn .layout { padding: 0 0 24px; }
+  body.guest-turn #playPanel { margin: 10px 12px 0; }
+  body.guest-turn .stage { border-radius: 0; }
+  body.guest-turn .aspect { padding-top: 0; height: min(58dvh, 500px); min-height: 350px; touch-action: none; }
+  body.guest-turn video { object-fit: contain; }
+  body.guest-turn .turn-hud { top: 8px; right: 8px; padding: 7px 9px; }
+  body.guest-turn .stick { width: 112px; height: 112px; bottom: 22px; }
+  body.guest-turn .touch-actions { bottom: 22px; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  body.guest-turn #villageBar, body.guest-turn .view-status { display: none; }
+  body.guest-turn .layout { padding-top: 0; }
+  body.guest-turn .aspect { padding-top: 0; height: calc(100dvh - 55px); min-height: 250px; touch-action: none; }
+  body.guest-turn video { object-fit: contain; }
+}
 
 /* ---------- chat rail ---------- */
 .chat-rail {

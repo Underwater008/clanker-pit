@@ -112,8 +112,13 @@ function publicStatus() {
     mirror: mirrorState,
   })
   if (camera.ready) queue.markCameraReady(queue.active?.token)
+  const status = queue.status()
+  const position = guestBot?.entity?.position
+  if (status.active && queue.active?.placed && position &&
+      [position.x, position.y, position.z].every(Number.isFinite))
+    status.active.position = { x: position.x, y: position.y, z: position.z }
   return {
-    ...queue.status(),
+    ...status,
     feed: 'guest',
     gateReady: Boolean(anatomy),
     camera,

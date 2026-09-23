@@ -1,7 +1,7 @@
 /* CLANKER PIT — protect the Server round.
  * Feeds, chat, village scoreboard, focus view (decisions/thinking/memories/soul),
- * and the guest creeper experience: join the queue, then WASD + mouse + jump
- * and one BOOM. All dynamic strings render via textContent — never innerHTML.
+ * and the guest creeper experience: join the queue, then WASD + drag + jump
+ * and one B/button BOOM. All dynamic strings render via textContent — never innerHTML.
  */
 (function () {
   'use strict';
@@ -209,6 +209,11 @@
       if (!player || player.offline || !p || ![p.x, p.y, p.z].every(isFinite)) return;
       positions[name] = { x: p.x, y: p.y, z: p.z };
     });
+    var activeGuest = snapshot.guest && snapshot.guest.active;
+    var guestPosition = activeGuest && activeGuest.position;
+    if (activeGuest && activeGuest.nickname && guestPosition &&
+        [guestPosition.x, guestPosition.y, guestPosition.z].every(isFinite))
+      positions['guest:' + activeGuest.nickname] = guestPosition;
     arenaSamples.push({ time: time, key: key, positions: positions });
     while (arenaSamples.length > 60 ||
         arenaSamples.length > 1 && time - arenaSamples[0].time > 30000) arenaSamples.shift();
@@ -260,9 +265,9 @@
       z: a.z + (b.z - a.z) * fraction };
   }
 
-  function arenaElement(name, index, lines, tags) {
+  function arenaElement(name, index, lines, tags, isGuest) {
     if (arenaElements[name]) return arenaElements[name];
-    var color = arenaColors[index % arenaColors.length];
+    var color = isGuest ? '#58c472' : arenaColors[index % arenaColors.length];
     var line = arenaSvg('line');
     line.setAttribute('stroke', color);
     line.setAttribute('stroke-width', '1.5');
@@ -274,11 +279,13 @@
     marker.setAttribute('stroke', '#09090b');
     marker.setAttribute('stroke-width', '2');
     lines.appendChild(marker);
-    var plate = el('button', 'arena-nameplate', name.toUpperCase());
-    plate.type = 'button';
+    var plate = el(isGuest ? 'div' : 'button', 'arena-nameplate' + (isGuest ? ' guest' : ''), name.toUpperCase());
     plate.style.setProperty('--plate-color', color);
-    plate.setAttribute('aria-label', 'Focus ' + name);
-    plate.addEventListener('click', function () { setMode('focus', name.toLowerCase()); });
+    if (!isGuest) {
+      plate.type = 'button';
+      plate.setAttribute('aria-label', 'Focus ' + name);
+      plate.addEventListener('click', function () { setMode('focus', name.toLowerCase()); });
+    }
     tags.appendChild(plate);
     return (arenaElements[name] = { line: line, marker: marker, plate: plate });
   }
@@ -330,15 +337,20 @@
     var lines = $('arenaPlateLines'), tags = $('arenaPlateTags'), offscreen = $('arenaOffscreen');
     lines.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
     var occupied = [], outside = [];
-    var names = village.population || Object.keys(telemetry.bots);
+    var names = (village.population || Object.keys(telemetry.bots)).slice();
+    var guestActive = telemetry.guest && telemetry.guest.active;
+    var guestKey = guestActive && guestActive.nickname ? 'guest:' + guestActive.nickname : null;
+    if (guestKey && guestActive.position) names.push(guestKey);
     var visible = {};
     var frameTime = arenaVideoTime();
     names.forEach(function (name, index) {
-      var player = telemetry.bots[name];
+      var isGuest = name === guestKey;
+      var displayName = isGuest ? guestActive.nickname : name;
+      var player = isGuest ? { position: guestActive.position } : telemetry.bots[name];
       if (!player || player.offline) return;
       var p = arenaPosition(name, frameTime) || player.position;
       if (!p || ![p.x, p.y, p.z].every(isFinite)) return;
-      var elements = arenaElement(name, index, lines, tags);
+      var elements = arenaElement(name, index, lines, tags, isGuest);
       var now = Date.now();
       var smooth = elements.smooth;
       if (!smooth || Math.hypot(p.x - smooth.x, p.y - smooth.y, p.z - smooth.z) > 12) {
@@ -353,11 +365,12 @@
       p = smooth;
       var anchor = projectArenaPosition(p, village.flag, width, height);
       if (!anchor || anchor.x < 12 || anchor.x > width - 12 || anchor.y < 12 || anchor.y > height - 12) {
-        outside.push(name);
+        outside.push(isGuest ? 'CREEPER ' + displayName : name);
         return;
       }
       visible[name] = true;
-      var labelWidth = Math.max(62, Math.min(112, name.length * 8 + 25));
+      var label = (isGuest ? 'CREEPER · ' : '') + displayName.toUpperCase();
+      var labelWidth = Math.max(62, Math.min(170, label.length * 8 + 25));
       var offsets = [[0,-42],[-65,-50],[65,-50],[-65,18],[65,18],[0,25],[-110,-20],[110,-20],[0,-76],[0,56]];
       var box;
       for (var i = 0; i < offsets.length; i++) {
@@ -381,7 +394,7 @@
       marker.setAttribute('cy', anchor.y);
       var underground = p.y < village.flag.y - 1;
       plate.classList.toggle('underground', underground);
-      var label = name.toUpperCase() + (underground ? ' ↓' : '');
+      label += underground ? ' ↓' : '';
       if (plate.textContent !== label) plate.textContent = label;
       plate.style.left = box.left + 'px';
       plate.style.top = box.top + 'px';
@@ -469,19 +482,14 @@
     if (mode === 'grid') { state.mode = 'grid'; }
     else if (mode === 'arena') { state.mode = 'arena'; }
     else if (mode === 'play') { state.mode = 'play'; }
-    else if (mode === 'focus' || FOUNDING.indexOf(mode) !== -1) {
+    else if (mode === 'focus' || mode === 'pov' || FOUNDING.indexOf(mode) !== -1) {
       state.mode = 'focus';
-      if (clanker) state.clanker = clanker;
-      else if (FOUNDING.indexOf(mode) !== -1) state.clanker = mode;
-    } else { // pov feed by name
-      state.mode = 'pov';
-      if (mode && FOUNDING.indexOf(mode) !== -1) state.clanker = mode;
       if (clanker && FOUNDING.indexOf(clanker) !== -1) state.clanker = clanker;
-    }
+      else if (FOUNDING.indexOf(mode) !== -1) state.clanker = mode;
+    } else state.mode = 'focus';
     render();
     if (history.replaceState) {
-      var q = state.mode === 'pov' ? '?v=' + state.clanker
-        : state.mode === 'focus' ? '?v=focus&c=' + state.clanker
+      var q = state.mode === 'focus' ? '?v=focus&c=' + state.clanker
         : '?v=' + state.mode;
       history.replaceState(null, '', q);
     }
@@ -493,9 +501,9 @@
   function render() {
     var mode = state.mode;
     Array.prototype.forEach.call(modeButtons, function (b) {
-      b.classList.toggle('active', b.dataset.mode === (mode === 'pov' ? 'pov' : mode));
+      b.classList.toggle('active', b.dataset.mode === mode);
     });
-    $('focusPicker').hidden = mode !== 'focus' && mode !== 'pov';
+    $('focusPicker').hidden = mode !== 'focus';
     $('decisionNow').hidden = mode !== 'focus';
     $('focusPanel').hidden = mode !== 'focus';
     $('playPanel').hidden = mode !== 'play';
@@ -503,19 +511,15 @@
     var help = $('playHelp');
     help.hidden = !(mode === 'play' && guest.turnLive());
     if (mode !== 'play') {
+      document.body.classList.remove('guest-turn');
       $('turnHud').hidden = true;
       $('touchPad').hidden = true;
-      $('clickCatch').hidden = true;
       $('guestCameraOverlay').hidden = true;
       $('guestQueueOverlay').hidden = true;
     }
     if (mode === 'arena') showSingle('arena', 'ARENA 01 / WIDE', 'CAM 01 · SPECTATOR FEED');
     else if (mode === 'grid') showGrid();
-    else if (mode === 'pov') {
-      var feed = state.clanker;
-      showSingle(feed, feed.toUpperCase() + ' / POV', 'SPECTATING ' + feed.toUpperCase());
-      renderFocusPicker();
-    } else if (mode === 'focus') {
+    else if (mode === 'focus') {
       var b = bot(state.clanker);
       var hasFeed = b ? b.nativeView : FOUNDING.indexOf(state.clanker) !== -1;
       showSingle(
@@ -551,7 +555,7 @@
     var guestOn = guestAvailable();
     document.querySelector('[data-mode="play"]').hidden = !guestOn;
     $('joinChip').hidden = !guestOn || state.mode === 'play';
-    var showMeta = state.mode === 'pov' || state.mode === 'arena';
+    var showMeta = state.mode === 'arena';
     $('metaRow').hidden = !showMeta || !village;
     $('survivalMeta').hidden = !showMeta || !telemetry || village;
     $('roundLabel').textContent = !telemetry ? 'CONNECTING' : village ? 'VILLAGE ROUND' : 'SURVIVAL ROUND';
@@ -885,7 +889,6 @@
     boomed: false,
     wasActive: false,
     finished: false,
-    mouseFallback: false,
     touch: 'ontouchstart' in window,
     turnLive: function () {
       var g = telemetry && telemetry.guest;
@@ -900,6 +903,7 @@
       return state.mode === 'play' && guest.turnLive() && guest.cameraReady();
     }
   };
+  document.body.classList.toggle('touch-device', guest.touch);
 
   function guestPost(path, payload, timeoutMs) {
     var controller = timeoutMs && window.AbortController ? new AbortController() : null;
@@ -977,11 +981,11 @@
     var turn = available && guest.turnLive();
     var cameraReady = guest.cameraReady();
     var controlsReady = turn && cameraReady;
+    document.body.classList.toggle('guest-turn', Boolean(turn));
     var showJoin = $('playJoin'), showQueued = $('playQueued'), showDone = $('playDone');
     showJoin.hidden = true; showQueued.hidden = true; showDone.hidden = true;
     $('turnHud').hidden = !turn;
     $('touchPad').hidden = !(controlsReady && guest.touch);
-    $('clickCatch').hidden = !(controlsReady && !guest.touch && !guest.mouseFallback && document.pointerLockElement !== singleVideo);
     $('guestCameraOverlay').hidden = !turn || cameraReady;
     $('guestQueueOverlay').hidden = !available || turn || !guest.token;
     if (available && !turn && guest.token) {
@@ -990,22 +994,22 @@
     }
     $('guestCrosshair').hidden = !controlsReady;
     $('playHelp').hidden = !turn;
-    $('playControlHint').textContent = guest.mouseFallback
-      ? 'Mouse lock is unavailable here. Drag on the video to look; WASD and SPACE still work.'
-      : 'Click the video to capture the mouse. Press Escape to release it.';
     $('boomBtn').disabled = guest.boomed || !cameraReady;
-    $('boomBtn').hidden = !cameraReady;
+    $('boomBtn').hidden = guest.touch || !cameraReady;
+    $('boomBtnTouch').disabled = guest.boomed || !cameraReady;
     if (turn && !cameraReady) {
       Object.keys(guest.keys).forEach(function (key) { guest.keys[key] = false; });
       singleHud.classList.remove('live');
-      if (document.pointerLockElement === singleVideo && document.exitPointerLock) document.exitPointerLock();
     }
     if (!available) {
       showSingle('arena', 'ARENA / WATCH', 'GUEST PLAY UNAVAILABLE');
       return;
     }
     if (turn) {
-      if (!guest.wasActive) window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (!guest.wasActive) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (!guest.touch) $('singleStage').focus({ preventScroll: true });
+      }
       guest.wasActive = true;
       showSingle('guest', 'CREEPER CAM / YOUR TURN', cameraReady ? 'CREEPER FEED' : 'CAMERA STARTING');
       $('turnTimer').textContent = !cameraReady ? '—' : g && g.active ? fmtClock(g.active.remainingMs) : '0:00';
@@ -1061,7 +1065,7 @@
     if (key) {
       if (e.code === 'Space' || e.code.indexOf('Arrow') === 0) e.preventDefault();
       if (!guest.keys[key]) { guest.keys[key] = true; guest.dirty = true; }
-    } else if (e.code === 'KeyF') {
+    } else if (e.code === 'KeyB') {
       sendBoom();
     }
   });
@@ -1074,39 +1078,19 @@
     guest.dirty = true;
   });
 
-  function useMouseFallback() {
-    if (!guest.canControl()) return;
-    guest.mouseFallback = true;
-    $('clickCatch').hidden = true;
-    $('singleStage').focus({ preventScroll: true });
-    renderPlay();
-  }
-  $('clickCatch').addEventListener('click', function () {
-    if (!guest.canControl()) return;
-    if (!singleVideo.requestPointerLock) { useMouseFallback(); return; }
-    var request = singleVideo.requestPointerLock();
-    if (request && request.catch) request.catch(useMouseFallback);
-  });
-  document.addEventListener('pointerlockerror', useMouseFallback);
-  document.addEventListener('pointerlockchange', function () {
-    $('clickCatch').hidden = !(guest.canControl() && !guest.touch && !guest.mouseFallback && document.pointerLockElement !== singleVideo);
-  });
   var draggingLook = false, lastDrag = null;
   $('singleStage').addEventListener('mousedown', function (e) {
-    if (!guest.canControl() || !guest.mouseFallback || e.button !== 0 || e.target.closest('button')) return;
+    if (!guest.canControl() || guest.touch || e.button !== 0 || e.target.closest('button')) return;
     draggingLook = true;
     lastDrag = { x: e.clientX, y: e.clientY };
     e.preventDefault();
   });
   document.addEventListener('mousemove', function (e) {
-    if (!guest.canControl()) return;
+    if (!guest.canControl() || guest.touch || !draggingLook || !lastDrag) return;
     var dx = 0, dy = 0;
-    if (document.pointerLockElement === singleVideo) { dx = e.movementX; dy = e.movementY; }
-    else if (guest.mouseFallback && draggingLook && lastDrag) {
-      dx = e.clientX - lastDrag.x;
-      dy = e.clientY - lastDrag.y;
-      lastDrag = { x: e.clientX, y: e.clientY };
-    }
+    dx = e.clientX - lastDrag.x;
+    dy = e.clientY - lastDrag.y;
+    lastDrag = { x: e.clientX, y: e.clientY };
     if (dx || dy) {
       guest.yaw = (guest.y === null ? 0 : guest.yaw) - dx * LOOK_SENS;
       guest.pitch = clampPitch(guest.pitch - dy * LOOK_SENS);
@@ -1115,15 +1099,6 @@
   });
   document.addEventListener('mouseup', function () { draggingLook = false; lastDrag = null; });
   window.addEventListener('blur', function () { draggingLook = false; lastDrag = null; });
-  document.addEventListener('mousedown', function (e) {
-    // Pointer lock hides the cursor, so the visible BOOM button cannot be
-    // clicked while steering. A deliberate left click then fires the same
-    // one-shot action; the first click that acquires lock does not fire it.
-    if (e.button === 0 && document.pointerLockElement === singleVideo && guest.canControl()) {
-      e.preventDefault();
-      sendBoom();
-    }
-  });
   function clampPitch(p) { return Math.max(-MAX_PITCH, Math.min(MAX_PITCH, p)); }
 
   // touch: left-half joystick on the stage, right-half look, buttons
@@ -1137,7 +1112,8 @@
         var target = e.target;
         if (target === stick || stick.contains(target)) continue;
         if (target.tagName === 'BUTTON') continue;
-        if (t.clientX < window.innerWidth / 2) continue; // left = joystick zone handled by stick
+        var stage = $('singleStage').getBoundingClientRect();
+        if (t.clientX < stage.left + stage.width / 2) continue; // left = joystick zone
         if (lookId === null) { lookId = t.identifier; lastLook = { x: t.clientX, y: t.clientY }; }
       }
     }, { passive: true });
@@ -1146,18 +1122,20 @@
       for (var i = 0; i < e.changedTouches.length; i++) {
         var t = e.changedTouches[i];
         if (t.identifier === lookId && lastLook) {
+          e.preventDefault();
           guest.yaw = (guest.yaw === null ? 0 : guest.yaw) - (t.clientX - lastLook.x) * TOUCH_LOOK_SENS;
           guest.pitch = clampPitch(guest.pitch - (t.clientY - lastLook.y) * TOUCH_LOOK_SENS);
           lastLook = { x: t.clientX, y: t.clientY };
           guest.dirty = true;
         }
       }
-    }, { passive: true });
+    }, { passive: false });
     $('singleStage').addEventListener('touchend', function (e) {
       for (var i = 0; i < e.changedTouches.length; i++) {
         if (e.changedTouches[i].identifier === lookId) { lookId = null; lastLook = null; }
       }
     }, { passive: true });
+    $('singleStage').addEventListener('touchcancel', function () { lookId = null; lastLook = null; });
     stick.addEventListener('touchstart', function (e) { e.preventDefault(); stickId = e.changedTouches[0].identifier; }, { passive: false });
     stick.addEventListener('touchmove', function (e) {
       e.preventDefault();
@@ -1184,6 +1162,11 @@
     stick.addEventListener('touchend', endStick); stick.addEventListener('touchcancel', endStick);
     $('jumpBtn').addEventListener('touchstart', function (e) { e.preventDefault(); setKey('jump', true); }, { passive: false });
     $('jumpBtn').addEventListener('touchend', function (e) { e.preventDefault(); setKey('jump', false); }, { passive: false });
+    $('jumpBtn').addEventListener('touchcancel', function () { setKey('jump', false); });
+    $('jumpBtn').addEventListener('click', function () {
+      setKey('jump', true);
+      setTimeout(function () { setKey('jump', false); }, 150);
+    });
     $('boomBtnTouch').addEventListener('touchstart', function (e) { e.preventDefault(); sendBoom(); }, { passive: false });
   }
   function setKey(key, value) {
@@ -1197,19 +1180,18 @@
   function sendBoom() {
     if (!guest.canControl() || guest.boomed || !guest.token) return;
     guest.boomed = true;
-    $('boomBtn').disabled = true;
-    $('boomBtn').textContent = '…';
+    ['boomBtn', 'boomBtnTouch'].forEach(function (id) { $(id).disabled = true; $(id).textContent = '…'; });
     guestPost('/guest/input', {
       token: guest.token, keys: snapshotKeys(), boom: true
     }).then(function (r) {
-      if (r && r.exploded) $('boomBtn').textContent = 'BOOM!';
+      if (r && r.exploded) ['boomBtn', 'boomBtnTouch'].forEach(function (id) { $(id).textContent = 'BOOM!'; });
     }).catch(function () {
       guest.boomed = false;
-      $('boomBtn').disabled = false;
-      $('boomBtn').textContent = 'BOOM';
+      ['boomBtn', 'boomBtnTouch'].forEach(function (id) { $(id).disabled = false; $(id).textContent = 'BOOM'; });
     });
   }
   $('boomBtn').addEventListener('click', sendBoom);
+  $('boomBtnTouch').addEventListener('click', sendBoom);
 
   function snapshotKeys() {
     return {
@@ -1316,7 +1298,6 @@
         renderChat();
         renderChip();
         if (state.mode === 'focus') render();
-        else if (state.mode === 'pov') renderFocusPicker();
         if (state.mode === 'play') renderPlay();
       })
       .catch(function () { renderTelemetryStatus(); })
@@ -1367,8 +1348,9 @@
   var params = new URLSearchParams(location.search);
   var v = params.get('v');
   var c = params.get('c');
-  if (v === 'grid' || v === 'arena' || v === 'play' || v === 'focus') setMode(v, c ? c.toLowerCase() : 'cinder');
-  else if (v && FOUNDING.indexOf(v) !== -1) setMode('pov', v);
+  if (v === 'grid' || v === 'arena' || v === 'play' || v === 'focus' || v === 'pov')
+    setMode(v, c ? c.toLowerCase() : 'cinder');
+  else if (v && FOUNDING.indexOf(v) !== -1) setMode('focus', v);
   else setMode('focus', 'mira');
   drawQr();
 })();

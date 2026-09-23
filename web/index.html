@@ -18,7 +18,6 @@
   <nav class="modes" aria-label="View mode">
     <button data-mode="arena">ARENA</button>
     <button data-mode="grid">GRID</button>
-    <button data-mode="pov">POV</button>
     <button data-mode="focus">FOCUS</button>
     <button data-mode="play" class="play-tab" hidden>PLAY</button>
   </nav>
@@ -50,11 +49,11 @@
       <div id="providerStatus" class="provider-status"></div>
     </section>
 
-    <!-- single-feed stage: arena / pov / focus video / play turn -->
+    <!-- single-feed stage: arena / focus video / play turn -->
     <section class="stage" id="singleStage" aria-label="Live feed" tabindex="-1">
       <div class="aspect">
         <video id="singleVideo" playsinline autoplay muted></video>
-        <div id="arenaNameplates" class="arena-nameplates" aria-label="Clanker positions in the arena" hidden>
+        <div id="arenaNameplates" class="arena-nameplates" aria-label="Player positions in the arena" hidden>
           <svg id="arenaPlateLines" aria-hidden="true"></svg>
           <div id="arenaPlateTags"></div>
           <div id="arenaOffscreen" class="arena-offscreen" hidden></div>
@@ -78,14 +77,12 @@
         </div>
         <div class="guest-crosshair" id="guestCrosshair" aria-hidden="true" hidden></div>
         <div class="touch-pad" id="touchPad" hidden>
-          <div class="stick" id="stick"><i id="stickThumb"></i></div>
+          <div class="touch-look-hint">DRAG RIGHT SIDE TO LOOK</div>
+          <div class="stick" id="stick" aria-label="Move"><i id="stickThumb"></i></div>
           <div class="touch-actions">
             <button id="jumpBtn">JUMP</button>
             <button id="boomBtnTouch" class="boom">BOOM</button>
           </div>
-        </div>
-        <div class="click-catch" id="clickCatch" hidden>
-          <span>CLICK TO TAKE CONTROL — WASD · MOUSE · SPACE · LEFT CLICK = BOOM</span>
         </div>
       </div>
       <div class="hud" id="singleHud">
@@ -177,16 +174,20 @@
         <button id="rejoinBtn" class="cta">BACK IN QUEUE</button>
       </div>
       <div class="panel play-panel play-help" id="playHelp" hidden>
-        <div class="help-row"><b>WASD</b> walk</div>
-        <div class="help-row"><b>MOUSE</b> look</div>
-        <div class="help-row"><b>SPACE</b> jump</div>
-        <div class="help-row"><b>F / LEFT CLICK / BOOM</b> explode (once!)</div>
+        <div class="help-row desktop-only"><b>WASD</b> walk</div>
+        <div class="help-row desktop-only"><b>DRAG</b> look</div>
+        <div class="help-row desktop-only"><b>SPACE</b> jump</div>
+        <div class="help-row desktop-only"><b>B / BOOM</b> explode once</div>
+        <div class="help-row touch-only"><b>LEFT PAD</b> move</div>
+        <div class="help-row touch-only"><b>DRAG RIGHT</b> look</div>
+        <div class="help-row touch-only"><b>JUMP</b> button</div>
+        <div class="help-row touch-only"><b>BOOM</b> button, once</div>
         <div class="help-note">That is the whole creeper kit. Nothing else.</div>
-        <div class="help-note" id="playControlHint">Click the video to capture the mouse. Press Escape to release it.</div>
+        <div class="help-note desktop-only">Drag on the video to aim while using WASD. Press B or click BOOM to explode.</div>
       </div>
     </section>
 
-    <!-- arena/pov bottom copy -->
+    <!-- arena bottom copy -->
     <div class="meta-row" id="survivalMeta" hidden>
       <section class="panel">
         <h2>SURVIVAL ROUND</h2>
