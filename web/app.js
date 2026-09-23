@@ -961,6 +961,18 @@
     clearGuest();
     renderPlay();
   });
+  $('leaveTurnBtn').addEventListener('click', function () {
+    if (!guest.token || !guest.turnLive()) return;
+    var button = $('leaveTurnBtn');
+    button.disabled = true;
+    button.textContent = 'LEAVING…';
+    guestPost('/guest/leave', { token: guest.token }).then(function () {
+      clearGuest();
+      renderPlay();
+    }).catch(function () {
+      button.textContent = 'TRY LEAVING AGAIN';
+    }).finally(function () { button.disabled = false; });
+  });
   $('rejoinBtn').addEventListener('click', function () {
     clearGuest();
     renderPlay();
