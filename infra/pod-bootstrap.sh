@@ -93,7 +93,7 @@ RAW=https://raw.githubusercontent.com/Underwater008/clanker-pit/$SOURCE_SHA
 for f in run-client.sh run-stream.sh run-native-view.py display.sh options.txt gpu-restack.sh launch-cameras.sh client_setup.py spectate-loop.mjs; do
   curl -fsSL "$RAW/infra/capture/$f" -o "$ARENA/capture/$f"
 done
-for f in ambient.mjs survival.mjs crafting.mjs native-mirror.mjs llm.mjs memory.mjs env.mjs decision.mjs village.mjs council.mjs models.mjs guest-queue.mjs guest-boom.mjs guest-camera.mjs guest-gateway.mjs flag-setup.mjs fixture-grant.mjs home-beds.mjs deposit-migrate.mjs identity.cinder.json package.json package-lock.json; do
+for f in ambient.mjs survival.mjs crafting.mjs native-mirror.mjs llm.mjs memory.mjs env.mjs decision.mjs village.mjs council.mjs models.mjs guest-queue.mjs guest-boom.mjs guest-camera.mjs guest-gateway.mjs spring-repair.mjs flag-setup.mjs fixture-grant.mjs home-beds.mjs deposit-migrate.mjs identity.cinder.json package.json package-lock.json; do
   curl -fsSL "$RAW/stage1/bot/$f" -o "$ARENA/bots/$f"
 done
 cp "$ARENA/capture/spectate-loop.mjs" "$ARENA/bots/"
