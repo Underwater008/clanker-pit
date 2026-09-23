@@ -121,7 +121,7 @@ function publicStatus() {
   let requestedView = null
   try { requestedView = JSON.parse(readFileSync(CAMERA_VIEW_STATE, 'utf8')) } catch {}
   camera.viewMode = camera.ready && requestedView?.generation === mirrorState?.generation &&
-    requestedView?.mode === 'third' ? 'third' : 'first'
+    requestedView?.mode === 'first' ? 'first' : 'third'
   const status = queue.status()
   const position = guestBot?.entity?.position
   if (status.active && queue.active?.placed && position &&

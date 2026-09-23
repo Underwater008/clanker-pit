@@ -62,11 +62,11 @@ def guest_key(window, key):
 def requested_view(current_generation):
     try:
         request = json.loads(view_path.read_text())
-        if request.get('generation') == current_generation and request.get('mode') == 'third':
-            return 'third'
+        if request.get('generation') == current_generation and request.get('mode') == 'first':
+            return 'first'
     except (OSError, ValueError, AttributeError):
         pass
-    return 'first'
+    return 'third'
 
 
 def stop_child():
