@@ -4,7 +4,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { craftConfirmed, craftableRecipe } from './crafting.mjs'
 import { coolantSource, coolantCells, isCoolantBucket } from './coolant.mjs'
 import { createProgressMemory } from './progress.mjs'
-import { localContext, localRecoveryRoutes, recoveryKey } from './recovery.mjs'
+import { localContext, localRecoveryRoutes, localPassagePlans, recoveryKey } from './recovery.mjs'
 import {
   wallBlueprint,
   wallReinforcementBlueprint,
@@ -465,6 +465,18 @@ export function installSurvival(bot, state, log, opts = {}) {
         ...layout.roads,
       ].map((p) => p.toString())
     : [])
+  // Only this clanker's extension sidewalls may become deliberate doorways.
+  // Exclude every shared/other-home cell, including overlaps between lots.
+  const ownExtensionWalls = new Set((layout?.homeUpgrade ?? [])
+    .filter((p) => p.y === layout.flag.y + 1 || p.y === layout.flag.y + 2)
+    .filter((p) => ![...layout.home, ...layout.wall, ...layout.wallUpgrade, ...layout.gate,
+      ...HOME_LOTS.flatMap((_, i) => i === villageCtx.lotIndex ? [] :
+        [...homeBlueprint(homeLot(villageCtx.flag, i), villageCtx.flag), ...homeExtensionBlueprint(villageCtx.flag, i)])]
+      .some((q) => p.equals(q)))
+    .map((p) => p.toString()))
+  state.accessOpenings ??= []
+  const isOpening = (p) => ownExtensionWalls.has(p.toString()) && state.accessOpenings.includes(p.toString())
+  const homePlan = (list) => list.filter((p) => !isOpening(p))
   let protectedShelter = null, protectedHistoryLength = -1
   let shelterConstruction = new Set()
   function constructionBlock(position) {
@@ -1163,6 +1175,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     const positions = nearest ? blueprint.slice().sort((a, b) =>
       a.y - b.y || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position)) : blueprint
     for (const p of positions) {
+      if (isOpening(p)) continue
       if (structuralBlock(bot.blockAt(p))) continue
       const occupant = bot.blockAt(p)
       if (['short_grass', 'tall_grass'].includes(occupant?.name) || occupant?.name.endsWith('_leaves'))
@@ -1632,7 +1645,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         .filter((e) => ['cow', 'pig', 'sheep', 'chicken'].includes(e.name))
         .map((e) => e.name),
       recent_results: state.recent.slice(-6),
-      progress: progress.summary(localContext(bot).key),
+      progress: progressSummary(),
       current_goal: state.plan.goal,
       ...(villageCtx
         ? (() => {
@@ -1651,8 +1664,8 @@ export function installSurvival(bot, state, log, opts = {}) {
                   distance: Math.round(bot.entity.position.distanceTo(remoteSpring)),
                   rule: 'Only Cryo Coolant filled at the cyan remote spring powers the Server. Ordinary water is for farming and survival.',
                   carried: bot.inventory.items().filter(isCoolantBucket).length } : null,
-                my_home: progress(layout.home),
-                my_home_upgrade: layout.homeUpgrade.length ? progress(layout.homeUpgrade) : null,
+                my_home: progress(homePlan(layout.home)),
+                my_home_upgrade: layout.homeUpgrade.length ? progress(homePlan(layout.homeUpgrade)) : null,
                 wall: progress(layout.wall),
                 wall_upgrade: progress(layout.wallUpgrade),
                 gate: progress(layout.gate),
@@ -1955,6 +1968,12 @@ export function installSurvival(bot, state, log, opts = {}) {
     return options
   }
 
+  function passageOptions() {
+    return localPassagePlans(bot, {
+      protectedBlock: (p) => constructionBlock(p) || resourceBusy(p),
+      remodel: (p) => ownExtensionWalls.has(p.toString()) && !resourceBusy(p),
+    })
+  }
   function recoveryOptions() {
     const choices = new Map()
     for (const route of localRecoveryRoutes(bot)) {
@@ -1963,6 +1982,11 @@ export function installSurvival(bot, state, log, opts = {}) {
         ...route, kind: 'walk',
         description: `Try an inspected ${route.steps}-step route ${route.direction} to (${p.x},${p.y},${p.z}); no digging; ${route.overheadClear ? 'three overhead blocks inspected clear' : 'covered or unverified overhead'}. Reassess after arrival.`,
       })
+    }
+    for (const plan of passageOptions()) {
+      const p = plan.destination
+      choices.set(recoveryKey('recover_passage', p), { ...plan, kind: 'passage',
+        description: `Open a two-block-high passage ${plan.direction} to inspected clear ground (${p.x},${p.y},${p.z}); remove ${plan.clear.map((b) => b.name).join(' + ')}. ${plan.clear.some((b) => b.remodel) ? 'Remodel your own extension sidewall into a remembered doorway; preserve roof, bed and supplies.' : 'Clear only natural terrain.'} Verify the opening and walk through.` })
     }
     const target = escapeTarget()
     if (target) {
@@ -1979,13 +2003,21 @@ export function installSurvival(bot, state, log, opts = {}) {
     return choices
   }
 
+  function progressSummary() {
+    const local = localContext(bot), accessBlocked = progress.accessBlocked(local.accessKey)
+    const summary = progress.summary(local.key)
+    return { ...summary, stalled: summary.stalled || accessBlocked,
+      access_blocked: accessBlocked, preserved_openings: state.accessOpenings }
+  }
   function candidates(obs) {
-    const context = localContext(bot).key
+    const local = localContext(bot), context = local.key
+    const accessBlocked = progress.accessBlocked(local.accessKey)
     const ordinary = Object.fromEntries(Object.entries(ordinaryCandidates(obs))
-      .filter(([key]) => !progress.blocked(context, key)))
+      .filter(([key]) => !progress.blocked(context, key))
+      .filter(([key]) => !accessBlocked || /^(craft_|equip_|eat$|attack_threat$)/.test(key)))
     // Returning to an already blocked place must not wait out the ledger just
     // because the preceding trip counted as movement elsewhere.
-    const stalled = progress.stalled(context) ||
+    const stalled = accessBlocked || progress.stalled(context) ||
       (!Object.keys(ordinary).length && progress.summary(context).failed_here.length >= 2)
     const options = {}
     if (stalled) for (const [key, option] of recoveryOptions()) {
@@ -2003,7 +2035,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   async function execute(action, { source = null } = {}) {
     if (action === 'wait_for_change') {
       await sleep(1500)
-      return { waiting: true, reason: 'no_unblocked_action', progress: progress.summary(localContext(bot).key) }
+      return { waiting: true, reason: 'no_unblocked_action', progress: progressSummary() }
     }
     const before = bot.entity.position.clone(), context = localContext(bot)
     const inventory = () => JSON.stringify(bot.inventory.items().map((i) => [i.name, i.count]).sort())
@@ -2020,21 +2052,66 @@ export function installSurvival(bot, state, log, opts = {}) {
         const after = bot.entity.position.clone(), current = localContext(bot)
         const changed = inventory() !== beforeInventory ||
           (before.floored().equals(after.floored()) && current.terrain !== context.terrain)
-        const evidence = progress.record({ context: context.key, action, before, after, changed,
+        const evidence = progress.record({ context: context.key, accessContext: context.accessKey, action, before, after, changed,
           ok: !error, error: error ?? (!changed && before.distanceTo(after) < 0.75 ? 'No observed movement, block or inventory progress' : null), source })
         log('action_progress', evidence)
       }
     }
   }
 
+  async function openPassage(plan) {
+    const revision = skillRevision, before = bot.entity.position.clone()
+    const check = () => {
+      if (skillRevision !== revision || bot.health <= 0 || emergency()) throw new Error('Passage interrupted')
+    }
+    bot.pathfinder.setGoal(null); bot.clearControlStates()
+    for (const expected of plan.clear) {
+      check()
+      const current = passageOptions().find((p) => p.destination.equals(plan.destination))
+      const fresh = current?.clear.find((b) => b.position.equals(expected.position))
+      if (!fresh || fresh.stateId !== expected.stateId) throw new Error('Passage changed; inspect again')
+      const block = bot.blockAt(expected.position)
+      const tool = bestEquipment(bot.inventory.items(), block.name.endsWith('_planks') ? '_axe' : '_pickaxe')
+      if (tool) await bot.equip(tool, 'hand')
+      if (!bot.canDigBlock(block)) throw new Error('Passage block out of reach')
+      // Reserve the whole doorway before mutation so interruptions/restarts cannot
+      // make the construction skill seal a half-finished exit again.
+      if (plan.clear.some((b) => b.remodel)) for (const p of [plan.doorway, plan.doorway.offset(0, 1, 0)])
+        if (ownExtensionWalls.has(p.toString()) && !state.accessOpenings.includes(p.toString())) state.accessOpenings.push(p.toString())
+      let confirmed = false
+      const update = (packet) => {
+        if (expected.position.equals(new Vec3(packet.location.x, packet.location.y, packet.location.z)) &&
+            packet.type === bot.registry.blocksByName.air.minStateId) confirmed = true
+      }
+      bot._client.on('block_change', update)
+      try {
+        await bounded(() => bot.dig(block, true), escapeDigBudget(bot.digTime(block)), () => bot.stopDigging())
+        const deadline = Date.now() + 1800
+        while (!confirmed && Date.now() < deadline) await sleep(50)
+        if (!confirmed) throw new Error('Passage block removal not confirmed by server')
+      } finally { bot._client.removeListener('block_change', update) }
+      log('passage_block_cleared', { position: expected.position, block: expected.name, remodel: expected.remodel })
+    }
+    check()
+    const activeMoves = movements, canDig = activeMoves.canDig
+    activeMoves.canDig = false
+    try {
+      await walk(new goals.GoalBlock(plan.destination.x, plan.destination.y, plan.destination.z), 6500)
+      check()
+      if (bot.entity.position.distanceTo(plan.destination.offset(0.5, 0, 0.5)) > 0.8)
+        throw new Error('Passage traversal not confirmed')
+      return { openedPassage: true, cleared: plan.clear.length, moved: before.distanceTo(bot.entity.position), position: bot.entity.position.clone() }
+    } finally { activeMoves.canDig = canDig }
+  }
   async function executeSkill(action) {
-    if (action.startsWith('recover_walk:') || action.startsWith('recover_stair:')) {
+    if (action.startsWith('recover_walk:') || action.startsWith('recover_stair:') || action.startsWith('recover_passage:')) {
       const option = recoveryOptions().get(action)
       if (!option) throw new Error('Recovery destination is no longer locally safe')
       const before = bot.entity.position.clone()
       const activeMoves = movements, previousCanDig = activeMoves.canDig
       escaping = true
       try {
+        if (option.kind === 'passage') return await openPassage(option)
         if (option.kind === 'stair') return await escapeUpwardStep(option.destination)
         activeMoves.canDig = false
         await walk(new goals.GoalBlock(option.destination.x, option.destination.y, option.destination.z), 6500)
@@ -2356,8 +2433,8 @@ export function installSurvival(bot, state, log, opts = {}) {
         observations: 'loaded local blocks and entities; darkness does not hide them',
         max_drop_blocks: villageCtx ? 1 : 2,
         pillar_climbing: false,
-        recovery: 'short alternate routes; safe terrain clearing; preserve construction',
-        explicit_recovery_targets: 'recover_walk:x:y:z and recover_stair:x:y:z are supplied only after repeated no-progress attempts; choose an offered key, never invent coordinates.',
+        recovery: 'short alternate routes; safe terrain clearing; optional remembered doorway in own extension sidewalls only; preserve roofs, beds, fixtures and other homes',
+        explicit_recovery_targets: 'recover_walk:x:y:z, recover_stair:x:y:z and recover_passage:x:y:z are supplied only after repeated no-progress attempts; choose an offered key, never invent coordinates.',
       },
       shelter: {
         materials: ['planks', 'cobblestone', 'stone', 'dirt'],
@@ -2372,7 +2449,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     emergency,
     candidates,
     execute,
-    progress: () => progress.summary(localContext(bot).key),
+    progress: progressSummary,
     stop() {
       skillRevision++
       escapeSession = null

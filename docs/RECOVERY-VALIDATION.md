@@ -1,6 +1,6 @@
 # Recovery and model control — 2026-09-23
 
-These changes are local and lab-tested, not a production rollout.
+This document records controlled checks. The initial recovery change shipped in PR #9; deployment and longer live behavior need separate verification.
 
 ## What changed
 
@@ -94,3 +94,39 @@ This change adds no image input or dialogue redesign. A bounded local search can
 miss a distant detour, and movement can still fail to advance a larger goal.
 Production stall reduction requires a separate deployed run and before/after
 telemetry; local tests alone cannot establish it.
+
+## Follow-up: access is a prerequisite
+
+The first deployed recovery change could walk through an existing opening, but
+could not create one. Live inspection found Mira inside a completed extension:
+chest in front, bed behind, sidewalls and a low roof. Choosing farming again
+could not solve that geometry.
+
+The follow-up adds a local passage skill. It inspects a one-cell barrier and
+clear landing, offers explicit alternatives, revalidates before each dig, waits
+for server block updates, then verifies arrival. Ordinary terrain may be cleared;
+a clanker may also turn its **own extension sidewall** into a doorway. Floors,
+roofs, beds, containers, other homes and shared structures remain protected.
+The remembered opening changes future construction targets and survives reload.
+This remains a coded capability with model-selectable alternatives, not an LLM
+inventing arbitrary Minecraft actions.
+
+Two stationary navigation failures suspend travel-dependent jobs until the
+local terrain/position changes. This access memory survives cooldown expiry and
+inventory changes; eating, equipment and crafting remain available. The bounded
+ledger retains 24 navigation failures, rather than unbounded history.
+
+`node stage1/bot/lab-access.mjs` tests four home lots/orientations, including
+server-confirmed traversal, unchanged chest contents/bed/roof, and reconnect
+followed by a construction attempt. `--models` additionally asks Kimi to choose
+between offered passages in the west-home fixture. Kimi selected the south
+passage in 18,273 ms and traversed it; the scripted first-choice policy also
+worked. This is evidence that the capability executes, **not model superiority
+or human-like reasoning**. The later fixtures in that model invocation were
+interrupted by an accidentally overlapping lab reset; the full scripted suite
+was rerun sequentially. Evidence records keep that limitation explicit.
+
+Run every Minecraft lab sequentially: they share the isolated server/fixtures.
+Do not use a lab on production. Unit tests also cover rotated natural barriers,
+protected blocks, nearby fluids/falling material, unloaded landings, and access
+memory surviving crafting/time while invalidating on changed terrain.
