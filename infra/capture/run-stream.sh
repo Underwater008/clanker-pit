@@ -20,9 +20,17 @@ fi
 # Containers can see many host CPUs but have only a few cores of quota. Keep
 # software thread pools bounded, and offload encoding when NVENC actually works.
 ENCODER_ARGS=(-c:v libx264 -preset veryfast -tune zerolatency -threads 2 -sc_threshold 0)
+GOP=$((STREAM_FPS * 2))
+if [ "$PATH_NAME" = guest ]; then
+  # WebRTC needs H.264 without B-frames; shorter keyframe spacing also makes
+  # the HLS fallback recover faster when the guest camera starts mid-turn.
+  ENCODER_ARGS+=(-profile:v baseline -bf 0)
+  GOP="$STREAM_FPS"
+fi
 if ffmpeg -hide_banner -loglevel error -f lavfi -i color=size=1280x720:rate=30 \
     -frames:v 1 -c:v h264_nvenc -preset p4 -tune ll -f null - >/dev/null 2>&1; then
   ENCODER_ARGS=(-c:v h264_nvenc -preset p4 -tune ll -bf 0 -no-scenecut 1)
+  if [ "$PATH_NAME" = guest ]; then ENCODER_ARGS+=(-profile:v baseline); fi
 fi
 echo "[run-stream] encoder ${ENCODER_ARGS[*]}"
 
@@ -36,7 +44,7 @@ while true; do
   ffmpeg -hide_banner -loglevel warning -filter_threads 1 \
     -f x11grab -video_size 1280x720 -framerate "$STREAM_FPS" -i "$GRAB" \
     -vf "fps=${STREAM_FPS},format=yuv420p" -r "$STREAM_FPS" -vsync cfr "${ENCODER_ARGS[@]}" \
-    -b:v 2500k -maxrate 3000k -bufsize 5000k -g "$((STREAM_FPS * 2))" \
+    -b:v 2500k -maxrate 3000k -bufsize 5000k -g "$GOP" \
     -an -f flv "rtmp://127.0.0.1:1935/$PATH_NAME" || true
   echo "[run-stream] ffmpeg exited; restarting in 2 s"
   sleep 2

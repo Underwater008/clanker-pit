@@ -39,10 +39,10 @@ evidence before relying on historical notes or another agent's claims.
 | Village | `stage1/bot/village.mjs`: layout blueprints and economy; `coolant.mjs` + `coolant-setup.mjs`: remote spring datapack and backed-up fixture migration; `council.mjs`: role discussion + deterministic assignment; `flag-setup.mjs` + `fixture-grant.mjs`: idempotent round fixtures (labeled, RCON) |
 | Home beds | `stage1/bot/home-beds.mjs`: labeled, idempotent founder bed and respawn-point fixture after the cast joins |
 | Model routing | `stage1/bot/models.mjs` + `llm.mjs`: per-clanker OpenAI-compatible planners (Kimi default), Jev choice client, thinking extraction |
-| Guests | `stage1/bot/guest-gateway.mjs` (match controller): viewer queue, 3-minute creeper turns, guest input (move/look/jump/boom only), guest mirror on 25584; `guest-queue.mjs` handles scheduling, `guest-boom.mjs` verifies a single summon using server explosion packets; public entry is the allowlisted `/guest/*` telemetry proxy |
+| Guests | `stage1/bot/guest-gateway.mjs` (match controller): viewer queue, 3-minute creeper turns, guest input (move/look/jump/boom only), guest mirror on 25584; `guest-queue.mjs` handles scheduling, `guest-boom.mjs` verifies a single summon using server explosion packets; public entry is the allowlisted `/guest/*` telemetry proxy, including WebSocket controls and WHEP signaling |
 | Providers | `stage1/bot/llm.mjs`: generic planner client + Kimi/Jev clients; `env.mjs`: configuration loading |
 | Native POV | `stage1/bot/native-mirror.mjs`: read-only protocol mirrors (clankers 25580-25583, guest 25584); `infra/capture/run-native-view.py`: viewer lifecycle |
-| Video | `infra/capture/`: official Minecraft clients, display layout, FFmpeg capture, MediaMTX HLS (six paths incl. `guest`) |
+| Video | `infra/capture/`: official Minecraft clients, display layout, FFmpeg capture, MediaMTX HLS (six paths) and guest WebRTC with HLS fallback |
 | Pod startup | `infra/pod-bootstrap.sh`; [operations guide](infra/README.md) for connection and service details |
 | Telemetry | `infra/telemetry-server.py`: public state snapshot + allowlisted guest API proxy |
 | Website | `web/index.html`, `web/app.js`, `web/api/state.js`, `web/vercel.json`: feeds, chat, focus view (decisions/thinking/memories/soul), QR + creeper queue, guest telemetry proxy |

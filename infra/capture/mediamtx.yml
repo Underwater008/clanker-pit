@@ -8,6 +8,13 @@ hlsAllowOrigin: "*"
 hlsSegmentCount: 7
 hlsSegmentDuration: 1s
 hlsPartDuration: 200ms
+webrtcAddress: :8889
+webrtcAllowOrigin: "*"
+# RunPod's HTTP proxy handles WHEP signaling. STUN supplies a reachable media
+# candidate when a fixed UDP port is not exposed by the pod.
+webrtcLocalUDPAddress: ""
+webrtcICEServers2:
+  - url: stun:stun.l.google.com:19302
 paths:
   arena:
     source: publisher
