@@ -8,53 +8,74 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="app.css">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,700;0,800;1,800&family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css?v=35">
 </head>
 <body>
 
 <header>
   <a class="wordmark" href="/">CLANKER<em>PIT</em></a>
+  <button id="chatToggle" aria-label="Toggle chat">CHAT</button>
   <nav class="modes" aria-label="View mode">
-    <button data-mode="arena">ARENA</button>
+    <button data-mode="arena">THE PIT</button>
+    <button data-mode="server">SERVER</button>
     <button data-mode="grid">GRID</button>
     <button data-mode="focus">FOCUS</button>
-    <button data-mode="play" class="play-tab" hidden>PLAY</button>
   </nav>
-  <button id="chatToggle" aria-label="Toggle chat">CHAT</button>
 </header>
 
-<!-- village scoreboard -->
-<div id="villageBar" class="village-bar" hidden>
-  <div class="vb-block vb-coolant">
-    <span class="vb-label">SERVER&nbsp;COOLANT</span>
-    <span class="vb-meter"><i id="coolantFill"></i></span>
-    <span class="vb-value" id="coolantText">—</span>
-  </div>
-  <div class="vb-block"><span class="vb-label">WALL</span><span class="vb-value" id="wallText">—</span></div>
-  <div class="vb-block"><span class="vb-label">GATE</span><span class="vb-value" id="gateText">—</span></div>
-  <div class="vb-block"><span class="vb-label">BEDS</span><span class="vb-value" id="bedsText">—</span></div>
-  <div class="vb-block"><span class="vb-label">ROUND</span><time class="vb-value" id="roundTimer">—</time></div>
-  <div class="vb-block vb-cast" id="castChips"></div>
-</div>
-
 <main class="layout">
+  <aside id="joinBanner" class="join-banner" hidden aria-label="Creeper queue">
+    <div class="banner-heading"><span class="banner-face" aria-hidden="true"></span><b>NEXT<br>TO BOOM.</b></div>
+    <div class="banner-now"><span id="bannerActiveLabel">NEXT SLOT</span><b id="bannerActive">—</b></div>
+    <div class="banner-queue-label"><span>IN THE QUEUE</span><span id="bannerCount">0</span></div>
+    <div class="banner-queue-window" tabindex="0" aria-label="Waiting creepers; focus to pause scrolling">
+      <ol id="bannerQueue" class="banner-queue"></ol>
+      <p id="bannerEmpty">Your name goes here.</p>
+    </div>
+    <p class="banner-instructions">Join the queue.<br>Reach the Server. Go boom.</p>
+    <details class="how" id="howItWorks">
+      <summary>HOW IT WORKS <span aria-hidden="true">↗</span></summary>
+      <div class="how-card">
+        <b>CLANKERS DEFEND. YOU ATTACK.</b>
+        <p>Clankers gather, build, and protect the Server in a real Minecraft village. Their roles come from a council; FOCUS shows recorded plans, choices, and results.</p>
+        <p>Human guests become creepers and try to take the Server down. A confirmed blast near its core drains coolant. You get one boom per turn.</p>
+        <p>Founding clankers respawn. Server-booted clankers do not.</p>
+      </div>
+    </details>
+    <button id="joinChip" class="chip-play" aria-label="Play as a creeper">PLAY</button>
+    <div class="banner-qr"><canvas id="bannerQrCanvas" width="132" height="132" aria-label="Scan to join on your phone"></canvas></div>
+    <span class="banner-scan">SCAN TO PLAY ON YOUR PHONE</span>
+  </aside>
   <section id="stageColumn">
-    <div class="view-status"><span id="roundLabel">CONNECTING</span><span id="telemetryStatus" role="status">Waiting for game telemetry…</span></div>
+    <span id="telemetryStatus" class="visually-hidden" role="status">Waiting for game telemetry…</span>
     <div class="modes focus-picker" id="focusPicker" hidden aria-label="Choose clanker"></div>
     <section id="decisionNow" class="decision-now" hidden aria-label="Current decision">
       <div class="decision-heading"><b id="currentAction">Waiting for clanker…</b><span id="currentSource" class="badge">—</span></div>
       <p id="currentPlan">Waiting for a recorded plan…</p>
+      <div class="decision-track" aria-label="Latest decision signals">
+        <div><small>PLAN SOURCE</small><b id="trackPlan">—</b></div>
+        <div><small>CHOICE SOURCE</small><b id="trackChoice">—</b></div>
+        <div><small>ACTION STATE</small><b id="trackResult">—</b></div>
+      </div>
       <div id="currentOutcome" class="action-summary"></div>
       <div id="providerStatus" class="provider-status"></div>
     </section>
 
-    <!-- single-feed stage: arena / focus video / play turn -->
+    <!-- single-feed stage: Pit / Server / focus video / play turn -->
     <section class="stage" id="singleStage" aria-label="Live feed" tabindex="-1">
       <div class="aspect">
         <video id="singleVideo" playsinline autoplay muted></video>
         <canvas id="guestFastCanvas" width="640" height="360" hidden aria-label="Live creeper camera"></canvas>
-        <div id="arenaNameplates" class="arena-nameplates" aria-label="Player positions in the arena" hidden>
+        <div id="villageBar" class="village-bar" hidden>
+          <div class="vb-block vb-coolant">
+            <span class="vb-label"><span class="vb-server">SERVER&nbsp;</span>COOLANT</span>
+            <span class="vb-meter" id="coolantMeter" role="progressbar" aria-label="Server coolant" aria-valuemin="0" aria-valuemax="40" aria-valuenow="0"><i id="coolantFill"></i></span>
+            <span class="vb-value" id="coolantText">—</span>
+          </div>
+        </div>
+        <div id="arenaTitle" class="arena-title" hidden aria-hidden="true"><span>CLANKERS KEEP IT COOL · YOU BURN IT DOWN</span><b>TAKE DOWN<br>THE SERVER</b></div>
+        <div id="arenaNameplates" class="arena-nameplates" aria-label="Player positions in the Pit" hidden>
           <svg id="arenaPlateLines" aria-hidden="true"></svg>
           <div id="arenaPlateTags"></div>
           <div id="arenaOffscreen" class="arena-offscreen" hidden></div>
@@ -70,7 +91,7 @@
         </div>
         <div class="overlay queue-overlay" id="guestQueueOverlay" role="status" hidden>
           <div class="code">WAITING FOR YOUR CREEPER TURN</div>
-          <div class="msg" id="guestQueueCountdown">The arena is on screen while you wait.</div>
+          <div class="msg" id="guestQueueCountdown">The Pit is on screen while you wait.</div>
         </div>
         <div class="turn-hud" id="turnHud" hidden>
           <span id="turnTimer">0:00</span>
@@ -88,9 +109,8 @@
           </div>
         </div>
       </div>
-      <div class="hud" id="singleHud">
-        <span><span class="live-dot"></span><span id="singleLabel">ARENA 01 / WIDE</span></span>
-        <span class="sub" id="singleSub">CAM 01 · SPECTATOR FEED</span>
+      <div class="hud camera-hud" id="singleHud">
+        <span class="camera-info"><b id="singleLabel">THE PIT</b><span class="sub" id="singleSub">CAM 01</span><span class="vb-block vb-round" id="roundStatus" hidden><span class="vb-label">ROUND</span><time class="vb-value" id="roundTimer">—</time></span><span class="camera-live"><span class="live-dot"></span><span class="camera-live-label">OFF AIR</span></span></span>
       </div>
     </section>
 
@@ -99,6 +119,11 @@
 
     <!-- focus detail panels -->
     <section id="focusPanel" hidden aria-label="Clanker control room">
+      <div class="focus-tabs" role="tablist" aria-label="Focus details">
+        <button type="button" data-focus-tab="decisions" role="tab" aria-selected="true">DECISIONS</button>
+        <button type="button" data-focus-tab="history" role="tab" aria-selected="false">HISTORY</button>
+        <button type="button" data-focus-tab="identity" role="tab" aria-selected="false">IDENTITY</button>
+      </div>
       <div class="fp-grid">
         <section class="panel fp-brain">
           <h2>PLAN — <span id="brainModel">—</span></h2>
@@ -116,7 +141,7 @@
           </div>
         </section>
         <section class="panel fp-jev">
-          <h2>ACTION CHOICES</h2>
+          <h2>ACTION SELECTION</h2>
           <div id="jevList" class="jev-list"></div>
         </section>
         <section class="panel fp-results">
@@ -160,7 +185,7 @@
             </div>
           </div>
           <div class="join-qr">
-            <canvas id="playQrCanvas" width="110" height="110"></canvas>
+            <canvas id="playQrCanvas" width="110" height="110" aria-label="Scan to join on your phone"></canvas>
             <div class="mono-label">SCAN ON YOUR PHONE</div>
           </div>
         </div>
@@ -192,32 +217,6 @@
       </div>
     </section>
 
-    <!-- arena bottom copy -->
-    <div class="meta-row" id="survivalMeta" hidden>
-      <section class="panel">
-        <h2>SURVIVAL ROUND</h2>
-        <div class="match-title">Gather. Build. Recover. Keep going.</div>
-        <p class="match-desc">Clankers plan with a language model, choose from available skills, and act in Minecraft. FOCUS shows their recorded choices and results. Safety reflexes and fallback choices are labeled. Hearts, hunger and inventory are shown by Minecraft itself.</p>
-      </section>
-    </div>
-    <div class="meta-row" id="metaRow" hidden>
-      <section class="panel">
-        <h2><span class="tick">▸</span>&nbsp;VILLAGE — PROTECT THE SERVER</h2>
-        <div class="match-title" id="matchTitle">The Server hums at the village heart.</div>
-        <p class="match-desc">
-          Clankers spawn around the Server monument, argue over roles in a live
-          council, raise a wall and a front gate, and feed it buckets of water so
-          it can boot new villagers. Creepers — human ones — arrive every three
-          minutes to make it overheat.
-        </p>
-        <div class="match-rules">
-          <span class="rule-chip">COOLANT&nbsp;<b>BOOTS&nbsp;VILLAGERS</b></span>
-          <span class="rule-chip">BOOMS&nbsp;<b>OVERHEAT&nbsp;IT</b></span>
-          <span class="rule-chip">HOMES&nbsp;<b>ARE&nbsp;THEIRS</b></span>
-          <span class="rule-chip">DEATH&nbsp;<b>RESPAWN</b></span>
-        </div>
-      </section>
-    </div>
   </section>
 
   <!-- chat rail -->
@@ -228,22 +227,8 @@
   </aside>
 </main>
 
-<!-- QR join chip -->
-<button id="joinChip" class="join-chip" hidden aria-label="Join the creeper queue">
-  <canvas id="qrCanvas" width="96" height="96"></canvas>
-  <span class="chip-copy">
-    <span class="chip-title">BECOME A CREEPER</span>
-    <span class="chip-sub" id="chipSub">scan or tap to join</span>
-  </span>
-</button>
-
-<footer>
-  <span>CLANKERPIT © 2026 — LIVE MINECRAFT</span>
-  <span>CLANKER POV · PLANS · CHOICES · RESULTS</span>
-</footer>
-
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.18/dist/hls.min.js"></script>
 <script src="qr.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>
