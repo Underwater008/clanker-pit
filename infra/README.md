@@ -258,6 +258,9 @@ steps off an elevated crafting table onto inspected ground while preserving
 the table.
 `lab-home-beds.mjs` uses the isolated server to verify that a second fixture
 run clears new leaves from a founder's respawn tile even with a complete marker.
+`lab-spring-repair.mjs` verifies a destroyed coolant source is restored as
+four source blocks with its missing bank and support, then stays unchanged on
+a second pass.
 
 ## Village round: protect the Server
 

@@ -28,6 +28,7 @@ import { createNativeMirror } from './native-mirror.mjs'
 import { GuestQueue, restoreGuestHistory } from './guest-queue.mjs'
 import { guestCameraStatus } from './guest-camera.mjs'
 import { confirmGuestExplosion } from './guest-boom.mjs'
+import { repairSpring } from './spring-repair.mjs'
 import { readVillageFixture, serverAnatomy, VILLAGER_POOL } from './village.mjs'
 
 const DATA_DIR = process.env.BOT_DATA_DIR ?? '/workspace/arena/bot-state'
@@ -612,6 +613,7 @@ setInterval(() => {
     await client.send(`execute if block ${base} minecraft:air run setblock ${base} minecraft:stone`)
     const repaired = await client.send(`execute if block ${deposit} minecraft:air if block ${base} minecraft:stone run setblock ${deposit} minecraft:cauldron`)
     if (/^Changed the block/.test(repaired)) log('deposit_repaired', { position: anatomy.deposit })
+    await repairSpring(client, anatomy, log)
   })
 }, 20000)
 
