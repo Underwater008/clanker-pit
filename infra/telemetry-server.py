@@ -109,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'  # WebSocket upgrades must not close after the handshake.
     def _cors(self):
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.send_header('Cache-Control', 'no-store')
 
@@ -199,14 +199,12 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 header = self.rfile.read(2)
                 if len(header) != 2:
-                    print('guest_control_closed', 'eof', len(header), flush=True)
                     break
                 opcode = header[0] & 0x0f
                 masked = bool(header[1] & 0x80)
                 size = header[1] & 0x7f
                 if size == 126:
                     size = struct.unpack('!H', self.rfile.read(2))[0]
-                print('guest_control_frame', opcode, masked, size, flush=True)
                 if not (header[0] & 0x80) or not masked or size > 4096 or size == 127:
                     break
                 mask = self.rfile.read(4)
@@ -214,6 +212,11 @@ class Handler(BaseHTTPRequestHandler):
                 if len(mask) != 4 or len(data) != size:
                     break
                 if opcode == 8:
+                    try:
+                        self.wfile.write(b'\x88\x02\x03\xe8')
+                        self.wfile.flush()
+                    except OSError:
+                        pass
                     break
                 if opcode == 9:
                     self.wfile.write(bytes((0x8a, size)) + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
@@ -234,14 +237,9 @@ class Handler(BaseHTTPRequestHandler):
                                       {'Content-Type': 'application/json'}, method='POST')
                     with urlopen(request, timeout=2) as response:
                         response.read(128)
-                except URLError as error:
-                    print('guest_control_upstream_closed', getattr(error, 'code', None), flush=True)
+                except (ValueError, UnicodeDecodeError, URLError, TimeoutError, socket.timeout):
                     break
-                except (ValueError, UnicodeDecodeError, TimeoutError, socket.timeout) as error:
-                    print('guest_control_invalid_input', type(error).__name__, flush=True)
-                    break
-            except (OSError, struct.error) as error:
-                print('guest_control_closed', type(error).__name__, flush=True)
+            except (OSError, struct.error):
                 break
         self.close_connection = True
 

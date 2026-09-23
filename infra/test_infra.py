@@ -147,7 +147,15 @@ class TelemetryTests(unittest.TestCase):
                 if StubGateway.requests:
                     break
                 threading.Event().wait(0.01)
-        self.assertEqual(StubGateway.requests, [('POST', '/input', body)])
+            threading.Event().wait(0.08)
+            client.sendall(frame)
+            for _ in range(30):
+                if len(StubGateway.requests) == 2:
+                    break
+                threading.Event().wait(0.01)
+            client.sendall(b'\x88\x80ABCD')
+            self.assertEqual(client.recv(4), b'\x88\x02\x03\xe8')
+        self.assertEqual(StubGateway.requests, [('POST', '/input', body)] * 2)
 
     def test_guest_join_forwards_the_body(self):
         StubGateway.next_payload = {'ok': True, 'token': 't'}

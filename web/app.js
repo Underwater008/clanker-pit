@@ -10,6 +10,9 @@
   var VIDEO_BASE = 'https://fse8ccos5kangj-8080.proxy.runpod.net';
   var API_BASE = 'https://fse8ccos5kangj-8081.proxy.runpod.net';
   var WEBRTC_BASE = API_BASE;
+  // The current pod has no public ICE port. Enable after a world-safe network
+  // migration and an end-to-end browser media test.
+  var TRY_GUEST_WEBRTC = false;
   var STATE_FALLBACK = '/api/state';
   var FOUNDING = ['cinder', 'vex', 'mira', 'tally'];
   var TOKEN_KEY = 'clankerpit-guest-token';
@@ -200,7 +203,7 @@
       lastProgress = Date.now();
       overlay(true, 'SIGNAL', 'Tuning the feed…', false);
       setLive(false);
-      if (feed === 'guest') startWebRtc();
+      if (feed === 'guest' && TRY_GUEST_WEBRTC) startWebRtc();
       else startHls();
     }
     function videoError() {

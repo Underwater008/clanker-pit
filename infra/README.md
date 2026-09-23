@@ -116,8 +116,10 @@ shared display (3840×1440), not a single 1280×720 fallback screen.
 Other paths: `cinder`, `vex`, `tally`, and `arena` (wide spectator).
 The website's stream and telemetry URLs must target the same current pod.
 
-- The guest play view attempts WebRTC and falls back to HLS when its media
-  connection cannot establish. Other feeds use hls.js or native HLS.
+- The guest play view has a WebRTC path with HLS fallback, but it stays
+  disabled on the current pod until a public ICE media route is verified.
+  The current playable feed uses LL-HLS with 1 s guest keyframes. Other
+  feeds use hls.js or native HLS.
 - The camera account `ClankerCam` is a spectator-mode, invisible client joined via
   `--quickPlayMultiplayer 127.0.0.1:25565` (the legacy `--server/--port` args no longer auto-join).
 - Capture config: 1280x720 @ 30fps, NVENC when available (otherwise x264 with
