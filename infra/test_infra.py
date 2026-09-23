@@ -222,6 +222,16 @@ class TelemetryTests(unittest.TestCase):
             self.assertEqual(response.status, 204)
             self.assertEqual(response.headers['Access-Control-Allow-Origin'], '*')
 
+    def test_camera_view_is_forwarded_only_on_its_allowlisted_path(self):
+        body = b'{"token":"example","mode":"third"}'
+        response, payload = self.request('/guest/camera-view', method='POST', body=body)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(StubGateway.requests[-1], ('POST', '/camera-view', body))
+        with self.assertRaises(HTTPError) as error:
+            self.request('/guest/other-view', method='POST', body=body)
+        self.assertEqual(error.exception.code, 404)
+        error.exception.close()
+
     def test_gateway_rejection_reaches_the_browser(self):
         StubGateway.next_status = 400
         StubGateway.next_payload = {'error': 'Pick a name'}

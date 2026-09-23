@@ -1,6 +1,6 @@
 /* CLANKER PIT — protect the Server round.
  * Feeds, chat, village scoreboard, focus view (decisions/thinking/memories/soul),
- * and the guest creeper experience: join the queue, then WASD + drag + jump
+ * and the guest creeper experience: join the queue, then WASD + mouse look + jump
  * and one B/button BOOM. All dynamic strings render via textContent — never innerHTML.
  */
 (function () {
@@ -619,6 +619,7 @@
   // ---------- modes ----------
   var modeButtons = document.querySelectorAll('.modes [data-mode]');
   function setMode(mode, clanker) {
+    if (mode !== 'play') releaseMouseLook();
     if (mode === 'grid') { state.mode = 'grid'; }
     else if (mode === 'arena') { state.mode = 'arena'; }
     else if (mode === 'play') { state.mode = 'play'; }
@@ -1029,6 +1030,8 @@
     controlSocket: null,
     controlRetryAt: 0,
     boomed: false,
+    cameraViewPending: false,
+    lookInitialized: false,
     wasActive: false,
     finished: false,
     touch: 'ontouchstart' in window,
@@ -1123,6 +1126,10 @@
     guest.token = null;
     guest.nickname = null;
     guest.boomed = false;
+    guest.yaw = null;
+    guest.pitch = 0;
+    guest.lookInitialized = false;
+    releaseMouseLook();
     if (!keepFinished) guest.finished = false;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(NAME_KEY);
@@ -1135,10 +1142,23 @@
     var turn = available && guest.turnLive();
     var cameraReady = guest.cameraReady();
     var controlsReady = turn && cameraReady;
+    if (!controlsReady) releaseMouseLook();
+    if (controlsReady && !guest.lookInitialized &&
+        Number.isFinite(g.active && g.active.look && g.active.look.yaw) &&
+        Number.isFinite(g.active.look.pitch)) {
+      guest.yaw = g.active.look.yaw;
+      guest.pitch = g.active.look.pitch;
+      guest.lookInitialized = true;
+    }
     document.body.classList.toggle('guest-turn', Boolean(turn));
     var showJoin = $('playJoin'), showQueued = $('playQueued'), showDone = $('playDone');
     showJoin.hidden = true; showQueued.hidden = true; showDone.hidden = true;
     $('turnHud').hidden = !turn;
+    $('cameraViewBtn').disabled = !controlsReady || guest.cameraViewPending;
+    $('cameraViewBtn').textContent = g && g.camera && g.camera.viewMode === 'third'
+      ? 'FIRST PERSON' : 'THIRD PERSON';
+    $('mouseLookHint').hidden = !controlsReady || guest.touch;
+    updateMouseLookHint();
     $('touchPad').hidden = !(controlsReady && guest.touch);
     $('guestCameraOverlay').hidden = !turn || cameraReady;
     $('guestQueueOverlay').hidden = !available || turn || !guest.token;
@@ -1221,6 +1241,8 @@
       if (!guest.keys[key]) { guest.keys[key] = true; guest.dirty = true; }
     } else if (e.code === 'KeyB') {
       sendBoom();
+    } else if (e.code === 'KeyV' && !e.repeat) {
+      switchCameraView();
     }
   });
   window.addEventListener('keyup', function (e) {
@@ -1233,26 +1255,54 @@
   });
 
   var draggingLook = false, lastDrag = null;
-  $('singleStage').addEventListener('mousedown', function (e) {
+  function releaseMouseLook() {
+    draggingLook = false;
+    lastDrag = null;
+    if (document.pointerLockElement === $('singleStage') && document.exitPointerLock)
+      document.exitPointerLock();
+  }
+  function updateMouseLookHint() {
+    var locked = document.pointerLockElement === $('singleStage');
+    $('singleStage').classList.toggle('mouse-locked', locked);
+    $('mouseLookHint').textContent = locked ? 'MOUSE CAPTURED · ESC TO RELEASE'
+      : $('singleStage').requestPointerLock ? 'CLICK GAME TO AIM · ESC TO RELEASE'
+      : 'DRAG GAME TO AIM IN THIS BROWSER';
+    if (!$('singleStage').requestPointerLock)
+      $('mouseHelp').textContent = 'DRAG GAME to aim in this browser';
+  }
+  document.addEventListener('pointerlockchange', function () {
+    draggingLook = false;
+    lastDrag = null;
+    updateMouseLookHint();
+  });
+  $('singleStage').querySelector('.aspect').addEventListener('mousedown', function (e) {
     if (!guest.canControl() || guest.touch || e.button !== 0 || e.target.closest('button')) return;
     draggingLook = true;
     lastDrag = { x: e.clientX, y: e.clientY };
     e.preventDefault();
+    if ($('singleStage').requestPointerLock && document.pointerLockElement !== $('singleStage')) {
+      try {
+        var request = $('singleStage').requestPointerLock();
+        if (request && request.catch) request.catch(function () {});
+      } catch (_) {}
+    }
   });
   document.addEventListener('mousemove', function (e) {
-    if (!guest.canControl() || guest.touch || !draggingLook || !lastDrag) return;
-    var dx = 0, dy = 0;
-    dx = e.clientX - lastDrag.x;
-    dy = e.clientY - lastDrag.y;
-    lastDrag = { x: e.clientX, y: e.clientY };
+    if (!guest.canControl() || guest.touch) return;
+    var locked = document.pointerLockElement === $('singleStage');
+    if (!locked && (!draggingLook || !lastDrag)) return;
+    var dx = locked ? e.movementX : e.clientX - lastDrag.x;
+    var dy = locked ? e.movementY : e.clientY - lastDrag.y;
+    if (!locked) lastDrag = { x: e.clientX, y: e.clientY };
     if (dx || dy) {
       guest.yaw = (guest.y === null ? 0 : guest.yaw) - dx * LOOK_SENS;
       guest.pitch = clampPitch(guest.pitch - dy * LOOK_SENS);
+      guest.lookInitialized = true;
       guest.dirty = true;
     }
   });
   document.addEventListener('mouseup', function () { draggingLook = false; lastDrag = null; });
-  window.addEventListener('blur', function () { draggingLook = false; lastDrag = null; });
+  window.addEventListener('blur', releaseMouseLook);
   function clampPitch(p) { return Math.max(-MAX_PITCH, Math.min(MAX_PITCH, p)); }
 
   // touch: left-half joystick on the stage, right-half look, buttons
@@ -1330,6 +1380,25 @@
     guest.dirty = true;
   }
   function clampAbs(v) { return Math.max(-1, Math.min(1, v)); }
+
+  function switchCameraView() {
+    if (!guest.canControl() || guest.cameraViewPending || !guest.token) return;
+    var camera = telemetry && telemetry.guest && telemetry.guest.camera;
+    var mode = camera && camera.viewMode === 'third' ? 'first' : 'third';
+    guest.cameraViewPending = true;
+    renderPlay();
+    guestPost('/guest/camera-view', { token: guest.token, mode: mode }, 2500)
+      .then(function () {
+        if (telemetry && telemetry.guest && telemetry.guest.camera)
+          telemetry.guest.camera.viewMode = mode;
+      }).catch(function () {
+        $('cameraViewBtn').title = 'Could not switch camera. Try again.';
+      }).finally(function () {
+        guest.cameraViewPending = false;
+        if (state.mode === 'play') renderPlay();
+      });
+  }
+  $('cameraViewBtn').addEventListener('click', switchCameraView);
 
   function sendBoom() {
     if (!guest.canControl() || guest.boomed || !guest.token) return;

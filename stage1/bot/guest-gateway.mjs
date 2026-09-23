@@ -41,6 +41,7 @@ const MIRROR_PORT =
   Number(process.env.MIRROR_PORT_BASE ?? 25580) + Number(process.env.MIRROR_INDEX ?? 4)
 const GUEST_STATE = join(DATA_DIR, 'guest.json')
 const MIRROR_STATE = join(DATA_DIR, 'mirror-Guest.json')
+const CAMERA_VIEW_STATE = join(DATA_DIR, 'guest-camera-view.json')
 const BOOM_GRACE_MS = 2500
 const ARRIVAL_GRACE_MS = 10000
 const BODY_LIMIT = 4096
@@ -117,11 +118,18 @@ function publicStatus() {
   camera.ready = camera.ready && Boolean(queue.active?.placed && guestBot?.isAlive)
   if (!camera.ready && camera.status === 'connected') camera.status = 'starting'
   if (camera.ready) queue.markCameraReady(queue.active?.token)
+  let requestedView = null
+  try { requestedView = JSON.parse(readFileSync(CAMERA_VIEW_STATE, 'utf8')) } catch {}
+  camera.viewMode = camera.ready && requestedView?.generation === mirrorState?.generation &&
+    requestedView?.mode === 'third' ? 'third' : 'first'
   const status = queue.status()
   const position = guestBot?.entity?.position
   if (status.active && queue.active?.placed && position &&
       [position.x, position.y, position.z].every(Number.isFinite))
     status.active.position = { x: position.x, y: position.y, z: position.z }
+  if (status.active && Number.isFinite(guestBot?.entity?.yaw) &&
+      Number.isFinite(guestBot?.entity?.pitch))
+    status.active.look = { yaw: guestBot.entity.yaw, pitch: guestBot.entity.pitch }
   return {
     ...status,
     feed: 'guest',
@@ -523,7 +531,7 @@ const server = createServer(async (req, res) => {
       const allowed = Boolean(queue.controlsFor(token) && publicStatus().camera.ready)
       return send(res, allowed ? 200 : 403, { ok: allowed })
     }
-    if (req.method === 'POST' && (path === '/join' || path === '/leave' || path === '/input')) {
+    if (req.method === 'POST' && (path === '/join' || path === '/leave' || path === '/input' || path === '/camera-view')) {
       const body = parseJsonBody(await readBody(req))
       if (!body) return send(res, 400, { error: 'invalid JSON body' })
       if (path === '/join') {
@@ -549,6 +557,21 @@ const server = createServer(async (req, res) => {
       }
       const entry = queue.controlsFor(String(body.token ?? ''))
       if (!entry) return send(res, 403, { error: 'not your turn' })
+      if (path === '/camera-view') {
+        if (body.mode !== 'first' && body.mode !== 'third')
+          return send(res, 400, { error: 'invalid camera view' })
+        if (!publicStatus().camera.ready)
+          return send(res, 409, { error: 'camera is starting' })
+        let mirror = null
+        try { mirror = JSON.parse(readFileSync(MIRROR_STATE, 'utf8')) } catch {}
+        if (!Number.isFinite(mirror?.generation))
+          return send(res, 409, { error: 'camera is starting' })
+        const tmp = `${CAMERA_VIEW_STATE}.tmp`
+        writeFileSync(tmp, JSON.stringify({ generation: mirror.generation, mode: body.mode }))
+        renameSync(tmp, CAMERA_VIEW_STATE)
+        writeGuestState()
+        return send(res, 200, { ok: true, mode: body.mode })
+      }
       if (path === '/input') {
         const applied = applyInput(entry, body)
         if (body.boom) {
