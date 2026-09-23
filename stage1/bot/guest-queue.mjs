@@ -34,6 +34,9 @@ export const IDLE_END_MS = Math.max(
 
 const TOKEN_ALPHABET =
   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+const FILLER_NAMES = ['MossByte', 'FuseBox', 'SneakyFern', 'BoomBean', 'PixelMoth',
+  'GreenGoblin', 'DustBunny', 'LimeWire', 'TinyMeteor', 'NightSprout', 'CrispyLeaf',
+  'OopsKaboom', 'StaticSlug', 'MintCondition', 'SpicyPebble', 'PocketChaos']
 
 // Confirmed events may still be waiting for the controller to consume them
 // when the gateway restarts. Keep those buffers, not only their id counter.
@@ -64,6 +67,10 @@ export class GuestQueue {
     maxQueue = MAX_QUEUE,
     idleEndMs = IDLE_END_MS,
     reservedNames = [],
+    fillersEnabled = false,
+    fillerTurnMs = 60000,
+    fillerEveryMs = turnEveryMs,
+    fillerYieldMs = 8000,
   } = {}) {
     this.now = now
     this.random = random
@@ -72,6 +79,13 @@ export class GuestQueue {
     this.turnMaxMs = turnMaxMs
     this.maxQueue = maxQueue
     this.idleEndMs = idleEndMs
+    this.fillersEnabled = fillersEnabled
+    this.fillerTurnMs = fillerTurnMs
+    this.fillerEveryMs = fillerEveryMs
+    this.fillerYieldMs = fillerYieldMs
+    this.fillerTarget = 1 + Math.floor(this.random() * 5)
+    this.nextFillerAt = now()
+    this.lastSpawnKind = null
     // Case-insensitive reserved names: clankers, camera/mirror accounts and
     // the villager pool. A guest stealing one of these would kick the real
     // player on an offline-mode server.
@@ -96,17 +110,17 @@ export class GuestQueue {
     return {
       queueLength: this.queue.length,
       queuePreview: this.queue.slice(0, 5).map((e) => e.nickname),
+      queueEntries: this.queue.slice(0, 5).map(({ id, nickname }) => ({ id, nickname })),
       active: this.active
         ? {
             nickname: this.active.nickname,
-            botName: this.active.botName ?? null,
             remainingMs: Math.max(0, this.active.endsAt - now),
           }
         : null,
       nextTurnInMs: Math.max(0, Math.max(this.nextSlotAt, this.active?.endsAt ?? 0) - now),
       turnEveryMs: this.turnEveryMs,
       turnMaxMs: this.turnMaxMs,
-      acceptingJoins: this.queue.length < this.maxQueue,
+      acceptingJoins: this.queue.filter((e) => e.kind === 'human').length < this.maxQueue,
     }
   }
 
@@ -120,19 +134,29 @@ export class GuestQueue {
       return { error: 'That name belongs to the village' }
     if (/^(view|cam|flagsetup)/i.test(name))
       return { error: 'That name is reserved for the arena crew' }
-    if (this.active?.nickname === name)
+    if (this.active?.nickname.toLowerCase() === name.toLowerCase())
       return { error: 'That name is playing right now' }
-    if (this.queue.some((e) => e.nickname === name))
+    if (this.queue.some((e) => e.kind === 'human' && e.nickname.toLowerCase() === name.toLowerCase()))
       return { error: 'Someone with that name is already queued' }
-    if (this.queue.length >= this.maxQueue)
+    if (this.queue.filter((e) => e.kind === 'human').length >= this.maxQueue)
       return { error: 'The creeper queue is full right now' }
+    // Humans go ahead of waiting clankers, preserving human FIFO and the
+    // existing queue names. Only a clanker with the requested name withdraws.
+    this.queue = this.queue.filter((e) => e.kind === 'human' || e.nickname.toLowerCase() !== name.toLowerCase())
+    if (this.active?.kind === 'clanker') {
+      this.active.yieldAt = Math.min(this.active.yieldAt ?? Infinity, this.now() + this.fillerYieldMs)
+      this.active.endsAt = Math.min(this.active.endsAt, this.active.yieldAt)
+    }
+    if (this.lastSpawnKind === 'clanker') this.nextSlotAt = this.now()
     const entry = {
       id: ++this.seq,
       token: this.#token(),
       nickname: name,
+      kind: 'human',
       joinedAt: this.now(),
     }
-    this.queue.push(entry)
+    const position = this.queue.filter((e) => e.kind === 'human').length + 1
+    this.queue.splice(position - 1, 0, entry)
     // No shortcut for boom-and-rejoin: the next slot stays booked at
     // last-spawn + cadence. An idle stream (overdue slot) starts immediately
     // for whoever is first — nothing to adjust here.
@@ -140,7 +164,7 @@ export class GuestQueue {
       ok: true,
       token: entry.token,
       nickname: entry.nickname,
-      position: this.queue.length,
+      position,
     }
   }
 
@@ -156,16 +180,39 @@ export class GuestQueue {
     return index === -1 ? null : { position: index + 1, nickname: this.queue[index].nickname }
   }
 
+  setFillersEnabled(enabled) {
+    this.fillersEnabled = Boolean(enabled)
+    if (!enabled) this.queue = this.queue.filter((e) => e.kind === 'human')
+  }
+
+  refill() {
+    const now = this.now()
+    if (!this.fillersEnabled || now < this.nextFillerAt) return
+    if (this.queue.length >= Math.min(5, this.maxQueue, this.fillerTarget)) return
+    const taken = new Set([...this.reserved, ...this.queue.map((e) => e.nickname.toLowerCase()),
+      this.active?.nickname.toLowerCase()])
+    let nickname
+    for (let i = 0; i < FILLER_NAMES.length + 1; i++) {
+      const base = FILLER_NAMES[(Math.floor(this.random() * FILLER_NAMES.length) + i) % FILLER_NAMES.length]
+      const candidate = i === FILLER_NAMES.length ? `Fuse_${++this.seq}` : base
+      if (!taken.has(candidate.toLowerCase())) { nickname = candidate; break }
+    }
+    if (!nickname) return
+    this.queue.push({ id: ++this.seq, token: this.#token(), nickname, kind: 'clanker', joinedAt: now })
+    this.nextFillerAt = now + 3000 + Math.floor(this.random() * 5000)
+  }
+
   /** Advance the schedule. Returns pending transitions for the gateway:
    * {spawn: entry} when a turn should start, {end: {entry, reason}} when the
    * active turn hit its cap or went idle. */
   tick() {
     const now = this.now()
+    this.refill()
     if (this.active) {
       if (now >= this.active.endsAt) {
         const entry = this.active
         this.active = null
-        return { end: { entry, reason: 'timeout' } }
+        return { end: { entry, reason: entry.yieldAt ? 'yield' : 'timeout' } }
       }
       if (
         this.active.cameraReadyAt &&
@@ -182,11 +229,15 @@ export class GuestQueue {
         ...entry,
         botName: null,
         startedAt: now,
-        endsAt: now + this.turnMaxMs,
+        endsAt: now + (entry.kind === 'clanker' ? this.fillerTurnMs : this.turnMaxMs),
         spawned: false,
       }
       this.lastSpawnAt = now
-      this.nextSlotAt = now + this.turnEveryMs
+      this.lastSpawnKind = entry.kind
+      this.nextSlotAt = now + (entry.kind === 'clanker' ? this.fillerEveryMs : this.turnEveryMs)
+      this.fillerTarget = 1 + Math.floor(this.random() * 5)
+      this.nextFillerAt = now
+      this.refill()
       return { spawn: this.active }
     }
     return {}
@@ -220,7 +271,7 @@ export class GuestQueue {
   }
 
   controlsFor(token) {
-    return this.active?.token === token ? this.active : null
+    return this.active?.kind === 'human' && this.active.token === token ? this.active : null
   }
 
   /** Stop moving when the browser stopped sending input. */

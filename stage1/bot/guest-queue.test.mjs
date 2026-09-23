@@ -10,6 +10,65 @@ import {
 
 const minute = 60_000
 
+test('filler names are scheduled entries without public source labels or tokens', () => {
+  const { queue, advance } = makeQueue({ fillersEnabled: true, maxQueue: 20 })
+  const first = queue.tick().spawn
+  assert.equal(first.kind, 'clanker')
+  assert.ok(first.nickname)
+  for (let i = 0; i < 8; i++) { advance(4000); queue.tick() }
+  const publicState = queue.status()
+  assert.ok(publicState.queueLength >= 1 && publicState.queueLength <= 5)
+  assert.equal(publicState.active.nickname, first.nickname)
+  assert.ok(publicState.queueEntries.every((e) => !('kind' in e) && !('token' in e)))
+  assert.ok(!('kind' in publicState.active) && !('token' in publicState.active))
+  assert.ok(!('humanQueueLength' in publicState))
+  assert.ok(!('fillersEnabled' in publicState))
+  assert.equal(queue.controlsFor(first.token), null, 'a filler can never take browser input')
+})
+
+test('humans move ahead of waiting clankers without emptying the queue and the active clanker yields within eight seconds', () => {
+  const { queue, advance } = makeQueue({ fillersEnabled: true, maxQueue: 20 })
+  queue.tick()
+  advance(10000)
+  queue.tick()
+  const waitingNames = queue.status().queuePreview
+  assert.ok(waitingNames.length > 0)
+  assert.equal(queue.join('Xiao').position, 1)
+  assert.equal(queue.join('Ada').position, 2)
+  assert.deepEqual(queue.status().queuePreview, ['Xiao', 'Ada', ...waitingNames])
+  advance(7999)
+  assert.equal(queue.tick().end, undefined)
+  advance(1)
+  assert.equal(queue.tick().end.reason, 'yield')
+  assert.equal(queue.tick().spawn.nickname, 'Xiao')
+  assert.deepEqual(queue.status().queuePreview.slice(0, 1 + waitingNames.length), ['Ada', ...waitingNames])
+  assert.equal(queue.active.kind, 'human')
+})
+
+test('a crowded human queue stays FIFO and receives no filler names', () => {
+  const { queue, advance } = makeQueue({ fillersEnabled: true, maxQueue: 20 })
+  for (let i = 0; i < 9; i++) assert.equal(queue.join(`Human_${i}`).position, i + 1)
+  for (let i = 0; i < 3; i++) {
+    assert.equal(queue.tick().spawn.nickname, `Human_${i}`)
+    advance(10000)
+    assert.ok(queue.queue.every((e) => e.kind === 'human'))
+    queue.finishActive('boom')
+    advance(3 * minute)
+  }
+  assert.equal(queue.status().queueEntries.length, 5)
+  assert.equal(queue.status().queueLength, 6)
+})
+
+test('unavailable native runner removes fillers and does not advertise pretend entries', () => {
+  const { queue } = makeQueue({ fillersEnabled: true })
+  queue.refill()
+  assert.equal(queue.queue.length, 1)
+  queue.setFillersEnabled(false)
+  assert.equal(queue.status().queueLength, 0)
+  queue.tick()
+  assert.equal(queue.active, null)
+})
+
 test('gateway restart retains confirmed unconsumed booms and the shared chat cursor', () => {
   const boom = { id: 40, type: 'boom', position: { x: 0, y: 64, z: 0 } }
   const chat = { id: 41, text: 'hello' }
@@ -233,4 +292,30 @@ test('the default cadence matches the product rule: one creeper every 3 minutes'
     Number(process.env.GUEST_TURN_EVERY_MS ?? 180000),
     3 * minute,
   )
+})
+
+
+test('a human can take a waiting clanker name without duplicate names or losing other entries', () => {
+  const { queue } = makeQueue({ fillersEnabled: true })
+  queue.refill()
+  const nickname = queue.queue[0].nickname
+  const human = queue.join(nickname)
+  assert.equal(human.position, 1)
+  assert.equal(queue.queue.filter((e) => e.nickname === nickname).length, 1)
+  assert.equal(queue.tick().spawn.token, human.token)
+})
+
+test('quiet queues replenish behind humans without using human capacity or delaying them', () => {
+  const { queue, advance } = makeQueue({ fillersEnabled: true, maxQueue: 3 })
+  const human = queue.join('Xiao')
+  queue.fillerTarget = 3
+  queue.refill()
+  advance(10000)
+  queue.refill()
+  assert.equal(queue.queue.length, 3)
+  assert.equal(queue.position(human.token).position, 1)
+  assert.equal(queue.join('Ada').position, 2)
+  assert.equal(queue.join('Bo').position, 3)
+  assert.match(queue.join('Cy').error, /full/)
+  assert.equal(queue.tick().spawn.token, human.token)
 })

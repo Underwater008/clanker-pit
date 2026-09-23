@@ -128,6 +128,12 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(payload['queueLength'], 2)
         self.assertEqual(StubGateway.requests, [('GET', '/status', None)])
 
+    def test_private_guest_status_forwards_token_to_gateway(self):
+        body = b'{"token":"example"}'
+        response, payload = self.request('/guest/status', method='POST', body=body)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(StubGateway.requests[-1], ('POST', '/status', body))
+
     def test_websocket_control_forwards_masked_input_only_to_gateway(self):
         with socket.create_connection(('127.0.0.1', self.server.server_port), timeout=2) as client:
             client.settimeout(2)
