@@ -455,6 +455,36 @@ test('a buried clanker can clear natural village ground as an escape hatch', asy
   assert.ok([...removed].every((key) => !key.includes(', 67, ')))
 })
 
+test('a builder seals a deep blast crater from an adjacent block and confirms the new floor', async () => {
+  const flag = new Vec3(0, 64, 0), hole = flag.offset(0, 0, 4)
+  const { bot, skills } = fixture({
+    inventory: [{ name: 'dirt', count: 4 }],
+    village: { flag, lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false },
+  })
+  bot.entity.position = new Vec3(0.5, 65, 2.5)
+  let repaired = false, placement = null
+  bot.blockAt = (p) => {
+    const q = p.floored()
+    const name = q.equals(hole) ? repaired ? 'dirt' : 'air' :
+      q.x === hole.x && q.z === hole.z && q.y < hole.y ? 'air' :
+        q.y <= flag.y ? 'dirt' : 'air'
+    return { position: q, name, boundingBox: name === 'air' ? 'empty' : 'block' }
+  }
+  bot.pathfinder.goto = async (goal) => {
+    bot.entity.position = new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5)
+  }
+  bot.equip = async (item) => { bot.heldItem = item }
+  bot._placeBlockWithOptions = async (reference, face) => {
+    placement = { reference: reference.position, face }
+    repaired = true
+  }
+  const result = await skills.execute('repair_blast_hole')
+  assert.equal(result.repairedHole, true)
+  assert.deepEqual(result.position, hole)
+  assert.deepEqual(placement.reference.plus(placement.face), hole)
+  assert.equal(bot.blockAt(hole.offset(0, -1, 0)).name, 'air')
+})
+
 test('recovery takes priority while a guard is buried under an unreachable threat, but real hurt preempts it', async () => {
   const { bot, skills, state } = fixture({ village: { flag: new Vec3(0, 70, 0), lotIndex: 0, summary: () => ({}) } })
   state.role = 'guard'

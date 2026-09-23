@@ -238,7 +238,7 @@ server-confirmed mechanics chain — infinite spring refill, `scoop_water`,
 gate passage open, home completion, torch placement, `mine_iron_ore` →
 `smelt_iron` → `craft_bucket`, and patrol staying near the village.
 `lab-village-improvements.mjs` is a shorter isolated check for wheat
-tilling/planting/harvesting, a dirt-path road segment, and bottom-up repair of
+tilling/planting/harvesting, a dirt-path road segment, and surface sealing of
 a two-deep blast hole. Fixture items and mature wheat are explicitly granted
 by RCON, so the lab proves mechanics, not autonomous resource gathering.
 

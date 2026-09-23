@@ -53,7 +53,7 @@ test('farm and paths fit the graded village and avoid fixtures', () => {
       `plot ${p} needs coolant-spring irrigation`)
 })
 
-test('blast repair finds shallow dry openings and leaves deep caves and fixtures alone', () => {
+test('blast repair seals exposed floor gaps over shallow and deep craters while preserving fixtures', () => {
   const holes = new Set([
     key(flag.offset(0, 0, 4)), key(flag.offset(0, -1, 4)),
     key(flag.offset(0, 0, 5)), key(flag.offset(0, -1, 5)),
@@ -68,10 +68,10 @@ test('blast repair finds shallow dry openings and leaves deep caves and fixtures
     boundingBox: p.y > flag.y || holes.has(key(p)) || water.has(key(p)) ? 'empty' : 'block',
   })
   const targets = blastHoleTargets(flag, blockAt).map(key)
-  assert.ok(targets.includes(key(flag.offset(0, -1, 4))))
-  assert.ok(targets.includes(key(flag.offset(0, -2, 5))))
+  assert.ok(targets.includes(key(flag.offset(0, 0, 4))))
+  assert.ok(targets.includes(key(flag.offset(0, 0, 5))))
   assert.ok(targets.includes(key(flag.offset(2, 0, 12)))) // farm soil can be repaired
-  assert.ok(!targets.includes(key(flag.offset(0, -4, 6)))) // too deep
+  assert.ok(targets.includes(key(flag.offset(0, 0, 6)))) // deep crater gets a safe cap
   assert.ok(!targets.some((p) => water.has(p)))
 })
 

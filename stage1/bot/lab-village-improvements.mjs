@@ -78,14 +78,11 @@ try {
     'blast damage must be offered to a clanker')
   const firstRepair = await skills.execute('repair_blast_hole')
   assert.equal(firstRepair.repairedHole, true)
-  assert.ok(firstRepair.position.equals(hole.offset(0, -1, 0)))
-  await assertBlock(hole.offset(0, -1, 0), 'dirt')
-  const secondRepair = await skills.execute('repair_blast_hole')
-  assert.equal(secondRepair.repairedHole, true)
-  assert.ok(secondRepair.position.equals(hole), `repaired unexpected target ${secondRepair.position}`)
+  assert.ok(firstRepair.position.equals(hole), `repaired unexpected target ${firstRepair.position}`)
   await assertBlock(hole, 'dirt')
+  await assertBlock(hole.offset(0, -1, 0), 'air')
   console.log(JSON.stringify({ event: 'LAB_VILLAGE_IMPROVEMENTS_PASS',
-    farm: true, harvest: true, road: true, repairedDepth: 2 }))
+    farm: true, harvest: true, road: true, sealedDepth: 2 }))
 } catch (error) {
   console.error(error.stack)
   process.exitCode = 1

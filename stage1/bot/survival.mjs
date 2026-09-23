@@ -1053,7 +1053,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   async function repairBlastHole() {
     const option = repairOptions().sort((a, b) =>
       a.stand.distanceTo(bot.entity.position) - b.stand.distanceTo(bot.entity.position))[0]
-    if (!option) throw new Error('No reachable shallow dry blast hole on the village floor')
+    if (!option) throw new Error('No reachable blast hole on the village floor')
     const { target, stand } = option
     const item = bot.inventory.items().find((i) => ['dirt', 'cobblestone', 'stone'].includes(i.name))
     if (!item) throw new Error('No dirt or stone to fill the hole')
@@ -1065,16 +1065,20 @@ export function installSurvival(bot, state, log, opts = {}) {
         blocked.set(target.toString(), Date.now() + 120000)
         throw error
       }
-      const support = bot.blockAt(target.offset(0, -1, 0))
-      if (!solid(support) || bot.blockAt(target)?.name !== 'air')
+      const references = [target.offset(0, -1, 0),
+        target.offset(1, 0, 0), target.offset(-1, 0, 0),
+        target.offset(0, 0, 1), target.offset(0, 0, -1)]
+      const support = references.map((p) => bot.blockAt(p)).find((block) =>
+        solid(block) && !['sand', 'red_sand', 'gravel'].includes(block.name))
+      if (!support || bot.blockAt(target)?.name !== 'air')
         throw new Error('Blast-hole support changed before repair')
-      if (bot.entity.position.distanceTo(support.position.offset(0.5, 1, 0.5)) > 4.4)
-        throw new Error('Blast-hole support is out of placement reach')
+      if (bot.entity.position.distanceTo(target.offset(0.5, 0.5, 0.5)) > 4.4)
+        throw new Error('Blast hole is out of placement reach')
       const available = bot.inventory.items().find((i) => i.name === item.name && i.count > 0)
       if (!available) throw new Error('Repair material left inventory')
       await bot.equip(available, 'hand')
       if (bot.heldItem?.name !== available.name) throw new Error('Repair material is not held')
-      await bounded(() => bot._placeBlockWithOptions(support, new Vec3(0, 1, 0),
+      await bounded(() => bot._placeBlockWithOptions(support, target.minus(support.position),
         { forceLook: true, swingArm: 'right' }), 7000)
       await awaitBlock(target, (b) => b?.name === available.name)
       return { placed: available.name, position: target, repairedHole: true }
@@ -1584,7 +1588,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       const wallMaterials = materials + n('dirt')
       if (nearVillage && ['guard', 'builder'].includes(state.role) &&
           V.repairable_blast_holes > 0 && n((name) => ['dirt', 'cobblestone', 'stone'].includes(name)) > 0)
-        vadd('repair_blast_hole', 'Fill one shallow, dry blast hole in the village floor from the bottom up.')
+        vadd('repair_blast_hole', 'Seal one blast hole in the village floor from stable neighboring ground.')
       if (nearVillage && wallMaterials >= 1 && !V.wall?.complete)
         vadd(
           'build_wall',

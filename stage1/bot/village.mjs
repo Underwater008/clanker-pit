@@ -293,8 +293,8 @@ export function roadSpots(flag) {
   return offsets.map(([x, z]) => plus(flag, x, 0, z))
 }
 
-/** Inspect only the locally loaded graded floor. Return bottom-up fill cells
- * for shallow dry holes; leave homes, fixtures, water, and deep caves alone. */
+/** Find exposed gaps in the originally solid village floor. Repairing the
+ * surface from a stable neighboring block also closes deep blast craters. */
 export function blastHoleTargets(flag, blockAt) {
   const f = v(flag), anatomy = serverAnatomy(f)
   const reserved = new Set([
@@ -313,14 +313,11 @@ export function blastHoleTargets(flag, blockAt) {
       const above = blockAt(top.offset(0, 1, 0))
       if (!above || above.boundingBox === 'block') continue
       if (blockAt(top)?.name !== 'air') continue
-      let bottom = null, unsafe = false
-      for (let depth = 1; depth <= 4; depth++) {
-        const p = top.offset(0, -depth, 0), block = blockAt(p)
-        if (!block || ['water', 'lava'].includes(block.name)) { unsafe = true; break }
-        if (block.boundingBox === 'block') { bottom = p.offset(0, 1, 0); break }
-        if (block.name !== 'air') { unsafe = true; break }
-      }
-      if (!unsafe && bottom) out.push(bottom)
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => {
+        const side = blockAt(top.offset(dx, 0, dz))
+        return side?.boundingBox === 'block' &&
+          !['sand', 'red_sand', 'gravel'].includes(side.name)
+      })) out.push(top)
     }
   return out
 }
