@@ -13,6 +13,8 @@ import {
   localEscapePlans,
   localEscapeReposition,
   safePerchLanding,
+  safeLedgeLanding,
+  rootedTreeExit,
   escapeDigBudget,
   navigationReached,
   navigationGoalSummary,
@@ -339,6 +341,67 @@ test('perch descent rejects fluid landings and a clanker too hurt to fall', () =
   assert.equal(safePerchLanding(bot, 66), null)
 })
 
+test('a leaf perch and an isolated furnace each offer only an inspected dry exit', () => {
+  const { bot } = fixture()
+  bot.entity.position = new Vec3(0.5, 72, 0.5)
+  bot.blockAt = (p) => {
+    const q = p.floored()
+    const leaf = q.equals(new Vec3(0, 71, 0))
+    const ground = q.y <= 66 && q.x === 1 && q.z === 0
+    return { position: q, name: leaf ? 'oak_leaves' : ground ? 'grass_block' : 'air',
+      boundingBox: leaf || ground ? 'block' : 'empty' }
+  }
+  assert.deepEqual(safePerchLanding(bot, 66), { x: 1, y: 67, z: 0, drop: 5 })
+  bot.entity.position = new Vec3(0.5, 67, 0.5)
+  bot.blockAt = (p) => {
+    const q = p.floored()
+    const furnace = q.equals(new Vec3(0, 66, 0))
+    const ground = q.equals(new Vec3(-1, 65, 0))
+    return { position: q, name: furnace ? 'furnace' : ground ? 'grass_block' : 'air',
+      boundingBox: furnace || ground ? 'block' : 'empty' }
+  }
+  assert.deepEqual(safeLedgeLanding(bot, 66), { x: -1, y: 66, z: 0, drop: 1 })
+})
+
+test('a blocked exit is identified only for a rooted trunk with a leaf crown', () => {
+  const { bot } = fixture()
+  bot.entity.position = new Vec3(0.5, 67, 0.5)
+  bot.blockAt = (p) => {
+    const q = p.floored()
+    const trunk = q.x === 0 && q.z === 1 && q.y >= 67 && q.y <= 69
+    const root = q.x === 0 && q.z === 1 && q.y === 66
+    const crown = q.x === 0 && q.z === 1 && q.y === 72
+    return { position: q, name: trunk ? 'oak_log' : root ? 'dirt' : crown ? 'oak_leaves' : 'air',
+      boundingBox: trunk || root || crown ? 'block' : 'empty' }
+  }
+  assert.deepEqual(rootedTreeExit(bot), new Vec3(0, 67, 1))
+  bot.blockAt = () => ({ name: 'oak_log', boundingBox: 'block' })
+  assert.equal(rootedTreeExit(bot), null)
+})
+
+test('clearing a rooted tree exit removes only the two doorway logs', async () => {
+  const { bot, skills } = fixture()
+  bot.entity.position = new Vec3(0.5, 67, 0.5)
+  const cleared = new Set()
+  bot.blockAt = (p) => {
+    const q = p.floored()
+    const key = q.toString()
+    const trunk = q.x === 0 && q.z === 1 && q.y >= 67 && q.y <= 69 && !cleared.has(key)
+    const root = q.x === 0 && q.z === 1 && q.y === 66
+    const crown = q.x === 0 && q.z === 1 && q.y === 72
+    return { position: q, name: trunk ? 'oak_log' : root ? 'dirt' : crown ? 'oak_leaves' : 'air',
+      boundingBox: trunk || root || crown ? 'block' : 'empty' }
+  }
+  bot.pathfinder.setGoal = () => {}
+  bot.canDigBlock = () => true
+  bot.digTime = () => 100
+  bot.dig = async (block) => { cleared.add(block.position.toString()) }
+  assert.deepEqual((await skills.execute('clear_tree_exit')).cleared, 2)
+  assert.equal(bot.blockAt(new Vec3(0, 67, 1)).name, 'air')
+  assert.equal(bot.blockAt(new Vec3(0, 68, 1)).name, 'air')
+  assert.equal(bot.blockAt(new Vec3(0, 69, 1)).name, 'oak_log')
+})
+
 test('returning to the village does not report success from beneath its floor', async () => {
   const flag = new Vec3(0, 63, 0)
   const { bot, skills } = fixture({ village: {
@@ -346,6 +409,16 @@ test('returning to the village does not report success from beneath its floor', 
   } })
   bot.entity.position = new Vec3(4.5, 60, 0.5)
   bot.pathfinder.goto = async () => {} // a route that resolves without movement
+  await assert.rejects(skills.execute('return_to_post'), /before reaching|no positional progress/)
+})
+
+test('returning to the village does not report success from a nearby roof', async () => {
+  const flag = new Vec3(0, 66, 0)
+  const { bot, skills } = fixture({ village: {
+    flag, lotIndex: 0, summary: () => ({}), isEnemyPlayer: () => false,
+  } })
+  bot.entity.position = new Vec3(4.5, 70, 0.5)
+  bot.pathfinder.goto = async () => {}
   await assert.rejects(skills.execute('return_to_post'), /before reaching|no positional progress/)
 })
 
