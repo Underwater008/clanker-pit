@@ -3,6 +3,8 @@ import { Vec3 } from 'vec3'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { craftConfirmed, craftableRecipe } from './crafting.mjs'
 import { coolantSource, coolantCells, isCoolantBucket } from './coolant.mjs'
+import { createProgressMemory } from './progress.mjs'
+import { localContext, localRecoveryRoutes, recoveryKey } from './recovery.mjs'
 import {
   wallBlueprint,
   wallReinforcementBlueprint,
@@ -384,6 +386,7 @@ export function shelterBlueprint(origin) {
 
 export function installSurvival(bot, state, log, opts = {}) {
   bot.loadPlugin(pathfinder)
+  const progress = createProgressMemory(state)
   const blocked = new Map()
   const failedTrees = []
   let scoutStep = 0
@@ -807,7 +810,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     try { return await escapeUpwardStep() }
     finally { escaping = false }
   }
-  async function escapeUpwardStep() {
+  async function escapeUpwardStep(destination = null) {
     const revision = skillRevision
     const interrupted = () => revision !== skillRevision || bot.health <= 0 || emergency()
     const target = escapeTarget()
@@ -823,7 +826,9 @@ export function installSurvival(bot, state, log, opts = {}) {
           !villageConstruction.has(position.toString())) return false
       return constructionBlock(position)
     }
-    const plan = localEscapePlans(bot, target, protectedBlock)[0]
+    const plans = localEscapePlans(bot, target, protectedBlock)
+    const plan = destination ? plans.find((p) => p.destination.equals(destination)) : plans[0]
+    if (destination && !plan) throw new Error('Selected escape step is no longer safe')
     if (!plan) {
       const next = localEscapeReposition(bot, target, protectedBlock)
       if (next) {
@@ -1627,6 +1632,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         .filter((e) => ['cow', 'pig', 'sheep', 'chicken'].includes(e.name))
         .map((e) => e.name),
       recent_results: state.recent.slice(-6),
+      progress: progress.summary(localContext(bot).key),
       current_goal: state.plan.goal,
       ...(villageCtx
         ? (() => {
@@ -1686,7 +1692,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         : {}),
     }
   }
-  function candidates(obs) {
+  function ordinaryCandidates(obs) {
     const items = bot.inventory.items()
     const ownedGear = [...items, ...(bot.inventory.slots?.slice(5, 9) ?? []).filter(Boolean)]
     const options = {}
@@ -1695,12 +1701,18 @@ export function installSurvival(bot, state, log, opts = {}) {
       if ((state.cooldowns[key] ?? 0) < Date.now()) options[key] = description
     }
     if (villageCtx && (safePerchLanding(bot, villageCtx.flag.y) ||
-        safeLedgeLanding(bot, villageCtx.flag.y)))
-      return { descend_from_perch: 'Step off the isolated high block onto an inspected clear landing below.' }
-    if (blockedRoutes >= 2 && rootedTreeExit(bot))
-      return { clear_tree_exit: 'Clear the two lower logs of the rooted tree obstructing the only safe village exit.' }
-    if (escapeTarget())
-      return { escape_upward: 'Recover from the blocked underground route: clear one inspected natural-terrain staircase step and climb toward the remembered surface. Bare hands may clear stone slowly; preserve construction and avoid fluid or falling terrain.' }
+        safeLedgeLanding(bot, villageCtx.flag.y))) {
+      add('descend_from_perch', 'Step off the isolated high block onto an inspected clear landing below.')
+      return options
+    }
+    if (blockedRoutes >= 2 && rootedTreeExit(bot)) {
+      add('clear_tree_exit', 'Clear the two lower logs of the rooted tree obstructing the only safe village exit.')
+      return options
+    }
+    if (escapeTarget()) {
+      add('escape_upward', 'Clear one inspected natural-terrain staircase step and climb toward the remembered surface; preserve construction.')
+      return options
+    }
     if (bot.food < 19 && n((name) => edible.has(name)))
       add('eat', 'Eat available food now to restore hunger and allow healing.')
     const needsWood =
@@ -1938,17 +1950,99 @@ export function installSurvival(bot, state, log, opts = {}) {
       for (const [key, description] of Object.entries(vo))
         if (!ordered[key]) ordered[key] = description
       const merged = { ...ordered, ...options }
-      if (!Object.keys(merged).length)
-        merged.explore =
-          'Try a different scouting direction after the blocked route.'
       return merged
     }
-    if (!Object.keys(options).length)
-      options.explore =
-        'Try a different scouting direction after the blocked route.'
     return options
   }
-  async function execute(action) {
+
+  function recoveryOptions() {
+    const choices = new Map()
+    for (const route of localRecoveryRoutes(bot)) {
+      const p = route.destination
+      choices.set(recoveryKey('recover_walk', p), {
+        ...route, kind: 'walk',
+        description: `Try an inspected ${route.steps}-step route ${route.direction} to (${p.x},${p.y},${p.z}); no digging; ${route.overheadClear ? 'three overhead blocks inspected clear' : 'covered or unverified overhead'}. Reassess after arrival.`,
+      })
+    }
+    const target = escapeTarget()
+    if (target) {
+      // Use the same conservative protection as the escape executor.
+      const protect = (p) => resourceBusy(p) || (constructionBlock(p) && !(layout &&
+        p.y === layout.flag.y && ['dirt', 'grass_block'].includes(bot.blockAt(p)?.name) &&
+        !villageConstruction.has(p.toString())))
+      for (const plan of localEscapePlans(bot, target, protect)) {
+        const p = plan.destination
+        choices.set(recoveryKey('recover_stair', p), { ...plan, kind: 'stair',
+          description: `Climb one inspected stair to (${p.x},${p.y},${p.z}), clearing ${plan.clear.length} natural blocks; preserve all construction.` })
+      }
+    }
+    return choices
+  }
+
+  function candidates(obs) {
+    const context = localContext(bot).key
+    const ordinary = Object.fromEntries(Object.entries(ordinaryCandidates(obs))
+      .filter(([key]) => !progress.blocked(context, key)))
+    // Returning to an already blocked place must not wait out the ledger just
+    // because the preceding trip counted as movement elsewhere.
+    const stalled = progress.stalled(context) ||
+      (!Object.keys(ordinary).length && progress.summary(context).failed_here.length >= 2)
+    const options = {}
+    if (stalled) for (const [key, option] of recoveryOptions()) {
+      if (!progress.blocked(context, key) && (state.cooldowns[key] ?? 0) < Date.now())
+        options[key] = option.description
+    }
+    Object.assign(options, ordinary)
+    // No retry masquerading as a new route. Stay responsive and wait for a
+    // fresh plan, cooldown expiry or an observed environment change.
+    if (!Object.keys(options).length)
+      options.wait_for_change = 'No unblocked executable action. Hold safely, report the obstruction, and reassess local terrain; do not claim progress.'
+    return options
+  }
+
+  async function execute(action, { source = null } = {}) {
+    if (action === 'wait_for_change') {
+      await sleep(1500)
+      return { waiting: true, reason: 'no_unblocked_action', progress: progress.summary(localContext(bot).key) }
+    }
+    const before = bot.entity.position.clone(), context = localContext(bot)
+    const inventory = () => JSON.stringify(bot.inventory.items().map((i) => [i.name, i.count]).sort())
+    const beforeInventory = inventory(), revision = skillRevision
+    let result, error
+    try {
+      result = await executeSkill(action)
+      return result
+    } catch (e) {
+      error = e
+      throw e
+    } finally {
+      if (revision === skillRevision && bot.entity && bot.health > 0) {
+        const after = bot.entity.position.clone(), current = localContext(bot)
+        const changed = inventory() !== beforeInventory ||
+          (before.floored().equals(after.floored()) && current.terrain !== context.terrain)
+        const evidence = progress.record({ context: context.key, action, before, after, changed,
+          ok: !error, error: error ?? (!changed && before.distanceTo(after) < 0.75 ? 'No observed movement, block or inventory progress' : null), source })
+        log('action_progress', evidence)
+      }
+    }
+  }
+
+  async function executeSkill(action) {
+    if (action.startsWith('recover_walk:') || action.startsWith('recover_stair:')) {
+      const option = recoveryOptions().get(action)
+      if (!option) throw new Error('Recovery destination is no longer locally safe')
+      const before = bot.entity.position.clone()
+      const activeMoves = movements, previousCanDig = activeMoves.canDig
+      escaping = true
+      try {
+        if (option.kind === 'stair') return await escapeUpwardStep(option.destination)
+        activeMoves.canDig = false
+        await walk(new goals.GoalBlock(option.destination.x, option.destination.y, option.destination.z), 6500)
+        if (before.distanceTo(bot.entity.position) < 0.75) throw new Error('Recovery made no positional progress')
+        return { recovered: true, destination: option.destination, position: bot.entity.position.clone(),
+          moved: Math.round(before.distanceTo(bot.entity.position) * 100) / 100 }
+      } finally { escaping = false; activeMoves.canDig = previousCanDig }
+    }
     const items = bot.inventory.items()
     if (action === 'descend_from_perch') return descendFromPerch()
     if (action === 'clear_tree_exit') return clearRootedTreeExit()
@@ -2263,6 +2357,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         max_drop_blocks: villageCtx ? 1 : 2,
         pillar_climbing: false,
         recovery: 'short alternate routes; safe terrain clearing; preserve construction',
+        explicit_recovery_targets: 'recover_walk:x:y:z and recover_stair:x:y:z are supplied only after repeated no-progress attempts; choose an offered key, never invent coordinates.',
       },
       shelter: {
         materials: ['planks', 'cobblestone', 'stone', 'dirt'],
@@ -2277,6 +2372,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     emergency,
     candidates,
     execute,
+    progress: () => progress.summary(localContext(bot).key),
     stop() {
       skillRevision++
       escapeSession = null

@@ -2,10 +2,13 @@
 // while scripted actions continue; the wait cap is not a provider deadline.
 // Safety reflexes abort the request, and every response is checked against
 // current candidates before it can become an action.
+import { consumePlanAction } from './progress.mjs'
+
 export function createDecisionMaker({
   jevChoose,
   identity,
   getPlan,
+  onPlanConsumed = () => {},
   skills,
   log,
   sleep,
@@ -18,6 +21,7 @@ export function createDecisionMaker({
   let nextRequestAt = 0
   let closed = false
   let providerPause = null
+  let consumedPlan = null
   const compact = (options) => Object.fromEntries(
     Object.entries(options).map(([key, description]) => [
       key, { desc: String(description).slice(0, 120), p: null },
@@ -87,6 +91,20 @@ export function createDecisionMaker({
     if (urgent) {
       cancel('safety_reflex')
       return { urgent }
+    }
+    const plan = getPlan()
+    const currentOptions = skills.candidates(skills.observation())
+    const directive = consumePlanAction(plan, currentOptions, consumedPlan)
+    if (directive) {
+      consumedPlan = directive.consumed
+      onPlanConsumed(directive.consumed)
+      if (directive.choice && Object.keys(currentOptions).length > 1) {
+        cancel('planner_directive')
+        log('planner_decision', { choice: directive.choice, model: plan.model,
+          provider: plan.source, planIssuedAt: plan.issuedAt, options: compact(currentOptions) })
+        return { choice: directive.choice, source: 'planner' }
+      }
+      log('planner_directive_rejected', { action: plan.nextAction, reason: directive.reason ?? 'single_option_policy' })
     }
     if (pending?.settled && pending.invalidated) pending = null
     fire()

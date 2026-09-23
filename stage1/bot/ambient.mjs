@@ -423,6 +423,8 @@ function actor(name, index) {
       : 'Acquire wood, craft tools and build a local shelter.',
     steps: [], source: 'bootstrap',
   }
+  // A saved one-shot instruction must never replay after a controller restart.
+  state.plan.nextAction = null
   let bot,
     skills,
     connected = false,
@@ -436,6 +438,7 @@ function actor(name, index) {
     task = 'connecting',
     staleRevision = 0,
     lastReflect = 0,
+    lastRecoveryPlan = 0,
     permanentlyDead = false
   const brain = {
     jev: [], think: null, reflect: null, action: null,
@@ -573,6 +576,7 @@ function actor(name, index) {
         catchphrase: identity.catchphrase,
       },
       memories: {
+        progress: skills && connected ? skills.progress() : null,
         events: memory.events.slice(-8).map((e) => ({
           id: e.id,
           t: e.t,
@@ -593,11 +597,11 @@ function actor(name, index) {
     if (event === 'jev_status') brain.decision = {
       ...brain.decision, ...data, error: data.error ?? null,
     }
-    if (event === 'jev_decision' || event === 'fallback_decision') {
+    if (event === 'jev_decision' || event === 'fallback_decision' || event === 'planner_decision') {
       brain.jev.push({
         t: new Date().toISOString(),
         choice: data.choice,
-        source: event === 'jev_decision' ? 'jev' : 'fallback',
+        source: event === 'jev_decision' ? 'jev' : event === 'planner_decision' ? 'planner' : 'fallback',
         confidence: data.confidence ?? null,
         durationMs: data.durationMs ?? null,
         model: data.model ?? null,
@@ -619,15 +623,17 @@ function actor(name, index) {
       }
   }
   async function plan() {
+    const recoveryDue = skills?.progress().stalled && Date.now() - lastRecoveryPlan >= 60000
     if (
       !MODELS ||
       planning ||
       !connected ||
-      Date.now() - lastPlan < PLAN_INTERVAL
+      (!recoveryDue && Date.now() - lastPlan < PLAN_INTERVAL)
     )
       return
     planning = true
     lastPlan = Date.now()
+    if (recoveryDue) lastRecoveryPlan = Date.now()
     const revision = staleRevision
     const thisEpoch = epoch
     const request = { controller: new AbortController(), startedAt: Date.now() }
@@ -648,7 +654,8 @@ function actor(name, index) {
           ? { ...identity, current_goal: `Keep the village and Server alive. Assigned role: ${state.role ?? 'unassigned'}. ${identity.current_goal}` }
           : identity,
         observation,
-        memoryContext: state.recent.slice(-8),
+        memoryContext: { ...memory.recentContext(6, 3), recent_results: state.recent.slice(-6),
+          progress: skills.progress() },
         goals: scenarioGoals,
         actions: skills.candidates(observation),
         capabilities: skills.capabilities?.() ?? {},
@@ -670,7 +677,7 @@ function actor(name, index) {
         log(name, 'planner_fallback', { error: r.error, kept: state.plan })
         return
       }
-      state.plan = { ...r, source: planner.name }
+      state.plan = { ...r, source: planner.name, issuedAt: Date.now(), expiresAt: Date.now() + 30000 }
       brain.planner = {
         ...brain.planner, status: 'ready', error: null,
         completedAt: new Date().toISOString(), durationMs: Date.now() - request.startedAt,
@@ -702,6 +709,9 @@ function actor(name, index) {
           jevChoose,
           identity,
           getPlan: () => ({ ...state.plan, role: state.role ?? 'unassigned' }),
+          onPlanConsumed: (issuedAt) => {
+            if (state.plan.issuedAt === issuedAt) state.plan.nextAction = null
+          },
           skills,
           log: actorLog,
           sleep,
@@ -760,12 +770,12 @@ function actor(name, index) {
           goal: state.plan.goal,
         })
         try {
-          const result = await skills.execute(choice)
+          const result = await skills.execute(choice, { source })
           if (epoch !== thisEpoch || !connected) break
           if (actionRevision !== staleRevision) throw new Error('Action interrupted before completion could be confirmed')
           // Durable village accounting must commit before success is announced.
           onActionOutcome(name, choice, result)
-          failures = 0
+          if (!result?.waiting) failures = 0
           const outcome = {
             action: choice,
             source,
@@ -774,7 +784,7 @@ function actor(name, index) {
             result,
             at: new Date().toISOString(),
           }
-          brain.action = { ...brain.action, status: 'succeeded', completedAt: outcome.at, durationMs: outcome.durationMs, result }
+          brain.action = { ...brain.action, status: result?.waiting ? 'waiting' : 'succeeded', completedAt: outcome.at, durationMs: outcome.durationMs, result }
           state.recent.push(outcome)
           memory.event('action', { action: choice, ok: true, result })
           log(name, 'action_result', {
@@ -807,7 +817,7 @@ function actor(name, index) {
           memory.event('action', { action: choice, ok: false, error: outcome.error })
           log(name, 'action_result', outcome)
           loopDecisions?.cancel('action_failed')
-          if (failures === 3) {
+          if (failures === 3 && Date.now() - lastRecoveryPlan >= 60000) {
             lastPlan = Math.min(lastPlan, Date.now() - PLAN_INTERVAL)
             staleRevision++
             planRequest?.controller.abort()
@@ -877,6 +887,7 @@ function actor(name, index) {
       if (connected && epoch === spawnEpoch) void loop(spawnEpoch)
     })
     bot.on('death', () => {
+      state.plan.nextAction = null
       connected = false
       epoch++
       staleRevision++
