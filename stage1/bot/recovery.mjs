@@ -1,0 +1,62 @@
+import { Vec3 } from 'vec3'
+
+const hazards = new Set(['water', 'lava', 'fire', 'soul_fire', 'cactus', 'magma_block',
+  'powder_snow', 'sweet_berry_bush', 'sand', 'red_sand', 'gravel'])
+const solid = (b) => b?.boundingBox === 'block'
+
+// A small local walk graph. No RCON, hidden-world survey, excavation, towers,
+// or teleports. Returning explicit destinations lets the planner choose an
+// approach rather than merely narrating an opaque "explore" skill.
+export function localRecoveryRoutes(bot, maxSteps = 5) {
+  const origin = bot.entity.position.floored()
+  const seen = new Set([origin.toString()]), queue = [{ p: origin, steps: 0 }]
+  const regions = new Map()
+  const standable = (p) => {
+    const floor = bot.blockAt(p.offset(0, -1, 0)), feet = bot.blockAt(p), head = bot.blockAt(p.offset(0, 1, 0))
+    return floor && feet && head && solid(floor) && !solid(feet) && !solid(head) &&
+      ![floor, feet, head].some((b) => hazards.has(b.name))
+  }
+  for (let i = 0; i < queue.length && i < 96; i++) {
+    const { p, steps } = queue[i]
+    if (steps >= maxSteps) continue
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      for (const dy of [0, 1, -1]) {
+        const next = p.offset(dx, dy, dz)
+        if (Math.abs(next.y - origin.y) > 2 || seen.has(next.toString()) || !standable(next)) continue
+        // A rising step needs headroom above the starting square too.
+        if (dy === 1 && (!bot.blockAt(p.offset(0, 2, 0)) || solid(bot.blockAt(p.offset(0, 2, 0))))) continue
+        seen.add(next.toString()); queue.push({ p: next, steps: steps + 1 })
+        const x = next.x - origin.x, z = next.z - origin.z
+        const region = Math.abs(x) >= Math.abs(z) ? (x > 0 ? 'east' : 'west') : (z > 0 ? 'south' : 'north')
+        const score = Math.hypot(x, z) + Math.max(0, next.y - origin.y)
+        if (!regions.has(region) || score > regions.get(region).score)
+          regions.set(region, { destination: next, direction: region, steps: steps + 1, score })
+        break
+      }
+    }
+  }
+  return [...regions.values()].filter(({ destination }) => destination.distanceTo(origin) >= 1)
+    .map((route) => ({ ...route, overheadClear: [2, 3, 4].every((y) => {
+      const block = bot.blockAt(route.destination.offset(0, y, 0))
+      return block && !solid(block) && !hazards.has(block.name)
+    }) }))
+}
+
+export function recoveryKey(kind, position) {
+  return `${kind}:${position.x}:${position.y}:${position.z}`
+}
+
+export function localContext(bot) {
+  const p = bot.entity.position.floored()
+  let hash = 2166136261
+  const mix = (value) => {
+    for (const c of `${value}|`) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619)
+  }
+  // Exactly 100 cheap loaded-block reads; no findBlocks scan or entity noise.
+  for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) for (let y = -1; y <= 2; y++)
+    mix(bot.blockAt(new Vec3(p.x + x, p.y + y, p.z + z))?.stateId ?? 'unloaded')
+  const terrain = hash >>> 0
+  for (const item of bot.inventory.items().slice().sort((a, b) => a.name.localeCompare(b.name)))
+    mix(`${item.name}:${item.count}`)
+  return { key: `${bot.game?.dimension ?? 'overworld'}:${p.x},${p.y},${p.z}:${hash >>> 0}`, terrain }
+}

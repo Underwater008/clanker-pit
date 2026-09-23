@@ -11,6 +11,17 @@ const input = () => ({
   capabilities: { shelter: { materials: ['planks', 'cobblestone'] }, navigation: { pillar_climbing: false } },
 })
 
+test('planner preserves an executable nextAction and rejects invented actions', async (t) => {
+  let action = 'gather_wood'
+  t.mock.method(globalThis, 'fetch', async () => ({ ok: true, status: 200,
+    text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      goal: 'build_shelter', intention: 'Get wood', steps: [], nextAction: action,
+    }) } }] }) }))
+  assert.equal((await planner().plan(input())).nextAction, 'gather_wood')
+  action = 'teleport'
+  assert.match((await planner().plan(input())).error, /not an offered/)
+})
+
 test('planner receives executable actions and capabilities rather than inventing a skill set', async (t) => {
   let sent
   t.mock.method(globalThis, 'fetch', async (_url, options) => {

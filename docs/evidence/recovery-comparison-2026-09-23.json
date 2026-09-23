@@ -1,0 +1,121 @@
+{
+  "environment": "isolated vanilla Minecraft 1.21.1, localhost 25566/25576",
+  "fixture": "bedrock chamber, wooden roof, side doorway; fixtures and resets use lab RCON",
+  "records": [
+    {
+      "event": "POLICY_RESULT",
+      "policy": "scripted",
+      "choice": "recover_walk:4:-60:1",
+      "plannerMs": 0,
+      "actionMs": 1017,
+      "moved": 4.12,
+      "outside": true,
+      "serverPosition": "ProgressLab has the following entity data: [4.5d, -60.0d, 1.5076830272319883d]",
+      "passed": true
+    },
+    {
+      "event": "POLICY_RESULT",
+      "policy": "random",
+      "choice": "recover_walk:-2:-60:2",
+      "plannerMs": 0,
+      "actionMs": 564,
+      "moved": 2.55,
+      "outside": false,
+      "serverPosition": "ProgressLab has the following entity data: [-1.3007651106920621d, -60.0d, 2.3007652066071467d]",
+      "passed": true
+    },
+    {
+      "event": "planner_decision",
+      "choice": "recover_walk:4:-60:1",
+      "model": "kimi-k3",
+      "provider": "kimi",
+      "planIssuedAt": 1790194969918,
+      "options": {
+        "recover_walk:4:-60:1": {
+          "desc": "Try an inspected 5-step route east to (4,-60,1); no digging; three overhead blocks inspected clear. Reassess after arriv",
+          "p": null
+        },
+        "recover_walk:-2:-60:2": {
+          "desc": "Try an inspected 4-step route west to (-2,-60,2); no digging; covered or unverified overhead. Reassess after arrival.",
+          "p": null
+        },
+        "recover_walk:1:-60:2": {
+          "desc": "Try an inspected 3-step route south to (1,-60,2); no digging; covered or unverified overhead. Reassess after arrival.",
+          "p": null
+        },
+        "recover_walk:1:-60:-2": {
+          "desc": "Try an inspected 3-step route north to (1,-60,-2); no digging; covered or unverified overhead. Reassess after arrival.",
+          "p": null
+        }
+      }
+    },
+    {
+      "event": "POLICY_RESULT",
+      "policy": "model",
+      "choice": "recover_walk:4:-60:1",
+      "plannerMs": 11530,
+      "actionMs": 1003,
+      "moved": 4.12,
+      "outside": true,
+      "serverPosition": "ProgressLab has the following entity data: [4.5d, -60.0d, 1.5076830272319883d]",
+      "passed": true
+    },
+    {
+      "event": "POLICY_RESULT",
+      "policy": "jev",
+      "choice": "recover_walk:4:-60:1",
+      "plannerMs": 205,
+      "actionMs": 1022,
+      "moved": 4.12,
+      "outside": true,
+      "serverPosition": "ProgressLab has the following entity data: [4.5d, -60.0d, 1.5076829514403602d]",
+      "passed": true
+    },
+    {
+      "event": "LAB_PROGRESS_COMPLETE",
+      "results": [
+        {
+          "policy": "scripted",
+          "choice": "recover_walk:4:-60:1",
+          "plannerMs": 0,
+          "actionMs": 1017,
+          "moved": 4.12,
+          "outside": true,
+          "serverPosition": "ProgressLab has the following entity data: [4.5d, -60.0d, 1.5076830272319883d]",
+          "passed": true
+        },
+        {
+          "policy": "random",
+          "choice": "recover_walk:-2:-60:2",
+          "plannerMs": 0,
+          "actionMs": 564,
+          "moved": 2.55,
+          "outside": false,
+          "serverPosition": "ProgressLab has the following entity data: [-1.3007651106920621d, -60.0d, 2.3007652066071467d]",
+          "passed": true
+        },
+        {
+          "policy": "model",
+          "choice": "recover_walk:4:-60:1",
+          "plannerMs": 11530,
+          "actionMs": 1003,
+          "moved": 4.12,
+          "outside": true,
+          "serverPosition": "ProgressLab has the following entity data: [4.5d, -60.0d, 1.5076830272319883d]",
+          "passed": true
+        },
+        {
+          "policy": "jev",
+          "choice": "recover_walk:4:-60:1",
+          "plannerMs": 205,
+          "actionMs": 1022,
+          "moved": 4.12,
+          "outside": true,
+          "serverPosition": "ProgressLab has the following entity data: [4.5d, -60.0d, 1.5076829514403602d]",
+          "passed": true
+        }
+      ],
+      "limitation": "One fixture and one seeded random draw. Does not establish general model superiority."
+    }
+  ]
+}

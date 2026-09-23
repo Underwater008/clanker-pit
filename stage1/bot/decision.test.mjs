@@ -27,6 +27,58 @@ const makeDm = (jevChoose, skills) =>
     minRequestIntervalMs: 0,
   })
 
+test('a feasible planner nextAction controls execution once, with honest attribution', async () => {
+  let calls = 0
+  const logs = []
+  const dm = createDecisionMaker({
+    jevChoose: async () => { calls++; return { choice: 'gather_wood' } }, identity,
+    getPlan: () => ({ nextAction: 'explore', issuedAt: 123, expiresAt: Date.now() + 10000, source: 'kimi' }),
+    skills: fakeSkills(), sleep, log: (event, data) => logs.push({ event, ...data }), minRequestIntervalMs: 0,
+  })
+  assert.deepEqual(await dm.next(), { choice: 'explore', source: 'planner' })
+  assert.equal(calls, 0)
+  assert.equal((await dm.next()).source, 'jev')
+  assert.equal(logs.filter((e) => e.event === 'planner_decision').length, 1)
+  dm.close()
+})
+
+test('an unsafe or stale planner action cannot bypass current feasibility', async () => {
+  const logs = []
+  const dm = createDecisionMaker({
+    jevChoose: async () => ({ choice: 'gather_wood' }), identity,
+    getPlan: () => ({ nextAction: 'teleport', issuedAt: 124, expiresAt: Date.now() + 10000 }),
+    skills: fakeSkills(), sleep, log: (event, data) => logs.push({ event, ...data }), minRequestIntervalMs: 0,
+  })
+  assert.equal((await dm.next()).choice, 'gather_wood')
+  assert.ok(logs.some((e) => e.event === 'planner_directive_rejected' && e.reason === 'no_longer_feasible'))
+  dm.close()
+})
+
+test('a planner instruction with only one available option is still attributed to policy', async () => {
+  const dm = createDecisionMaker({
+    jevChoose: async () => { throw new Error('Single option must not call Jev') }, identity,
+    getPlan: () => ({ nextAction: 'explore', issuedAt: 123, expiresAt: Date.now() + 10000 }),
+    skills: fakeSkills({ options: { explore: 'scout' } }), sleep, log: () => {},
+  })
+  assert.deepEqual(await dm.next(), { choice: 'explore', source: 'fallback', reason: 'single_option' })
+  dm.close()
+})
+
+test('consumption clears shared planner state so a reconnect cannot replay it', async () => {
+  const plan = { nextAction: 'explore', issuedAt: 123, expiresAt: Date.now() + 10000 }
+  const config = {
+    jevChoose: async () => ({ choice: 'gather_wood' }), identity, getPlan: () => ({ ...plan }),
+    onPlanConsumed: (issuedAt) => { if (plan.issuedAt === issuedAt) plan.nextAction = null },
+    skills: fakeSkills(), sleep, log: () => {},
+  }
+  const beforeReconnect = createDecisionMaker(config)
+  assert.equal((await beforeReconnect.next()).source, 'planner')
+  beforeReconnect.close()
+  const afterReconnect = createDecisionMaker(config)
+  assert.equal((await afterReconnect.next()).source, 'jev')
+  afterReconnect.close()
+})
+
 test('one executable action is labeled as policy and never billed to Jev', async () => {
   let calls = 0
   const dm = makeDm(async () => { calls++; return { choice: 'explore' } },
