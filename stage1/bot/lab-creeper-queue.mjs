@@ -46,7 +46,13 @@ try {
   assert.ok(!('kind' in initial.active) && !('fillersEnabled' in initial))
   assert.ok(initial.queueEntries.every((entry) => !('kind' in entry)))
   assert.ok(!('camera' in initial), 'Anonymous status must not disclose the active camera type')
-  const nativeName = await r.send('data get entity @e[type=creeper,tag=cp_auto_creeper,limit=1] CustomName')
+  // Restart cleanup leaves killed mobs visible during their death animation.
+  // Inspect the new spawn's UUID, never an arbitrary tagged entity.
+  const spawned = logs.split('\n').flatMap((line) => {
+    try { return [JSON.parse(line)] } catch { return [] }
+  }).find((event) => event.event === 'auto_creeper_spawned' && event.nickname === initial.active.nickname)
+  assert.ok(spawned?.uuid, 'The current native spawn must be confirmed')
+  const nativeName = await r.send(`data get entity ${spawned.uuid} CustomName`)
   assert.ok(nativeName.includes(initial.active.nickname), 'Queue name must be the native nameplate')
   const joinedAt = Date.now()
   const human = await request('join', { nickname: 'QueueHumanLab' })
