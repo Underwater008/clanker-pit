@@ -112,8 +112,10 @@
       if (disposed) return;
       if (window.Hls && Hls.isSupported()) {
         inst.hls = new Hls(feed === 'guest' || feed === 'arena' ? {
-          lowLatencyMode: true, liveSyncDurationCount: 1,
-          liveMaxLatencyDurationCount: 3, maxBufferLength: 3, backBufferLength: 2,
+          // The stream publishes 200 ms parts inside 2 s segments. Counting
+          // whole segments here pins interactive playback 2 s behind live.
+          lowLatencyMode: true, liveSyncDuration: 1,
+          liveMaxLatencyDuration: 3, maxBufferLength: 3, backBufferLength: 2,
           maxLiveSyncPlaybackRate: 1.5
         } : {
           lowLatencyMode: true, liveSyncDurationCount: 3,
