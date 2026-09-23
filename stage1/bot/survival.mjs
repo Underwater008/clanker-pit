@@ -415,6 +415,17 @@ export function installSurvival(bot, state, log, opts = {}) {
       const plots = new Set(layout.farm.map((p) => p.toString()))
       moves.exclusionAreasStep.push((block) =>
         block?.name === 'farmland' && plots.has(block.position.toString()) ? 100 : 0)
+      // Ordinary work routes must not descend into the porous village floor.
+      // The dedicated escape skill temporarily lifts this boundary so an
+      // already buried clanker can traverse its inspected way back out.
+      moves.exclusionAreasStep.push((block) => {
+        if (escaping || !block?.position) return 0
+        const p = block.position
+        const dx = p.x - layout.flag.x, dz = p.z - layout.flag.z
+        const withinVillage = Math.abs(dx) <= WALL_RADIUS && Math.abs(dz) <= WALL_RADIUS ||
+          dz > WALL_RADIUS && dz <= WALL_RADIUS + 6 && Math.abs(dx) <= 2
+        return withinVillage && p.y <= layout.flag.y ? 100 : 0
+      })
     }
     moves.allow1by1towers = false
     moves.allowParkour = false

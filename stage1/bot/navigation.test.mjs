@@ -220,6 +220,9 @@ test('village navigation does not excavate the graded floor or trample planned f
   assert.equal(forbidden({ name: 'red_bed', position: bed.foot }), 100)
   assert.equal(forbidden({ name: 'red_bed', position: bed.head }), 100)
   assert.equal(movements.exclusionAreasStep[0]({ name: 'farmland', position: flag.offset(2, 0, 12) }), 100)
+  assert.equal(movements.exclusionStep({ name: 'air', position: flag.offset(1, 0, 1) }), 100)
+  assert.equal(movements.exclusionStep({ name: 'air', position: flag.offset(1, 1, 1) }), 0)
+  assert.equal(movements.exclusionStep({ name: 'air', position: flag.offset(20, 0, 20) }), 0)
 })
 
 test('returning to the village does not report success from beneath its floor', async () => {
