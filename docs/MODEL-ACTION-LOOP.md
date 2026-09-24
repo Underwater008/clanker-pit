@@ -109,3 +109,12 @@ goal is insufficient. Earlier water attempts selected the wrong direction or
 repeated jumping; direction semantics are now included in observations and
 choice labels. These failures remain in the evidence rather than being called
 successful recovery. See [motor verification](evidence/primitive-motor-2026-09-23.json).
+
+
+The live check also found 19.8 KB in the objective alone, mostly repeated action
+results and inventory snapshots. The planner/selector context now includes the
+current inventory once and compact historical action evidence (positions,
+block changes, crafted amounts, and errors). Full execution evidence remains
+persisted. Historical narration/intentions are not substituted for the current
+objective. Request sizes are logged so latency claims can be checked; this
+change alone is not proof that the provider's timeout problem is resolved.
