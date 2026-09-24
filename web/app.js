@@ -878,8 +878,19 @@
     renderRoundTimer();
   }
   function renderRoundTimer() {
-    var startedAt = telemetry && telemetry.village && telemetry.village.startedAt;
+    var village = telemetry && telemetry.village;
+    var round = village && village.round;
+    var startedAt = village && village.startedAt;
     var time = Date.parse(startedAt);
+    $('roundLabel').textContent = round ? 'ROUND ' + round.number : 'ROUND';
+    if (round && round.phase === 'restarting') {
+      var remaining = Math.max(0, Math.ceil((Date.parse(round.restartAt) - Date.now()) / 1000));
+      $('roundTimer').textContent = remaining > 0 ? 'REBOOT ' + remaining + 's' : 'RESTORING';
+      $('roundStatus').title = (round.winner || 'A creeper guest') + ' destroyed the Server';
+      $('roundTimer').removeAttribute('datetime');
+      return;
+    }
+    $('roundStatus').title = village && village.water && village.water.fed === 0 ? 'Next nearby blast destroys the Server' : '';
     $('roundTimer').textContent = isFinite(time) ? fmtRoundTime(Date.now() - time) : '—';
     if (isFinite(time)) $('roundTimer').dateTime = startedAt;
   }

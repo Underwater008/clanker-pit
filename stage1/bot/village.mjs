@@ -16,8 +16,10 @@ export const WALL_RADIUS = Number(process.env.WALL_RADIUS ?? 8)
 export const WALL_HEIGHT = Number(process.env.WALL_HEIGHT ?? 2)
 export const GATE_HALF_WIDTH = Number(process.env.GATE_HALF_WIDTH ?? 1)
 export const WATER_TARGET = Number(process.env.FLAG_WATER_TARGET ?? 40)
-export const EXPLOSION_PENALTY = Number(process.env.FLAG_EXPLOSION_PENALTY ?? 3)
+export const EXPLOSION_PENALTY = Number(process.env.FLAG_EXPLOSION_PENALTY ?? 10)
 export const EXPLOSION_RADIUS = Number(process.env.FLAG_EXPLOSION_RADIUS ?? 6)
+export const ROUND_RESTART_MS = 15000
+export const ROUND_START_COOLANT = 10
 export const MAX_POPULATION = Number(process.env.MAX_POPULATION ?? 8)
 export const COUNCIL_INTERVAL = Math.max(
   120000,
@@ -379,6 +381,7 @@ export function createVillageState({
     lastBoomAt: 0,
     processedGuestEvents: [],
     createdAt: new Date().toISOString(),
+    round: null, // Legacy villages start at round 1, with their original timer.
   })
   let state
   try {
@@ -467,7 +470,10 @@ export function createVillageState({
       return { before, after: state.waterTarget }
     },
     snapshot: () => ({
-      startedAt: state.createdAt,
+      startedAt: state.round?.startedAt ?? state.createdAt,
+      round: state.round ? structuredClone(state.round) : {
+        number: 1, phase: 'active', startedAt: state.createdAt,
+      },
       flag: state.flag,
       coolantSource: state.coolantSource ?? null,
       water: {
@@ -493,6 +499,7 @@ export function createVillageState({
       atCapacity: state.population.length >= Math.min(MAX_POPULATION, HOME_LOTS.length),
     }),
     feedCoolant(botName) {
+      if (state.round?.phase === 'restarting') return null
       const r = chatWorthy(1)
       state.lastFedBy = botName
       save()
@@ -500,13 +507,48 @@ export function createVillageState({
     },
     /** Persist the guest event guard and its coolant penalty together. An
      * event is never acknowledged before its game effect has committed. */
-    overheat(eventId = null) {
+    overheat(eventId = null, { nickname = 'A creeper guest', at = null } = {}) {
       if (eventId && state.processedGuestEvents.includes(eventId)) return null
       if (eventId) state.processedGuestEvents = [...state.processedGuestEvents, eventId].slice(-64)
+      // Replayed blasts from the previous round cannot damage the reboot.
+      if (state.round?.phase === 'restarting' ||
+          (at && state.round && Date.parse(at) < Date.parse(state.round.startedAt))) {
+        save()
+        return null
+      }
       const r = chatWorthy(-EXPLOSION_PENALTY)
       state.lastBoomAt = now()
+      // Reaching zero is a warning. A separate blast while already empty wins.
+      if (r.before === 0) {
+        state.round = {
+          number: state.round?.number ?? 1,
+          phase: 'restarting',
+          startedAt: state.round?.startedAt ?? state.createdAt,
+          destroyedAt: new Date(now()).toISOString(),
+          restartAt: new Date(now() + ROUND_RESTART_MS).toISOString(),
+          winner: String(nickname).slice(0, 32),
+          eventId,
+        }
+        r.destroyed = true
+      }
       save()
       return r
+    },
+    /** Call only after the match controller verifies the restored monument.
+     * The round transition and starting coolant commit together. */
+    restartRound(expectedNumber) {
+      const previous = state.round
+      if (previous?.phase !== 'restarting' || previous.number !== expectedNumber ||
+          now() < Date.parse(previous.restartAt)) return null
+      state.round = {
+        number: previous.number + 1, phase: 'active',
+        startedAt: new Date(now()).toISOString(),
+        previous: { number: previous.number, winner: previous.winner,
+          destroyedAt: previous.destroyedAt },
+      }
+      state.waterFed = Math.min(ROUND_START_COOLANT, state.waterTarget)
+      save()
+      return structuredClone(state.round)
     },
     /** Migrate an existing round once, then keep the founding cast and its
      * homes fixed even if the controller is restarted with different names. */
@@ -552,6 +594,7 @@ export function createVillageState({
      * population growth and the coolant reset persist in one atomic write so
      * a crash between the two can never double-boot. */
     bootVillager() {
+      if (state.round?.phase === 'restarting') return null
       if (state.waterFed < state.waterTarget) return null
       const name = reserveVillager()
       if (!name) return null

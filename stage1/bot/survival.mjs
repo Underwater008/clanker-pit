@@ -4,6 +4,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { craftConfirmed, craftableRecipe } from './crafting.mjs'
 import { coolantSource, coolantCells, isCoolantBucket } from './coolant.mjs'
 import { createProgressMemory } from './progress.mjs'
+import { inspectVegetation, naturalLeaf, safeSaplingSite } from './vegetation.mjs'
 import { localContext, localRecoveryRoutes, localPassagePlans, recoveryKey } from './recovery.mjs'
 import {
   wallBlueprint,
@@ -50,7 +51,7 @@ export const GOALS = {
   build_village:
     'Raise the wall, gate, torches, and your own home around the Server.',
   improve_village:
-    'Repair shallow blast holes, tend spring-fed wheat, pave the planned lanes, reinforce the wall, and enlarge homes only within their lots.',
+    'Clear natural trees and canopy around the Server for access and sightlines, repair blast holes, tend wheat, pave lanes, reinforce walls, and enlarge homes within their lots.',
   stockpile_defense:
     'Upgrade stone tools and weapons to iron, craft and wear armor, and supply torches and coolant buckets.',
 }
@@ -634,6 +635,33 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
   })
   const nearbyCache = new Map()
+  let vegetationCache = null
+  function vegetationTargets(fresh = false) {
+    if (!villageCtx) return []
+    if (fresh || !vegetationCache || Date.now() - vegetationCache.at > 3000 ||
+        bot.entity.position.distanceTo(vegetationCache.origin) > 2) {
+      const result = inspectVegetation(bot, villageCtx.flag, {
+        known: state.naturalTreeLogs ?? [], protectedBlock: constructionBlock,
+      })
+      state.naturalTreeLogs = result.known
+      vegetationCache = { ...result, at: Date.now(), origin: bot.entity.position.clone() }
+    }
+    return vegetationCache.targets.map((b) => bot.blockAt(b.position))
+      .filter((b) => b && (naturalLeaf(b) || state.naturalTreeLogs.some((p) =>
+        p.x === b.position.x && p.y === b.position.y && p.z === b.position.z && p.name === b.name)) &&
+        !resourceBusy(b.position) && (blocked.get(b.position.toString()) ?? 0) < Date.now())
+      .sort((a, b) => Number(bot.canDigBlock(b)) - Number(bot.canDigBlock(a)) ||
+        Number(naturalLeaf(a)) - Number(naturalLeaf(b)) ||
+        a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))
+  }
+  function vegetationTarget() {
+    return vegetationTargets().find((b) => bot.canDigBlock(b) ||
+      (b.position.y >= bot.entity.position.y - 1 && b.position.y <= bot.entity.position.y + 4))
+  }
+  function saplingSite() {
+    return openGround(bot.entity.position, 7).find((p) => safeSaplingSite(p, villageCtx?.flag) &&
+      ['grass_block', 'dirt'].includes(bot.blockAt(p.offset(0, -1, 0))?.name))
+  }
   function nearbyBlock(matching, radius = 18, cacheKey = null, ttl = 5000, maxMove = 8) {
     // Empty scans are costly in a treeless biome. Reuse them briefly while
     // the clanker remains in the same area; recheck found blocks against the
@@ -1660,6 +1688,9 @@ export function installSurvival(bot, state, log, opts = {}) {
                 distance_from_flag: Math.round(
                   bot.entity.position.distanceTo(villageCtx.flag),
                 ),
+                vegetation: { observed_blocks: vegetationTargets().length,
+                  next: vegetationTarget()?.position ?? null,
+                  purpose: 'Clear natural trunks and leaves for access and sightlines, even with enough wood. Upper canopy may require a closer or higher safe position.' },
                 coolant_source: remoteSpring ? { position: remoteSpring,
                   distance: Math.round(bot.entity.position.distanceTo(remoteSpring)),
                   rule: 'Only Cryo Coolant filled at the cyan remote spring powers the Server. Ordinary water is for farming and survival.',
@@ -1728,6 +1759,8 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
     if (bot.food < 19 && n((name) => edible.has(name)))
       add('eat', 'Eat available food now to restore hunger and allow healing.')
+    if (vegetationTarget())
+      add('clear_village_vegetation', 'Clear one inspected natural trunk or leaf block around the Server for access and sightlines, even when wood stocks are full.')
     const needsWood =
       n(isPlank) < (obs.shelter.complete ? 12 : 28) && n(isLog) < 8
     if (obs.resources.tree && needsWood)
@@ -1789,8 +1822,8 @@ export function installSurvival(bot, state, log, opts = {}) {
         'hunt_food',
         'Hunt one nearby farm animal with an equipped tool for food.',
       )
-    if (n((name) => name.endsWith('_sapling')))
-      add('plant_tree', 'Replant a sapling on nearby grass or dirt.')
+    if (n((name) => name.endsWith('_sapling')) && saplingSite())
+      add('plant_tree', 'Plant a sapling outside the village clearance zone and guest approach road.')
     const drops = Object.values(bot.entities).some(
       (e) =>
         e.name === 'item' && e.position.distanceTo(bot.entity.position) < 10 && !resourceBusy(e.position),
@@ -1944,8 +1977,8 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (!nearVillage && (!remoteSpring || hasCoolant || V.atCapacity || !n('bucket')))
         vadd('return_to_post', 'Head back toward the Server and the village.')
       const preferred = {
-        guard: ['repair_blast_hole', 'attack_threat', 'build_gate', 'build_wall', 'patrol', 'reinforce_wall', 'place_torch', 'return_to_post'],
-        builder: ['repair_blast_hole', 'build_home', 'build_wall', 'gather_wood', 'gather_wall_earth', 'build_gate', 'reinforce_wall', 'expand_home', 'pave_road', 'craft_stone_shovel', 'place_torch', 'return_to_post'],
+        guard: ['repair_blast_hole', 'attack_threat', 'clear_village_vegetation', 'build_gate', 'build_wall', 'patrol', 'reinforce_wall', 'place_torch', 'return_to_post'],
+        builder: ['repair_blast_hole', 'clear_village_vegetation', 'build_home', 'build_wall', 'gather_wood', 'gather_wall_earth', 'build_gate', 'reinforce_wall', 'expand_home', 'pave_road', 'craft_stone_shovel', 'place_torch', 'return_to_post'],
         smith: ['equip_armor', 'craft_iron_sword', 'craft_iron_pickaxe', 'craft_iron_chestplate', 'craft_iron_leggings', 'craft_iron_helmet', 'craft_iron_boots', 'craft_iron_axe', 'craft_stone_sword', 'smelt_iron', 'mine_iron_ore', 'craft_torch', 'craft_bucket', 'return_to_post'],
         coolant: ['feed_server', 'empty_ordinary_water', 'scoop_water', 'travel_to_coolant', 'return_to_post', 'craft_bucket', 'mine_iron_ore', 'smelt_iron'],
         farmer: ['harvest_wheat', 'plant_wheat', 'till_farm', 'craft_stone_hoe', 'gather_wheat_seeds', 'craft_bread', 'hunt_food', 'plant_tree', 'return_to_post'],
@@ -2015,6 +2048,11 @@ export function installSurvival(bot, state, log, opts = {}) {
     const ordinary = Object.fromEntries(Object.entries(ordinaryCandidates(obs))
       .filter(([key]) => !progress.blocked(context, key))
       .filter(([key]) => !accessBlocked || /^(craft_|equip_|eat$|attack_threat$)/.test(key)))
+    const vegetation = vegetationTarget()
+    if (vegetation && (!accessBlocked || bot.canDigBlock(vegetation)) &&
+        !progress.blocked(context, 'clear_village_vegetation') &&
+        (state.cooldowns.clear_village_vegetation ?? 0) < Date.now())
+      ordinary.clear_village_vegetation = `Clear one inspected natural ${vegetation.name} at ${vegetation.position} around the Server; opens access and sightlines even when wood stocks are full. Preserve buildings and placed leaves.`
     // Returning to an already blocked place must not wait out the ledger just
     // because the preceding trip counted as movement elsewhere.
     const stalled = accessBlocked || progress.stalled(context) ||
@@ -2050,7 +2088,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     } finally {
       if (revision === skillRevision && bot.entity && bot.health > 0) {
         const after = bot.entity.position.clone(), current = localContext(bot)
-        const changed = inventory() !== beforeInventory ||
+        const changed = result?.clearedVegetation === 1 || inventory() !== beforeInventory ||
           (before.floored().equals(after.floored()) && current.terrain !== context.terrain)
         const evidence = progress.record({ context: context.key, accessContext: context.accessKey, action, before, after, changed,
           ok: !error, error: error ?? (!changed && before.distanceTo(after) < 0.75 ? 'No observed movement, block or inventory progress' : null), source })
@@ -2237,11 +2275,30 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
     if (action === 'plant_tree') {
       const sapling = items.find((i) => i.name.endsWith('_sapling'))
-      const p = openGround(bot.entity.position, 7).find((p) =>
-        ['grass_block', 'dirt'].includes(bot.blockAt(p.offset(0, -1, 0))?.name),
-      )
+      const p = saplingSite()
       if (!p) throw Error('No suitable soil')
       return place(p, sapling)
+    }
+    if (action === 'clear_village_vegetation') {
+      vegetationTargets(true)
+      const block = vegetationTarget()
+      if (!block) throw new Error('No inspected village vegetation within safe working height')
+      const release = claimResource(block)
+      try {
+        await reach(block)
+        if (bot.blockAt(block.position)?.name !== block.name) throw new Error('Vegetation changed before clearing')
+        const tool = bestEquipment(bot.inventory.items(), '_axe')
+        if (tool) await bot.equip(tool, 'hand')
+        await bounded(() => bot.dig(block), 10000, () => bot.stopDigging())
+        if (!bot.blockAt(block.position) || bot.blockAt(block.position).name === block.name)
+          throw new Error('Vegetation clearing was not confirmed by the server')
+        vegetationCache = null
+        log('village_vegetation_cleared', { block: block.name, position: block.position })
+        return { clearedVegetation: 1, block: block.name, position: block.position }
+      } catch (error) {
+        blocked.set(block.position.toString(), Date.now() + 30000)
+        throw error
+      } finally { release() }
     }
     if (action === 'hunt_food') {
       const animal = Object.values(bot.entities)
@@ -2417,7 +2474,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         'plant_tree', 'collect_drops', 'return_to_camp', 'explore', 'escape_upward',
         'descend_from_perch', 'clear_tree_exit',
         ...(villageCtx
-          ? ['build_wall', 'gather_wall_earth', 'build_gate', 'build_home', 'reinforce_wall',
+          ? ['clear_village_vegetation', 'build_wall', 'gather_wall_earth', 'build_gate', 'build_home', 'reinforce_wall',
               'expand_home', 'repair_blast_hole', 'till_farm', 'plant_wheat',
               'harvest_wheat', 'gather_wheat_seeds', 'pave_road',
               'craft_stone_hoe', 'craft_stone_shovel', 'craft_bread', 'place_torch',
