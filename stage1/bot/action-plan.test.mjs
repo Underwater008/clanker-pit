@@ -151,3 +151,31 @@ test('a failing Jev step in flight cannot cancel a newly ready Kimi program',asy
  c.record(tactical.step,{error:Error('Jev target changed')})
  assert.deepEqual(c.next().step,move(1));c.close()
 })
+
+
+test('Jev avoids reversing a recent verified block change while Kimi remains free to plan it',async()=>{
+ for(const [past,step] of [
+  [{op:'place',target:[1,64,0],item:'stone'},{op:'dig',target:[1,64,0],expect:'stone'}],
+  [{op:'dig',target:[1,64,0],expect:'stone'},{op:'place',target:[1,64,0],item:'stone'}],
+ ]){
+  let release,options
+  const result=past.op==='place'?{placed:{name:'stone',position:past.target}}:{removed:{name:'stone',position:past.target}}
+  const state={primitiveMemory:{history:[{at:Date.now(),type:'action',source:'jev_primitives',step:past,ok:true,result}]}}
+  const c=setup(()=>new Promise(r=>{release=r}),{tactical:true,state,
+   primitives:{observe:observation,affordances:()=>[step,move(1),move(2)]},
+   jevChoose:async input=>{options=input.options;return{choice:'action_0'}}})
+  c.next();await new Promise(setImmediate)
+  assert.equal(Object.values(options).some(v=>v.includes(`\"op\":\"${step.op}\"`)),false)
+  c.close();release(program([step]));await c.pending
+ }
+})
+
+
+test('one unobserved alternative does not discard a feasible authored program',()=>{
+ const response={intention:'Clear an obstacle',alternatives:[
+  {reason:'distant guess',steps:[move(20)]},{reason:'observed route',steps:[move(1)]}]}
+ const result=validatePrograms(response,observation())
+ assert.deepEqual(result.alternatives.map(p=>p.id),['program_2'])
+ assert.equal(result.rejectedAlternatives[0].alternative,1)
+ assert.match(result.rejectedAlternatives[0].error,/not in the supplied local observation/)
+})
