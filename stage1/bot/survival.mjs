@@ -333,6 +333,14 @@ export function createFleeFailureGate({ now = Date.now, retryMs = 60000 } = {}) 
   }
 }
 
+// Model-directed clankers need room to choose an escape when a visible mob is
+// still distant. Keep immediate contact and fresh damage on the fast reflex.
+export function urgentFleeThreats(closeThreats, position, { modelDirected = false, critical = false } = {}) {
+  return modelDirected && !critical
+    ? closeThreats.filter(e => e.position.distanceTo(position) < 3)
+    : closeThreats
+}
+
 export async function navigateWithRecovery({ bot, goal, run, ms, emergency, log }) {
   const deadline = Date.now() + ms
   let lastError
@@ -648,7 +656,9 @@ export function installSurvival(bot, state, log, opts = {}) {
           return 'attack_threat'
       }
     }
-    if (closeThreats.length && !fleeFailureGate.shouldYield(closeThreats, bot.entity.position, lastHurtAt)) return 'flee'
+    const urgentThreats = urgentFleeThreats(closeThreats, bot.entity.position,
+      { modelDirected: opts.modelDirected, critical: bot.health <= 8 || Date.now() - lastHurtAt < 2500 })
+    if (urgentThreats.length && !fleeFailureGate.shouldYield(urgentThreats, bot.entity.position, lastHurtAt)) return 'flee'
     if (bot.food < 16 && bot.inventory.items().some((i) => edible.has(i.name)))
       return 'eat'
     return null

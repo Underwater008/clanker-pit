@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Vec3 } from 'vec3'
 import { MirrorCache, replayConfigurationBeforeFinish } from './native-mirror.mjs'
-import { shelterBlueprint, countItems, createFleeFailureGate } from './survival.mjs'
+import { shelterBlueprint, countItems, createFleeFailureGate, urgentFleeThreats } from './survival.mjs'
 import minecraftData from 'minecraft-data'
 import mc from 'minecraft-protocol'
 
@@ -59,6 +59,14 @@ test('failed escape routes yield to planning until danger changes', () => {
   gate.recordFailure(drowned, at, at)
   clock += 60000
   assert.equal(gate.shouldYield([drowned], at, 0), false, 'elapsed time retries reflex')
+})
+test('model-directed survival interrupts for imminent contact or fresh damage', () => {
+  const at = new Vec3(0, 64, 0)
+  const near = { id: 1, position: new Vec3(2.5, 64, 0) }
+  const distant = { id: 2, position: new Vec3(6, 64, 0) }
+  assert.deepEqual(urgentFleeThreats([near, distant], at, { modelDirected: true }), [near])
+  assert.deepEqual(urgentFleeThreats([near, distant], at, { modelDirected: true, critical: true }), [near, distant])
+  assert.deepEqual(urgentFleeThreats([near, distant], at), [near, distant])
 })
 test('mirror reconnect replays current block changes and discards unloaded chunks', () => {
   const c = new MirrorCache()

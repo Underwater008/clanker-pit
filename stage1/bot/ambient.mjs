@@ -938,7 +938,7 @@ function actor(name, index) {
     })
     const connection = bot
     mirror?.attach(bot)
-    skills = installSurvival(bot, state, actorLog, { village: villageCtx })
+    skills = installSurvival(bot, state, actorLog, { village: villageCtx, modelDirected: primitiveMode })
     // Fail closed if a future dependency regression produces non-finite movement.
     const originalWrite = bot._client.write.bind(bot._client)
     bot._client.write = (packet, data) => {
