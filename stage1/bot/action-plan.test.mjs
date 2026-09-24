@@ -1,0 +1,71 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { createActionPlanner, validatePrograms, validateAction } from './action-plan.mjs'
+const observation=()=>({position:[0.5,64,0.5],dimension:'overworld',inventory:[],blocks:[{name:'air',positions:[[0,64,0],[1,64,0],[2,64,0]]}]})
+const program=(steps)=>({intention:'Reach a useful place',alternatives:[{reason:'Local route',steps}]})
+const move=(x)=>({op:'move',target:[x,64,0]})
+const setup=(reply,extra={})=>createActionPlanner({planner:{program:reply},identity:{name:'Lab'},objective:()=>({goal:'move'}),primitives:{observe:observation},state:{},minIntervalMs:0,...extra})
+test('programs allow authored sequences but reject code, unobserved targets and unbounded work',()=>{
+ assert.equal(validatePrograms(program([move(1),move(2)]),observation()).alternatives[0].steps.length,2)
+ assert.throws(()=>validatePrograms(program([move(20)]),observation()),/not in.*observation/)
+ assert.throws(()=>validateAction({op:'eval',code:'process.exit()'}),/Unknown/)
+ assert.throws(()=>validateAction({op:'move',target:[NaN,64,0]}),/finite/)
+ assert.throws(()=>validateAction({op:'craft',item:'stick',times:100}),/count/)
+ assert.throws(()=>validateAction({op:'dig',target:[1,64,0],expect:'stone',code:'anything'}),/Unexpected/)
+ assert.throws(()=>validatePrograms(program(Array(9).fill(move(1))),observation()),/1-8/)
+})
+test('planning is nonblocking with one request; failure discards the remaining program',async()=>{
+ let release,calls=0,history
+ const c=setup(async input=>{calls++;history=input.history;return await new Promise(r=>{release=r})})
+ assert.equal(c.next(),null);assert.equal(c.next(),null);assert.equal(calls,1)
+ release(program([move(1),move(2)]));await c.pending
+ const first=c.next();assert.deepEqual(first.step,move(1));assert.equal(first.source,'planner')
+ c.record(first.step,{error:Error('No path')})
+ assert.equal(c.next(),null);assert.equal(calls,2);assert.equal(history.at(-1).ok,false)
+ release(program([move(2)]));await c.pending
+ assert.deepEqual(c.next().step,move(2));c.close()
+})
+test('an unchanged failed action cannot be replayed',async()=>{
+ const c=setup(async()=>program([move(1)]))
+ c.next();await c.pending;const first=c.next();c.record(first.step,{error:Error('No path')});c.next();await c.pending
+ assert.match(c.status.error,/Unchanged failed/);c.close()
+})
+test('safety cancellation prevents a late model reply from restoring a stale plan',async()=>{
+ let release;const c=setup(()=>new Promise(r=>{release=r}))
+ c.next();c.cancel('safety_reflex');release(program([move(1)]));await c.pending
+ assert.equal(c.status.status,'interrupted');c.close();assert.equal(c.next(),null)
+})
+test('Jev chooses model-authored programs, and selector errors are labeled',async()=>{
+ const response={intention:'Choose a route',alternatives:[{reason:'east',steps:[move(1)]},{reason:'farther east',steps:[move(2)]}]}
+ let sent;const c=setup(async()=>response,{jevChoose:async input=>{sent=input;return {choice:'program_2'}}})
+ c.next();await c.pending;assert.deepEqual(c.next().step,move(2));assert.match(sent.options.program_2,/"op":"move"/);c.close()
+ const events=[];const f=setup(async()=>response,{jevChoose:async()=>({error:'provider offline'}),log:(e,d)=>events.push([e,d])})
+ f.next();await f.pending;assert.equal(f.next().source,'planner_first_alternative');assert.ok(events.some(([e])=>e==='program_selector_error'));f.close()
+})
+test('reload retains evidence but never resumes the old program',async()=>{
+ const state={primitiveMemory:{history:[{type:'action',step:move(1),ok:true,result:{moved:1}}]}}
+ let input;const c=setup(async i=>{input=i;return program([move(2)])},{state})
+ assert.equal(c.next(),null);await c.pending;assert.equal(input.history.length,1);c.close()
+})
+
+test('Jev can take a primitive step while Kimi is pending; model programs later take priority',async()=>{
+ let release,calls=0
+ const c=setup(()=>new Promise(r=>{release=r}),{tactical:true,
+  primitives:{observe:observation,affordances:()=>[move(1),move(2)]},
+  jevChoose:async()=>{calls++;return {choice:'action_0',model:'jev'}}})
+ assert.equal(c.next(),null)
+ await new Promise(setImmediate)
+ assert.equal(calls,1)
+ const fast=c.next();assert.equal(fast.source,'jev_primitives');assert.deepEqual(fast.step,move(1))
+ c.record(fast.step,{result:{moved:1}})
+ release(program([move(2)]));await c.pending
+ const planned=c.next();assert.equal(planned.source,'planner');assert.deepEqual(planned.step,move(2));c.close()
+})
+test('tactical provider errors never become silently scripted work',async()=>{
+ const events=[];let release
+ const c=setup(()=>new Promise(r=>{release=r}),{tactical:true,
+  primitives:{observe:observation,affordances:()=>[move(1),move(2)]},
+  jevChoose:async()=>({error:'HTTP 402',status:402}),log:(e,d)=>events.push([e,d])})
+ c.next();await new Promise(setImmediate);assert.equal(c.next(),null)
+ assert.ok(events.some(([e])=>e==='primitive_selector_error'));c.close();release(program([move(1)]));await c.pending
+})

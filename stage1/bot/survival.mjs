@@ -1,3 +1,4 @@
+import { createPrimitives } from './primitives.mjs'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { Vec3 } from 'vec3'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -2080,7 +2081,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     const beforeInventory = inventory(), revision = skillRevision
     let result, error
     try {
-      result = await executeSkill(action)
+      result = typeof action === 'object' ? await primitives.execute(action) : await executeSkill(action)
       return result
     } catch (e) {
       error = e
@@ -2090,7 +2091,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         const after = bot.entity.position.clone(), current = localContext(bot)
         const changed = result?.clearedVegetation === 1 || inventory() !== beforeInventory ||
           (before.floored().equals(after.floored()) && current.terrain !== context.terrain)
-        const evidence = progress.record({ context: context.key, accessContext: context.accessKey, action, before, after, changed,
+        const evidence = progress.record({ context: context.key, accessContext: context.accessKey, action: typeof action === 'object' ? JSON.stringify(action) : action, before, after, changed,
           ok: !error, error: error ?? (!changed && before.distanceTo(after) < 0.75 ? 'No observed movement, block or inventory progress' : null), source })
         log('action_progress', evidence)
       }
@@ -2465,7 +2466,18 @@ export function installSurvival(bot, state, log, opts = {}) {
     }
     throw new Error(`Unsupported action ${action}`)
   }
+  const primitives = createPrimitives({ bot, state, walk, movements: () => movements,
+    protectedBlock: (p) => constructionBlock(p) || resourceBusy(p),
+    editableConstruction: (p) => ownExtensionWalls.has(p.toString()) && !resourceBusy(p),
+    onDig: (p) => {
+      if (ownExtensionWalls.has(p.toString())) for (const y of [layout.flag.y + 1, layout.flag.y + 2]) {
+        const key = new Vec3(p.x, y, p.z).toString()
+        if (!state.accessOpenings.includes(key)) state.accessOpenings.push(key)
+      }
+    }, emergency,
+  })
   return {
+    primitives: { ...primitives, execute: (step, options) => execute(step, options) },
     capabilities: () => ({
       supported_actions: [
         'flee', 'eat', 'gather_wood', 'mine_stone', 'craft_planks', 'craft_sticks',
@@ -2508,6 +2520,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     execute,
     progress: progressSummary,
     stop() {
+      primitives.abort()
       skillRevision++
       escapeSession = null
       blockedRoutes = 0
