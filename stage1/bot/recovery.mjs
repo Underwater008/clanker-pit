@@ -42,6 +42,26 @@ export function localRecoveryRoutes(bot, maxSteps = 5) {
     }) }))
 }
 
+// Dry-ground routes cannot start in a roofed water pocket. Inspect only the
+// clanker's own column: a natural overhead block may be opened if the space
+// above it is clear. This offers a physical swimming exit without guessing a
+// hidden route, disturbing construction, or teleporting the player.
+export function localWaterHatch(bot, protectedBlock = () => false) {
+  if (!bot.entity.isInWater) return null
+  const position = bot.entity.position.floored().offset(0, 2, 0)
+  const block = bot.blockAt(position)
+  if (!block || !['dirt', 'grass_block', 'stone', 'andesite', 'diorite', 'granite', 'clay'].includes(block.name) ||
+      protectedBlock(position) || !bot.canDigBlock(block)) return null
+  for (const y of [1, 2]) {
+    const above = bot.blockAt(position.offset(0, y, 0))
+    if (!above || solid(above) || hazards.has(above.name)) return null
+  }
+  if (Object.values(bot.entities ?? {}).some((e) => e !== bot.entity && e.position &&
+      Math.hypot(e.position.x - position.x - 0.5, e.position.z - position.z - 0.5) < 0.7 &&
+      e.position.y >= position.y + 1 && e.position.y < position.y + 3)) return null
+  return { position, stateId: block.stateId, name: block.name }
+}
+
 export function recoveryKey(kind, position) {
   return `${kind}:${position.x}:${position.y}:${position.z}`
 }
