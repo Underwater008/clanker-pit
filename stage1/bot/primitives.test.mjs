@@ -72,14 +72,15 @@ test('local observation gives the same cardinal yaw convention as native movemen
 })
 
 test('an immersed clanker can mine beside water, but a dry one cannot flood its footing',async()=>{
- const {bot,executor,confirm}=fixture()
+ const {bot,executor}=fixture()
  const read=bot.blockAt.bind(bot)
- bot.blockAt=p=>p.x===1&&p.y===64&&p.z===1
+ let replaced=false
+ bot.blockAt=p=>p.x===1&&p.y===64&&(p.z===1||p.z===0&&replaced)
   ? {name:'water',stateId:9,position:p,boundingBox:'empty'}:read(p)
  await assert.rejects(executor.execute({op:'dig',target:[1,64,0],expect:'stone'}),/Unsafe or unobserved neighbor/)
  bot.entity.isInWater=true
- const dig=bot.dig.bind(bot)
- bot.dig=async()=>{await dig();confirm()}
+ bot.dig=async()=>{replaced=true;bot._client.emit('block_change',{location:{x:1,y:64,z:0},type:9})}
  const result=await executor.execute({op:'dig',target:[1,64,0],expect:'stone'})
  assert.deepEqual(result.removed,{position:[1,64,0],name:'stone'})
+ assert.equal(result.replacedBy,'water')
 })

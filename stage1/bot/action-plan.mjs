@@ -205,7 +205,7 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
       const current=primitives.observe()
       if(!observedPositions(current).has(key))break
       const block=current.blocks.find(b=>b.positions.some(p=>p.join(',')===key))
-      if((block?.name??'air')!==(step.op==='dig'?'air':step.item))break
+      if((block?.name??'air')!==(step.op==='dig'?(match.result.replacedBy??'air'):step.item))break
       queue.shift()
       log('program_step_reconciled',{step,source:'jev_primitives',evidence:step.op==='dig'?match.result.removed:match.result.placed})
     }

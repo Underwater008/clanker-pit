@@ -196,17 +196,27 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
       if(s.op==='dig') {
         safeDig(block)
         if(bot.digTime(block)>10000)throw Error('Digging takes too long with held tool; equip a better tool')
-        let confirmed=false
-        const update=packet=>{if(vec([packet.location.x,packet.location.y,packet.location.z]).equals(p) && packet.type===bot.registry.blocksByName.air.minStateId)confirmed=true}
+        let serverStateId=null
+        const update=packet=>{
+          if(vec([packet.location.x,packet.location.y,packet.location.z]).equals(p) && packet.type!==block.stateId)
+            serverStateId=packet.type
+        }
         bot._client.on('block_change',update)
         try {
           await bot.dig(block,true,'raycast');check()
           const deadline=Date.now()+1800
-          while(!confirmed && Date.now()<deadline){check();await sleep(50)}
-          if(!confirmed || bot.blockAt(p)?.name!=='air')throw Error('Server block removal not confirmed')
+          let replacement
+          while(Date.now()<deadline){
+            check();replacement=bot.blockAt(p)
+            if(serverStateId!=null && replacement?.stateId===serverStateId &&
+                ['air','water'].includes(replacement.name))break
+            await sleep(50)
+          }
+          if(serverStateId==null || replacement?.stateId!==serverStateId ||
+              !['air','water'].includes(replacement.name))throw Error('Server block removal not confirmed')
+          onDig(p,block);state.primitivePlaced=state.primitivePlaced.filter(b=>b.position.join(',')!==s.target.join(','))
+          return {removed:{position:s.target,name:block.name},replacedBy:replacement.name,...after()}
         }finally{bot._client.removeListener('block_change',update)}
-        onDig(p,block);state.primitivePlaced=state.primitivePlaced.filter(b=>b.position.join(',')!==s.target.join(','))
-        return {removed:{position:s.target,name:block.name},...after()}
       }
       if(s.op==='place') {
         if(block.name!=='air'||!(buildMaterial(s.item) || ['crafting_table','furnace'].includes(s.item))||protectedBlock(p))throw Error('Placement requires permitted air and a solid building material')
