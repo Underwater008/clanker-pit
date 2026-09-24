@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Vec3 } from 'vec3'
 import { MirrorCache, replayConfigurationBeforeFinish } from './native-mirror.mjs'
-import { shelterBlueprint, countItems } from './survival.mjs'
+import { shelterBlueprint, countItems, createFleeFailureGate } from './survival.mjs'
 import minecraftData from 'minecraft-data'
 import mc from 'minecraft-protocol'
 
@@ -27,6 +27,33 @@ test('resource counts sum stacks, including different wood species', () => {
     ),
     17,
   )
+})
+
+test('failed escape routes yield to planning until danger changes', () => {
+  let clock = 1000
+  const gate = createFleeFailureGate({ now: () => clock, retryMs: 60000 })
+  const at = new Vec3(0, 64, 0)
+  const drowned = { id: 7, position: new Vec3(3, 62, 0) }
+  assert.equal(gate.recordFailure(drowned, at, at), false)
+  assert.equal(gate.shouldYield([drowned], at, 0), false)
+  clock += 1000
+  assert.equal(gate.recordFailure(drowned, at, at), true)
+  assert.equal(gate.shouldYield([drowned], at, 0), true)
+  assert.equal(gate.shouldYield([drowned], at, clock + 1), false, 'new damage restores reflex')
+  gate.recordFailure(drowned, at, at)
+  gate.recordFailure(drowned, at, at)
+  assert.equal(gate.shouldYield([drowned], at, 0), true)
+  assert.equal(gate.shouldYield([{ id: 8, position: drowned.position }], at, 0), false, 'new mob restores reflex')
+  gate.recordFailure(drowned, at, at)
+  gate.recordFailure(drowned, at, at)
+  assert.equal(gate.shouldYield([{ ...drowned, position: new Vec3(1, 64, 0) }], at, 0), false, 'contact restores reflex')
+  gate.recordFailure(drowned, at, at)
+  gate.recordFailure(drowned, at, at)
+  assert.equal(gate.shouldYield([drowned], new Vec3(2, 64, 0), 0), false, 'movement restores reflex')
+  gate.recordFailure(drowned, at, at)
+  gate.recordFailure(drowned, at, at)
+  clock += 60000
+  assert.equal(gate.shouldYield([drowned], at, 0), false, 'elapsed time retries reflex')
 })
 test('mirror reconnect replays current block changes and discards unloaded chunks', () => {
   const c = new MirrorCache()
