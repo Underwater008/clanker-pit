@@ -29,6 +29,8 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
       groups.get(key).positions.push(xyz(p))
     }
     return { position: xyz(bot.entity.position), dimension: bot.game.dimension, health: bot.health, food: bot.food,
+      body: {inWater:Boolean(bot.entity.isInWater),inLava:Boolean(bot.entity.isInLava),onGround:Boolean(bot.entity.onGround),
+        yaw:bot.entity.yaw,pitch:bot.entity.pitch,air:bot.oxygenLevel ?? null},
       held: bot.heldItem?.name ?? null, inventory: bot.inventory.items().map(({name,count})=>({name,count})),
       bounds: {min:xyz(origin.offset(-radius,-1,-radius)),max:xyz(origin.offset(radius,3,radius))},
       unloaded, air: 'Every cell inside bounds absent from blocks and unloaded is observed air.',
@@ -36,6 +38,7 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
         [-1,0,1].map(y=>{const p=origin.offset(x,y,z),b=bot.blockAt(p);return {position:xyz(p),name:b?.name??'unloaded',editable:editable(b)}})])),
       blocks:[...groups.values()], entities: Object.values(bot.entities ?? {}).filter(e=>e!==bot.entity && e.position.distanceTo(bot.entity.position)<=radius)
         .map(e=>({id:e.id,name:e.name,position:xyz(e.position)})),
+      controls: {forward:'toward yaw',jump:'jump on ground or swim up in water',yawRadians:{south:0,west:Math.PI/2,east:-Math.PI/2,north:Math.PI}},
       limits: { radius, maxReach:4.5, automaticDigging:false, automaticPlacement:false, inspection:'loaded local blocks, not pixels; editable is permission, not a suggested target' } }
   }
   function inspect(p) {
@@ -54,6 +57,7 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
       if(!n || dangerous.has(n.name)) throw Error('Unsafe or unobserved neighbor of dig target')
     }
     if(!bot.canDigBlock(b)) throw Error('Dig target is out of reach; move or equip first')
+    if(bot.canSeeBlock && !bot.canSeeBlock(b))throw Error('Dig target is occluded; move to see it first')
   }
   let craftCache = {key:null,items:[]}
   function affordances() {
@@ -91,7 +95,12 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
       }
       if(bot.entity.onGround)for(const [dx,dz] of [[.6,0],[-.6,0],[0,.6],[0,-.6]])add({op:'step',dx,dz})
     }
-    return choices.slice(0,48)
+    // Native movement inputs remain available in water and on partial blocks,
+    // where a full-block walking graph is not a usable motor interface.
+    const motors=[{op:'control',keys:['jump'],ticks:10}]
+    for(const yaw of [0,Math.PI/2,Math.PI,-Math.PI/2])for(const keys of [['forward'],['forward','jump']])
+      motors.push({op:'control',keys,ticks:10,yaw})
+    return [...motors,...choices.slice(0,48)]
   }
   const abort = () => {
     active?.abort(); bot.pathfinder.setGoal(null); bot.stopDigging(); bot.clearControlStates()
@@ -119,6 +128,21 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
         check()
         if(bot.entity.position.distanceTo(p.offset(.5,0,.5))>.8)throw Error('Server position did not reach target')
         return {...after(),moved:before.distanceTo(bot.entity.position)}
+      }
+      if(s.op==='control') {
+        if(s.yaw!=null)await bot.look(s.yaw,bot.entity.pitch,true)
+        for(const key of s.keys)bot.setControlState(key,true)
+        try {
+          for(let i=0;i<s.ticks;i++){
+            check()
+            if(bot.entity.isInLava)throw Error('Motor input encountered lava')
+            await sleep(50,undefined,{signal:ctl.signal})
+          }
+        }finally{bot.clearControlStates()}
+        check()
+        const moved=before.distanceTo(bot.entity.position)
+        if(moved<.05)throw Error('Motor input produced no observed movement')
+        return {...after(),moved,body:{inWater:Boolean(bot.entity.isInWater),onGround:Boolean(bot.entity.onGround)}}
       }
       if(s.op==='step') {
         if(!bot.entity.onGround || bot.entity.isInWater)throw Error('Fine movement requires dry ground')
@@ -193,6 +217,7 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
         if(!hit)throw Error('No reachable exposed placement face')
         const previous=count(bot,s.item)
         await bot.equip(item,'hand');check()
+        if(bot.heldItem?.name!==s.item)throw Error('Placement held item not confirmed')
         await bot.placeBlock(bot.blockAt(hit.ref),hit.face.scaled(-1));check()
         const deadline=Date.now()+1800
         while(count(bot,s.item)>=previous && Date.now()<deadline){check();await sleep(50)}

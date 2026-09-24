@@ -2,6 +2,7 @@
 export const ACTION_CONTRACT = {
   inspect: 'No arguments. Return fresh local blocks/inventory. Does not move.',
   move: 'target:[x,y,z] integer feet cell. Walk only; no automatic digging/placing. Must have safe support/headroom.',
+  control: 'keys:array from forward/back/left/right/jump/sneak, ticks:1..10, optional yaw radians. Bounded native movement input; jump also swims upward in water. Yaw: 0=south (+z), pi/2=west (-x), -pi/2=east (+x), pi=north (-z). No attack/use/flight.',
   step: 'dx,dz numbers; horizontal displacement at most 0.8 blocks, while sneaking. Fine positioning on edges; no jumping or flight.',
   dig: 'target:[x,y,z], expect:block_name. Remove exactly one reachable editable block; no walking or automatic tool selection.',
   place: 'target:[x,y,z], item:item_name. Place one carried solid block against a reachable face; no walking, towers or replacement.',
@@ -13,7 +14,7 @@ export const ACTION_CONTRACT = {
 const itemName = (s) => typeof s === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(s)
 const coordinate = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isSafeInteger)
 const fields = {
-  inspect: [], move: ['target'], step: ['dx', 'dz'], dig: ['target', 'expect'], place: ['target', 'item'],
+  inspect: [], move: ['target'], control: ['keys','ticks','yaw'], step: ['dx', 'dz'], dig: ['target', 'expect'], place: ['target', 'item'],
   craft: ['item', 'times', 'table'], equip: ['item'], interact: ['target', 'expect'], wait: ['ticks'],
 }
 export function validateAction(step) {
@@ -22,6 +23,10 @@ export function validateAction(step) {
   for (const k of ['target', 'table']) if ((k === 'target' && fields[step.op].includes(k) || step[k] != null) && !coordinate(step[k]))
     throw Error('Primitive coordinates must be three finite integers')
   for (const k of ['expect', 'item']) if (fields[step.op].includes(k) && !itemName(step[k])) throw Error(`Invalid ${k}`)
+  if (step.op === 'control' && (!Array.isArray(step.keys) || step.keys.length<1 || step.keys.length>3 ||
+      step.keys.some(k=>!['forward','back','left','right','jump','sneak'].includes(k)) ||
+      new Set(step.keys).size!==step.keys.length || !Number.isInteger(step.ticks) || step.ticks<1 || step.ticks>10 ||
+      (step.yaw!=null && (!Number.isFinite(step.yaw) || Math.abs(step.yaw)>Math.PI)))) throw Error('Invalid bounded movement input')
   if (step.op === 'step' && (![step.dx,step.dz].every(Number.isFinite) || Math.hypot(step.dx,step.dz) > .8 || Math.hypot(step.dx,step.dz) < .05)) throw Error('Invalid fine movement')
   if (step.op === 'craft' && (!Number.isInteger(step.times) || step.times < 1 || step.times > 4)) throw Error('Invalid craft count')
   if (step.op === 'wait' && (!Number.isInteger(step.ticks) || step.ticks < 1 || step.ticks > 20)) throw Error('Invalid wait duration')
@@ -52,15 +57,23 @@ export function validatePrograms(value, observation) {
   })
   return { intention: value.intention.slice(0, 400), alternatives }
 }
-export const primitiveLabel = (s) => `${s.op}${s.target ? ` ${s.target.join(',')}` : s.item ? ` ${s.item}` : ''}`
+export const primitiveLabel = (s) => {
+  if(s.op==='control'){
+    const direction=s.yaw==null?'current facing':Math.abs(s.yaw)<.01?'south (+z)':Math.abs(s.yaw-Math.PI/2)<.01?'west (-x)':Math.abs(s.yaw+Math.PI/2)<.01?'east (+x)':Math.abs(Math.abs(s.yaw)-Math.PI)<.01?'north (-z)':`yaw ${s.yaw}`
+    return `Move ${s.keys.join('+')} for ${s.ticks} ticks toward ${direction}${s.keys.includes('jump')?' (jump/swim up)':''}`
+  }
+  return `${s.op}${s.target ? ` ${s.target.join(',')}` : s.item ? ` ${s.item}` : ''}`
+}
 
 // Requests never block the gameplay loop. Only server-verified successful
 // steps advance a program. Failed steps invalidate the remaining program.
 export function createActionPlanner({ planner, jevChoose, identity, objective, primitives, state, log = () => {}, now = Date.now, minIntervalMs = 3000, tactical = false }) {
   const context = () => {
     const {position,dimension,inventory,blocks} = primitives.observe()
+    // Physics bobbing must not invalidate every reply while standing in water.
+    // Cell/world changes invalidate choices; the executor rechecks each target.
     let hash = 2166136261
-    for (const c of JSON.stringify({position,dimension,inventory,blocks})) hash = Math.imul(hash ^ c.charCodeAt(0),16777619)
+    for (const c of JSON.stringify({position:position.map(Math.floor),dimension,inventory,blocks})) hash = Math.imul(hash ^ c.charCodeAt(0),16777619)
     return hash >>> 0
   }
   const memory = state.primitiveMemory ??= { history: [] }
@@ -82,7 +95,7 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
     const candidates=steps.filter(step=>!memory.history.some(h=>h.type==='action'&&!h.ok&&h.context===fingerprint&&JSON.stringify(h.step)===JSON.stringify(step)))
     if(candidates.length<2)return
     const job={controller:new AbortController(),revision:epoch,startedAt:now()};fast=job;nextFastAt=now()+1000
-    const options=Object.fromEntries(candidates.map((step,i)=>[`action_${i}`,JSON.stringify(step)]))
+    const options=Object.fromEntries(candidates.map((step,i)=>[`action_${i}`,`${primitiveLabel(step)}. ${JSON.stringify(step)}`]))
     job.promise=(async()=>{
       try{
         const result=await jevChoose({identity,stance:{objective:objective(),intention:selected?.intention,verified_history:memory.history.slice(-6)},

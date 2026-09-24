@@ -48,6 +48,12 @@ try{
    await rcon.send('give PrimitiveLab oak_log 3')
    objective='Craft one wooden_pickaxe from the inventory materials. You may place a crafting table in clear space. Completion requires the pickaxe in your inventory.'
    script=[{op:'craft',item:'oak_planks',times:3},{op:'craft',item:'stick',times:1},{op:'craft',item:'crafting_table',times:1},{op:'place',target:[2,-59,0],item:'crafting_table'},{op:'craft',item:'wooden_pickaxe',times:1,table:[2,-59,0]}]
+  }else if(scenario==='water'){
+   await rcon.send('fill -2 -61 -2 2 -60 2 water')
+   await rcon.send('fill -2 -62 -2 2 -62 2 bedrock')
+   await rcon.send('tp PrimitiveLab 0.5 -60 0.5')
+   objective='Leave the water and stand on the dry bank at [3,-59,0]. Use observed body/terrain state and native movement as needed.'
+   script=[...Array.from({length:4},()=>({op:'control',keys:['forward','jump'],ticks:10,yaw:-Math.PI/2})),move([3,-59,0])]
   }else{
    await rcon.send('fill 1 -62 -13 2 -60 13 air');await rcon.send('give PrimitiveLab dirt 4')
    objective='Build a two-block dirt walkway by placing dirt at [1,-60,0] and [2,-60,0], then reach [3,-59,0]. Both placed blocks and your arrival are required.'
@@ -59,7 +65,8 @@ try{
     log:(event,data)=>{events.push({event,...data});report(event,{scenario,...data});if(event==='program_ready'){planMs+=data.durationMs;plans++}}})
   const complete=async()=>{
    if(scenario==='craft')return bot.inventory.items().some(i=>i.name==='wooden_pickaxe')
-   const goal=scenario.startsWith('changed')?[2,-59,-2]:scenario==='gap'?[3,-59,0]:target
+   if(scenario==='water' && (bot.entity.isInWater || !bot.entity.onGround || bot.blockAt(bot.entity.position.floored().offset(0,-1,0))?.name!=='bedrock'))return false
+   const goal=scenario.startsWith('changed')?[2,-59,-2]:['gap','water'].includes(scenario)?[3,-59,0]:target
    if(bot.entity.position.distanceTo(new Vec3(...goal).offset(.5,0,.5))>.8)return false
    if(scenario==='gap')return (await rcon.send('execute if block 1 -60 0 dirt')).startsWith('Test passed')&&(await rcon.send('execute if block 2 -60 0 dirt')).startsWith('Test passed')
    return true

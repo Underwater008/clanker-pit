@@ -22,6 +22,7 @@ situation is unchanged. Programs expire and never resume after reconnect/death.
 A bounded history persists results, not an execution queue.
 
 `primitives.mjs` implements inspect, walk to a cell, short sneaking movement,
+bounded native movement keys (including swimming),
 dig one block, place one block, craft a recipe, equip, toggle a simple block,
 and wait. Movement cannot implicitly dig/place; digging cannot walk to its
 target; crafting cannot gather missing ingredients. Block/inventory/position
@@ -39,7 +40,8 @@ never silently become scripted work. Waiting is exposed as `planning`.
 Observations are loaded local block data, not screenshots. The bounded observed
 box includes explicit unloaded cells; omitted cells within it are observed air.
 No RCON data enters planning. RCON is used only by the isolated lab and operator
-verification. This is neither raw keyboard/pixel control nor human-level thought.
+verification. Movement keys are bounded to ten ticks, with explicit direction
+semantics. This remains structured perception, not pixel control or human-level thought.
 
 ## Evaluation
 
@@ -89,3 +91,21 @@ the unexpected world change. A no-change control verifies that the same script
 reaches the full objective when its route stays open. The seeded random baseline completed none within
 18 actions. These are smoke checks on small tasks, not a general model
 benchmark. [Full recorded results](evidence/model-primitives-2026-09-23.json).
+
+
+## Motor and visibility correction
+
+The first live Mira rollout exposed occluded dig candidates and a walking-only
+interface in a water-filled cavity. Digging now requires line of sight, and
+observations include water/ground/air state. Generic native movement inputs let
+the models swim or reposition without adding a scenario-specific escape skill.
+Tiny physics bobbing no longer discards every pending tactical reply; crossing
+a cell or changing local blocks/inventory still invalidates it. Each action is
+rechecked before execution. Placement also verifies the held material first.
+
+The optional `water` lab requires arrival on the dry bank, grounded on solid
+support, with the final position checked by RCON. Merely jumping close to the
+goal is insufficient. Earlier water attempts selected the wrong direction or
+repeated jumping; direction semantics are now included in observations and
+choice labels. These failures remain in the evidence rather than being called
+successful recovery. See [motor verification](evidence/primitive-motor-2026-09-23.json).

@@ -1,0 +1,1122 @@
+{
+  "tests": {
+    "unitPassed": 199
+  },
+  "final": [
+    {
+      "event": "PRIMITIVE_CASE_RESULT",
+      "scenario": "barrier_east",
+      "policy": "hybrid",
+      "passed": true,
+      "wallMs": 6693,
+      "planMs": 0,
+      "plans": 0,
+      "outcomes": [
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              2,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": false,
+          "error": "Error: Navigation ended before reaching the goal",
+          "durationMs": 104
+        },
+        {
+          "step": {
+            "op": "dig",
+            "target": [
+              1,
+              -58,
+              0
+            ],
+            "expect": "stone"
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "removed": {
+              "position": [
+                1,
+                -58,
+                0
+              ],
+              "name": "stone"
+            },
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              }
+            ]
+          },
+          "durationMs": 654
+        },
+        {
+          "step": {
+            "op": "dig",
+            "target": [
+              1,
+              -59,
+              0
+            ],
+            "expect": "stone"
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "removed": {
+              "position": [
+                1,
+                -59,
+                0
+              ],
+              "name": "stone"
+            },
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              },
+              {
+                "name": "cobblestone",
+                "count": 1
+              }
+            ]
+          },
+          "durationMs": 657
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              1,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              1.3322908085210405,
+              -59,
+              0.5001051685678637
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              },
+              {
+                "name": "cobblestone",
+                "count": 2
+              }
+            ],
+            "moved": 0.8322908151656097
+          },
+          "durationMs": 254
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              2,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              2.5,
+              -59,
+              0.5002103371357274
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              },
+              {
+                "name": "cobblestone",
+                "count": 2
+              }
+            ],
+            "moved": 1.1677091962149106
+          },
+          "durationMs": 256
+        }
+      ],
+      "serverPosition": "PrimitiveLab has the following entity data: [2.5d, -59.0d, 0.5002103371357274d]",
+      "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+      "disturbed": false
+    },
+    {
+      "event": "PRIMITIVE_CASE_RESULT",
+      "scenario": "craft",
+      "policy": "hybrid",
+      "passed": true,
+      "wallMs": 6346,
+      "planMs": 0,
+      "plans": 0,
+      "outcomes": [
+        {
+          "step": {
+            "op": "craft",
+            "item": "oak_planks",
+            "times": 1
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "crafted": "oak_planks",
+            "gained": 4,
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_log",
+                "count": 2
+              },
+              {
+                "name": "oak_planks",
+                "count": 4
+              }
+            ]
+          },
+          "durationMs": 3
+        },
+        {
+          "step": {
+            "op": "craft",
+            "item": "crafting_table",
+            "times": 1
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "crafted": "crafting_table",
+            "gained": 1,
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_log",
+                "count": 2
+              },
+              {
+                "name": "crafting_table",
+                "count": 1
+              }
+            ]
+          },
+          "durationMs": 6
+        },
+        {
+          "step": {
+            "op": "place",
+            "target": [
+              1,
+              -59,
+              0
+            ],
+            "item": "crafting_table"
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "placed": {
+              "position": [
+                1,
+                -59,
+                0
+              ],
+              "name": "crafting_table"
+            },
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_log",
+                "count": 2
+              }
+            ]
+          },
+          "durationMs": 54
+        },
+        {
+          "step": {
+            "op": "craft",
+            "item": "oak_planks",
+            "times": 1,
+            "table": [
+              1,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "crafted": "oak_planks",
+            "gained": 4,
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_log",
+                "count": 1
+              },
+              {
+                "name": "oak_planks",
+                "count": 4
+              }
+            ]
+          },
+          "durationMs": 3
+        },
+        {
+          "step": {
+            "op": "craft",
+            "item": "stick",
+            "times": 1,
+            "table": [
+              1,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "crafted": "stick",
+            "gained": 4,
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_log",
+                "count": 1
+              },
+              {
+                "name": "oak_planks",
+                "count": 2
+              },
+              {
+                "name": "stick",
+                "count": 4
+              }
+            ]
+          },
+          "durationMs": 4
+        },
+        {
+          "step": {
+            "op": "craft",
+            "item": "oak_planks",
+            "times": 1,
+            "table": [
+              1,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "crafted": "oak_planks",
+            "gained": 4,
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_planks",
+                "count": 6
+              },
+              {
+                "name": "stick",
+                "count": 4
+              }
+            ]
+          },
+          "durationMs": 2
+        },
+        {
+          "step": {
+            "op": "craft",
+            "item": "wooden_pickaxe",
+            "times": 1,
+            "table": [
+              1,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "crafted": "wooden_pickaxe",
+            "gained": 1,
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_planks",
+                "count": 3
+              },
+              {
+                "name": "stick",
+                "count": 2
+              },
+              {
+                "name": "wooden_pickaxe",
+                "count": 1
+              }
+            ]
+          },
+          "durationMs": 7
+        }
+      ],
+      "serverPosition": "PrimitiveLab has the following entity data: [0.5d, -59.0d, 0.5d]",
+      "inventory": "PrimitiveLab has the following entity data: [{count: 3, Slot: 9b, id: \"minecraft:oak_planks\"}, {count: 2, Slot: 10b, id: \"minecraft:stick\"}, {count: 1, Slot: 11b, id: \"minecraft:wooden_pickaxe\"}]",
+      "disturbed": false
+    },
+    {
+      "event": "PRIMITIVE_CASE_RESULT",
+      "scenario": "gap",
+      "policy": "hybrid",
+      "passed": true,
+      "wallMs": 3557,
+      "planMs": 0,
+      "plans": 0,
+      "outcomes": [
+        {
+          "step": {
+            "op": "place",
+            "target": [
+              2,
+              -60,
+              0
+            ],
+            "item": "dirt"
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "placed": {
+              "position": [
+                2,
+                -60,
+                0
+              ],
+              "name": "dirt"
+            },
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "dirt",
+                "count": 3
+              }
+            ]
+          },
+          "durationMs": 57
+        },
+        {
+          "step": {
+            "op": "place",
+            "target": [
+              1,
+              -60,
+              0
+            ],
+            "item": "dirt"
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "placed": {
+              "position": [
+                1,
+                -60,
+                0
+              ],
+              "name": "dirt"
+            },
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "dirt",
+                "count": 2
+              }
+            ]
+          },
+          "durationMs": 53
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward"
+            ],
+            "ticks": 10,
+            "yaw": -1.5707963267948966
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              2.399600418457996,
+              -59,
+              0.5007235944023587
+            ],
+            "inventory": [
+              {
+                "name": "dirt",
+                "count": 2
+              }
+            ],
+            "moved": 1.8996005562735165,
+            "body": {
+              "inWater": false,
+              "onGround": true
+            }
+          },
+          "durationMs": 506
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              3,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              3.5,
+              -59,
+              0.5002433420056609
+            ],
+            "inventory": [
+              {
+                "name": "dirt",
+                "count": 2
+              }
+            ],
+            "moved": 0.84515611959461
+          },
+          "durationMs": 204
+        }
+      ],
+      "serverPosition": "PrimitiveLab has the following entity data: [3.5d, -59.0d, 0.5002433420056609d]",
+      "inventory": "PrimitiveLab has the following entity data: [{count: 2, Slot: 0b, id: \"minecraft:dirt\"}]",
+      "disturbed": false
+    },
+    {
+      "event": "PRIMITIVE_CASE_RESULT",
+      "scenario": "water",
+      "policy": "hybrid",
+      "passed": true,
+      "wallMs": 2481,
+      "planMs": 0,
+      "plans": 0,
+      "outcomes": [
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward",
+              "jump"
+            ],
+            "ticks": 10,
+            "yaw": -1.5707963267948966
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              1.225436915875619,
+              -59.914868400017305,
+              0.5001447188235693
+            ],
+            "inventory": [],
+            "moved": 0.8375613687205686,
+            "body": {
+              "inWater": true,
+              "onGround": false
+            }
+          },
+          "durationMs": 507
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward",
+              "jump"
+            ],
+            "ticks": 10,
+            "yaw": -1.5707963267948966
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              2.5212335717338923,
+              -59.581901231433086,
+              0.5002894376471385
+            ],
+            "inventory": [],
+            "moved": 1.0295298427912616,
+            "body": {
+              "inWater": true,
+              "onGround": false
+            }
+          },
+          "durationMs": 507
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              3,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              3.3309943874288686,
+              -59,
+              0.500036804843156
+            ],
+            "inventory": [],
+            "moved": 0.855477241887555
+          },
+          "durationMs": 334
+        }
+      ],
+      "serverPosition": "PrimitiveLab has the following entity data: [3.3309943874288686d, -59.0d, 0.500036804843156d]",
+      "inventory": "PrimitiveLab has the following entity data: []",
+      "disturbed": false
+    }
+  ],
+  "unsuccessfulDevelopment": [
+    {
+      "event": "PRIMITIVE_CASE_RESULT",
+      "scenario": "water",
+      "policy": "hybrid",
+      "passed": false,
+      "wallMs": 19948,
+      "planMs": 0,
+      "plans": 0,
+      "outcomes": [
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward",
+              "jump"
+            ],
+            "ticks": 10,
+            "yaw": 1.5707963267948966
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -0.2292948511884207,
+              -59.306345396313105,
+              0.49984083800290013
+            ],
+            "inventory": [],
+            "moved": 0.7293030774597049,
+            "body": {
+              "inWater": false,
+              "onGround": false
+            }
+          },
+          "durationMs": 510
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward",
+              "jump"
+            ],
+            "ticks": 10,
+            "yaw": 1.5707963267948966
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -1.7,
+              -59.52425972805919,
+              0.4996961452782639
+            ],
+            "inventory": [],
+            "moved": 1.060161801172469,
+            "body": {
+              "inWater": false,
+              "onGround": false
+            }
+          },
+          "durationMs": 506
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward",
+              "jump"
+            ],
+            "ticks": 10,
+            "yaw": 1.5707963267948966
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.1603640154510853,
+              -58.814376224818304,
+              0.49955145255362765
+            ],
+            "inventory": [],
+            "moved": 1.0897175611582337,
+            "body": {
+              "inWater": false,
+              "onGround": false
+            }
+          },
+          "durationMs": 505
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward",
+              "jump"
+            ],
+            "ticks": 10,
+            "yaw": 1.5707963267948966
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -3.5814319237435646,
+              -58.504799122994086,
+              0.499348882710691
+            ],
+            "inventory": [],
+            "moved": 1.2414698113779368,
+            "body": {
+              "inWater": false,
+              "onGround": false
+            }
+          },
+          "durationMs": 506
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              -3,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.5,
+              -59,
+              0.49985530744590556
+            ],
+            "inventory": [],
+            "moved": 1.583677172861951
+          },
+          "durationMs": 400
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward",
+              "jump"
+            ],
+            "ticks": 10,
+            "yaw": 1.5707963267948966
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -3.638430209956149,
+              -58.504799122994086,
+              0.4996527376029689
+            ],
+            "inventory": [],
+            "moved": 1.2414698113779363,
+            "body": {
+              "inWater": false,
+              "onGround": false
+            }
+          },
+          "durationMs": 506
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              -3,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.6713538984291816,
+              -59,
+              0.5002315087289284
+            ],
+            "inventory": [],
+            "moved": 1.4693215936637
+          },
+          "durationMs": 404
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward",
+              "jump"
+            ],
+            "ticks": 10,
+            "yaw": 1.5707963267948966
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -3.8097841083853305,
+              -58.504799122994086,
+              0.5000289388859918
+            ],
+            "inventory": [],
+            "moved": 1.2414698113779363,
+            "body": {
+              "inWater": false,
+              "onGround": false
+            }
+          },
+          "durationMs": 504
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              -3,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.5,
+              -59,
+              0.5003511466260904
+            ],
+            "inventory": [],
+            "moved": 1.8120293051788723
+          },
+          "durationMs": 410
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward"
+            ],
+            "ticks": 10,
+            "yaw": 0
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.499276536092454,
+              -59,
+              -1.3992492720186556
+            ],
+            "inventory": [],
+            "moved": 1.8996005564105627,
+            "body": {
+              "inWater": false,
+              "onGround": true
+            }
+          },
+          "durationMs": 505
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              -3,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.500000000000191,
+              -59,
+              0.5
+            ],
+            "inventory": [],
+            "moved": 2.154492991907818
+          },
+          "durationMs": 506
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward"
+            ],
+            "ticks": 10,
+            "yaw": 3.141592653589793
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.500723463907928,
+              -59,
+              2.3996004186447455
+            ],
+            "inventory": [],
+            "moved": 1.8996005564105625,
+            "body": {
+              "inWater": false,
+              "onGround": true
+            }
+          },
+          "durationMs": 505
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              -3,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.500000000000382,
+              -59,
+              0.5
+            ],
+            "inventory": [],
+            "moved": 2.154844138514114
+          },
+          "durationMs": 507
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward"
+            ],
+            "ticks": 10,
+            "yaw": 1.5707963267948966
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -4.399600418645129,
+              -59,
+              0.49927653609235967
+            ],
+            "inventory": [],
+            "moved": 1.8996005564105636,
+            "body": {
+              "inWater": false,
+              "onGround": true
+            }
+          },
+          "durationMs": 505
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              -3,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.5,
+              -59,
+              0.49999999999980904
+            ],
+            "inventory": [],
+            "moved": 2.1548441385144956
+          },
+          "durationMs": 506
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward"
+            ],
+            "ticks": 10,
+            "yaw": 0
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.499276536092454,
+              -59,
+              -1.399600418644937
+            ],
+            "inventory": [],
+            "moved": 1.8996005564105627,
+            "body": {
+              "inWater": false,
+              "onGround": true
+            }
+          },
+          "durationMs": 504
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              -3,
+              -59,
+              0
+            ]
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.500000000000191,
+              -59,
+              0.5
+            ],
+            "inventory": [],
+            "moved": 2.1548441385143056
+          },
+          "durationMs": 507
+        },
+        {
+          "step": {
+            "op": "control",
+            "keys": [
+              "forward"
+            ],
+            "ticks": 10,
+            "yaw": 0
+          },
+          "source": "jev_primitives",
+          "ok": true,
+          "result": {
+            "position": [
+              -2.499276536092645,
+              -59,
+              -1.399600418644746
+            ],
+            "inventory": [],
+            "moved": 1.8996005564105627,
+            "body": {
+              "inWater": false,
+              "onGround": true
+            }
+          },
+          "durationMs": 504
+        }
+      ],
+      "serverPosition": "PrimitiveLab has the following entity data: [-2.499276536092645d, -59.0d, -1.399600418644746d]",
+      "inventory": "PrimitiveLab has the following entity data: []",
+      "disturbed": false
+    }
+  ],
+  "limitations": [
+    "One small fixture per task; not broad model superiority or humanlike thought.",
+    "All final actions were selected by Jev while Kimi was pending; no Kimi credit.",
+    "Early water proximity checks could count an airborne approach as arrival; those are excluded. Final water requires grounded dry solid support and server position agreement.",
+    "Live Mira previously died and respawned during the walking-only rollout. No operator rescue counted as autonomy."
+  ]
+}
