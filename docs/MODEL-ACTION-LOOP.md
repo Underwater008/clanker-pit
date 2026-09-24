@@ -178,6 +178,16 @@ on confirmed events such as blasts, coolant feeds, repaired holes, completed
 homes, and new villagers. Reflections see recent chat and may choose silence.
 This changes when they speak; it does not by itself establish natural dialogue.
 
+The next live check found Kimi repeatedly starting programs with walking targets
+that were inside the observed volume but lacked safe support or headroom. Each
+failed at execution and caused another model request. The observation now
+advertises locally feasible first actions, and every alternative must start
+with one of those exact actions. Kimi still chooses the first action and may
+plan subsequent steps through the full primitive contract; the executor
+rechecks the world before each step. This grounds the immediate action without
+encoding a route or village solution. Later steps and changing terrain can
+still fail and require replanning.
+
 
 ## Reconcile overlapping actions
 

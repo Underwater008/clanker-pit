@@ -154,9 +154,9 @@ test('a failing Jev step in flight cannot cancel a newly ready Kimi program',asy
   primitives:{observe:observation,affordances:()=>[dig,move(2)]},
   jevChoose:async()=>({choice:'action_0'})})
  c.next();await new Promise(setImmediate)
- const tactical=c.next();release(program([move(1)]));await c.pending
+ const tactical=c.next();release(program([move(2)]));await c.pending
  c.record(tactical.step,{error:Error('Jev target changed')})
- assert.deepEqual(c.next().step,move(1));c.close()
+ assert.deepEqual(c.next().step,move(2));c.close()
 })
 
 
@@ -185,4 +185,15 @@ test('one unobserved alternative does not discard a feasible authored program',(
  assert.deepEqual(result.alternatives.map(p=>p.id),['program_2'])
  assert.equal(result.rejectedAlternatives[0].alternative,1)
  assert.match(result.rejectedAlternatives[0].error,/not in the supplied local observation/)
+})
+test('programs start from advertised local actions, including while walking is unavailable',()=>{
+ const current={...observation(),firstActions:[{op:'control',keys:['jump','forward'],ticks:10,yaw:Math.PI},move(1)]}
+ const reply={intention:'Leave water',alternatives:[
+  {reason:'guess a walk target',steps:[move(2)]},
+  {reason:'swim south',steps:[{op:'control',yaw:Math.PI,ticks:10,keys:['jump','forward']},move(2)]},
+ ]}
+ const valid=validatePrograms(reply,current)
+ assert.deepEqual(valid.alternatives.map(p=>p.id),['program_2'])
+ assert.match(valid.rejectedAlternatives[0].error,/currently executable/)
+ assert.deepEqual(valid.alternatives[0].steps[0].keys,['jump','forward'])
 })

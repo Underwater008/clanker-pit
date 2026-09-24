@@ -47,12 +47,17 @@ export function validatePrograms(value, observation) {
   if (!value || typeof value.intention !== 'string' || !Array.isArray(value.alternatives) ||
       value.alternatives.length < 1 || value.alternatives.length > 3) throw Error('Return 1-3 alternative programs')
   const known = observedPositions(observation)
+  const firstActions = observation.firstActions
+  const actionKey = step => JSON.stringify(Object.keys(step).sort().map(key => [key,step[key]]))
+  const firstActionKeys = firstActions && new Set(firstActions.map(actionKey))
   const alternatives = [], rejectedAlternatives = []
   value.alternatives.forEach((p, index) => {
     try {
       if (typeof p?.reason !== 'string' || !Array.isArray(p.steps) || p.steps.length < 1 || p.steps.length > 8)
         throw Error('Each program needs a reason and 1-8 primitive steps')
       const steps = p.steps.map(validateAction)
+      if (firstActionKeys && !firstActionKeys.has(actionKey(steps[0])))
+        throw Error('First step is not a currently executable local action')
       for (const s of steps) for (const key of ['target', 'table'])
         if (s[key] && !known.has(s[key].join(','))) throw Error('Target was not in the supplied local observation')
       alternatives.push({ id: `program_${index + 1}`, reason: p.reason.slice(0, 300), steps })
@@ -142,6 +147,7 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
   function request() {
     if (closed || pending || now() < nextRequest) return
     const observation = primitives.observe(), revision = epoch
+    if (primitives.affordances) observation.firstActions = primitives.affordances()
     const job = { controller: new AbortController(), startedAt: now() }; pending = job
     nextRequest = now() + minIntervalMs
     status = { status: 'pending', requestedAt: new Date(now()).toISOString() }
