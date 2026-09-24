@@ -65,6 +65,22 @@ export const primitiveLabel = (s) => {
   return `${s.op}${s.target ? ` ${s.target.join(',')}` : s.item ? ` ${s.item}` : ''}`
 }
 
+// Current observations already contain inventory. Repeating whole snapshots in
+// every prior outcome hides the useful changes and inflates the request payload.
+export function compactPrimitiveHistory(history) {
+  return history.map(({type,step,source,ok,error,result}) => {
+    if(!result)return {type,step,source,ok,error}
+    const {inventory,observed,...facts}=result
+    return {type,step,source,ok,error,result:{...facts,...(observed?{observed:{position:observed.position,body:observed.body}}:{})}}
+  })
+}
+export function compactPrimitiveObjective(objective) {
+  if(!objective || typeof objective!=='object')return objective
+  const {situation,beliefs,...rest}=objective
+  const {inventory,recent_results,...context}=situation??{}
+  return {...rest,...(situation?{situation:context}:{}),...(beliefs?{beliefs:Array.isArray(beliefs)?beliefs:beliefs.beliefs??[]}: {})}
+}
+
 // Requests never block the gameplay loop. Only server-verified successful
 // steps advance a program. Failed steps invalidate the remaining program.
 export function createActionPlanner({ planner, jevChoose, identity, objective, primitives, state, log = () => {}, now = Date.now, minIntervalMs = 3000, tactical = false }) {
@@ -98,7 +114,7 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
     const options=Object.fromEntries(candidates.map((step,i)=>[`action_${i}`,`${primitiveLabel(step)}. ${JSON.stringify(step)}`]))
     job.promise=(async()=>{
       try{
-        const result=await jevChoose({identity,stance:{objective:objective(),intention:selected?.intention,verified_history:memory.history.slice(-6)},
+        const result=await jevChoose({identity,stance:{objective:compactPrimitiveObjective(objective()),intention:selected?.intention,verified_history:compactPrimitiveHistory(memory.history.slice(-6))},
           observation:primitives.observe(),options,questionId:'primitive_action',signal:job.controller.signal})
         if(closed||job.revision!==epoch||job.controller.signal.aborted)return
         if(result.error){nextFastAt=now()+(result.status===402?300000:15000);log('primitive_selector_error',{error:result.error});return}
@@ -117,11 +133,12 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
     const job = { controller: new AbortController(), startedAt: now() }; pending = job
     nextRequest = now() + minIntervalMs
     status = { status: 'pending', requestedAt: new Date(now()).toISOString() }
-    log('program_request', { observation: { position: observation.position }, objective: objective() })
+    const goal=compactPrimitiveObjective(objective()), history=compactPrimitiveHistory(memory.history.slice(-10))
+    log('program_request', { observation: { position: observation.position }, objective: goal, inputChars:JSON.stringify({goal,observation,history,contract:ACTION_CONTRACT}).length })
     job.promise = (async () => {
       try {
-        const response = await planner.program({ identity, objective: objective(), observation,
-          history: memory.history.slice(-10), contract: ACTION_CONTRACT, signal: job.controller.signal })
+        const response = await planner.program({ identity, objective: goal, observation,
+          history, contract: ACTION_CONTRACT, signal: job.controller.signal })
         if (closed || revision !== epoch || job.controller.signal.aborted) return
         if (response.error) {
           nextRequest = now() + (response.status === 402 ? 300000 : 15000)

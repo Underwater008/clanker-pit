@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createActionPlanner, validatePrograms, validateAction } from './action-plan.mjs'
+import { createActionPlanner, validatePrograms, validateAction, compactPrimitiveHistory, compactPrimitiveObjective } from './action-plan.mjs'
 const observation=()=>({position:[0.5,64,0.5],dimension:'overworld',inventory:[],blocks:[{name:'air',positions:[[0,64,0],[1,64,0],[2,64,0]]}]})
 const program=(steps)=>({intention:'Reach a useful place',alternatives:[{reason:'Local route',steps}]})
 const move=(x)=>({op:'move',target:[x,64,0]})
@@ -87,4 +87,16 @@ test('physics bobbing preserves a tactical reply but crossing a cell invalidates
   assert.equal(Boolean(c.next()),accepted)
   c.close();releasePlan(program([move(1)]));await c.pending
  }
+})
+
+
+test('model context removes duplicate snapshots but preserves failures and verified changes',()=>{
+ const inventory=[{name:'oak_planks',count:5}]
+ const history=[{type:'action',step:{op:'craft',item:'oak_planks',times:1},ok:true,result:{inventory,crafted:'oak_planks',gained:4,position:[1,64,0]}},{type:'action',step:move(2),ok:false,error:'No path'}]
+ const compact=compactPrimitiveHistory(history)
+ assert.equal(compact[0].result.inventory,undefined);assert.equal(compact[0].result.gained,4)
+ assert.equal(compact[1].error,'No path');assert.equal(history[0].result.inventory,inventory)
+ const objective=compactPrimitiveObjective({role:'builder',situation:{inventory,recent_results:history,village:{coolant:8}},beliefs:{events:['large duplicate event'],beliefs:['A remembered hazard'],intentions:['old plan']}})
+ assert.equal(objective.role,'builder');assert.deepEqual(objective.situation,{village:{coolant:8}})
+ assert.deepEqual(objective.beliefs,['A remembered hazard'])
 })
