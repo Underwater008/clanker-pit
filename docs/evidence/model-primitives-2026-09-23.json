@@ -3387,10 +3387,11 @@
         "disturbed": false
       },
       {
+        "event": "PRIMITIVE_CASE_RESULT",
         "scenario": "changed",
         "policy": "scripted",
         "passed": false,
-        "wallMs": 1023,
+        "wallMs": 1181,
         "planMs": 0,
         "plans": 0,
         "outcomes": [
@@ -3450,7 +3451,7 @@
                 }
               ]
             },
-            "durationMs": 651
+            "durationMs": 652
           },
           {
             "step": {
@@ -3479,11 +3480,25 @@
             "source": "scripted",
             "ok": false,
             "error": "Error: Navigation ended before reaching the goal",
-            "durationMs": 118
+            "durationMs": 122
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                -2
+              ]
+            },
+            "source": "scripted",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 152
           }
         ],
         "serverPosition": "PrimitiveLab has the following entity data: [0.5d, -59.0d, 0.5d]",
-        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 1}, id: \"minecraft:stone_pickaxe\"}]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 1}, id: \"minecraft:stone_pickaxe\"}, {count: 1, Slot: 1b, id: \"minecraft:cobblestone\"}]",
         "disturbed": true
       },
       {
@@ -4384,5 +4399,178 @@
   "checks": {
     "nodePassed": 196,
     "infraPassed": 34
+  },
+  "scriptedChangedControl": {
+    "event": "PRIMITIVE_CASE_RESULT",
+    "scenario": "changed_control",
+    "policy": "scripted",
+    "passed": true,
+    "wallMs": 2315,
+    "planMs": 0,
+    "plans": 0,
+    "outcomes": [
+      {
+        "step": {
+          "op": "equip",
+          "item": "stone_pickaxe"
+        },
+        "source": "scripted",
+        "ok": true,
+        "result": {
+          "held": "stone_pickaxe",
+          "position": [
+            0.5,
+            -59,
+            0.5
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            }
+          ]
+        },
+        "durationMs": 2
+      },
+      {
+        "step": {
+          "op": "dig",
+          "target": [
+            1,
+            -58,
+            0
+          ],
+          "expect": "stone"
+        },
+        "source": "scripted",
+        "ok": true,
+        "result": {
+          "removed": {
+            "position": [
+              1,
+              -58,
+              0
+            ],
+            "name": "stone"
+          },
+          "position": [
+            0.5,
+            -59,
+            0.5
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            }
+          ]
+        },
+        "durationMs": 654
+      },
+      {
+        "step": {
+          "op": "dig",
+          "target": [
+            1,
+            -59,
+            0
+          ],
+          "expect": "stone"
+        },
+        "source": "scripted",
+        "ok": true,
+        "result": {
+          "removed": {
+            "position": [
+              1,
+              -59,
+              0
+            ],
+            "name": "stone"
+          },
+          "position": [
+            0.5,
+            -59,
+            0.5
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            },
+            {
+              "name": "cobblestone",
+              "count": 1
+            }
+          ]
+        },
+        "durationMs": 658
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            2,
+            -59,
+            0
+          ]
+        },
+        "source": "scripted",
+        "ok": true,
+        "result": {
+          "position": [
+            2.5,
+            -59,
+            0.5002969335131866
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            },
+            {
+              "name": "cobblestone",
+              "count": 2
+            }
+          ],
+          "moved": 2.0000000220423777
+        },
+        "durationMs": 493
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            2,
+            -59,
+            -2
+          ]
+        },
+        "source": "scripted",
+        "ok": true,
+        "result": {
+          "position": [
+            2.5002969335132708,
+            -59,
+            -1.5
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            },
+            {
+              "name": "cobblestone",
+              "count": 2
+            }
+          ],
+          "moved": 2.000296955552292
+        },
+        "durationMs": 506
+      }
+    ],
+    "serverPosition": "PrimitiveLab has the following entity data: [2.5002969335132708d, -59.0d, -1.5d]",
+    "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+    "disturbed": false
   }
 }

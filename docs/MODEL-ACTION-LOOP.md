@@ -85,6 +85,7 @@ obstructions and crafted the pickaxe, but took 37-74 seconds. Earlier attempts
 also produced schema errors and 60-second timeouts.
 
 The hand-authored scripted baseline completed four fixtures and failed after
-the unexpected world change. The seeded random baseline completed none within
+the unexpected world change. A no-change control verifies that the same script
+reaches the full objective when its route stays open. The seeded random baseline completed none within
 18 actions. These are smoke checks on small tasks, not a general model
 benchmark. [Full recorded results](evidence/model-primitives-2026-09-23.json).

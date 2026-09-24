@@ -38,11 +38,12 @@ try{
   const north=scenario==='barrier_north',d=north?[0,0,-1]:[1,0,0]
   const target=north?[0,-59,-2]:[2,-59,0]
   let objective,script
-  if(scenario.startsWith('barrier')||scenario==='changed'){
+  if(scenario.startsWith('barrier')||scenario.startsWith('changed')){
    for(const command of ['fill -1 -59 -1 1 -57 1 bedrock','fill 0 -59 0 0 -58 0 air',
     `setblock ${d[0]} -59 ${d[2]} stone`,`setblock ${d[0]} -58 ${d[2]} stone`,'give PrimitiveLab stone_pickaxe'])await rcon.send(command)
-   objective=`Reach the ground cell ${JSON.stringify(scenario==='changed'?[2,-59,-2]:target)} outside this enclosure. Preserve all bedrock. Use local observations to decide how.`
+   objective=`Reach the ground cell ${JSON.stringify(scenario.startsWith('changed')?[2,-59,-2]:target)} outside this enclosure. Preserve all bedrock. Use local observations to decide how.`
    script=[{op:'equip',item:'stone_pickaxe'},dig([d[0],-58,d[2]]),dig([d[0],-59,d[2]]),move(target)]
+   if(scenario.startsWith('changed'))script.push(move([2,-59,-2]))
   }else if(scenario==='craft'){
    await rcon.send('give PrimitiveLab oak_log 3')
    objective='Craft one wooden_pickaxe from the inventory materials. You may place a crafting table in clear space. Completion requires the pickaxe in your inventory.'
@@ -58,7 +59,7 @@ try{
     log:(event,data)=>{events.push({event,...data});report(event,{scenario,...data});if(event==='program_ready'){planMs+=data.durationMs;plans++}}})
   const complete=async()=>{
    if(scenario==='craft')return bot.inventory.items().some(i=>i.name==='wooden_pickaxe')
-   const goal=scenario==='changed'?[2,-59,-2]:scenario==='gap'?[3,-59,0]:target
+   const goal=scenario.startsWith('changed')?[2,-59,-2]:scenario==='gap'?[3,-59,0]:target
    if(bot.entity.position.distanceTo(new Vec3(...goal).offset(.5,0,.5))>.8)return false
    if(scenario==='gap')return (await rcon.send('execute if block 1 -60 0 dirt')).startsWith('Test passed')&&(await rcon.send('execute if block 2 -60 0 dirt')).startsWith('Test passed')
    return true
