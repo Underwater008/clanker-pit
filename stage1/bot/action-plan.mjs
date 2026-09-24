@@ -163,7 +163,7 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
         const previous = memory.history.findLast((h) => h.type === 'action' && !h.ok)
         if (previous?.context === context() && JSON.stringify(previous.step) === JSON.stringify(candidate.steps[0]))
           throw Error('Unchanged failed first step; choose a different action or target')
-        selected = { ...candidate, intention: program.intention, source, issuedAt: now(), model: response.model }
+        selected = { ...candidate, intention: program.intention, source, basedOnAt: job.startedAt, issuedAt: now(), model: response.model }
         queue = candidate.steps.slice()
         fast?.controller.abort(); fastReady = null
         status = { status: 'ready', durationMs: now() - job.startedAt }
@@ -178,10 +178,29 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
       } finally { if (pending === job) pending = null }
     })()
   }
+  // Jev may finish an atomic action while Kimi's request is in flight. If
+  // that exact server-confirmed mutation already satisfies the next program
+  // step, credit Jev and continue the remaining model-authored steps.
+  function reconcile() {
+    while (selected && queue.length && ['dig','place'].includes(queue[0].op)) {
+      const step=queue[0], key=step.target.join(',')
+      const match=memory.history.findLast(h=>h.type==='action' && h.source==='jev_primitives' && h.ok &&
+        h.at>=selected.basedOnAt && h.step?.op===step.op && h.step.target?.join(',')===key &&
+        (step.op==='dig' ? h.result?.removed?.name===step.expect : h.result?.placed?.name===step.item))
+      if(!match)break
+      const current=primitives.observe()
+      if(!observedPositions(current).has(key))break
+      const block=current.blocks.find(b=>b.positions.some(p=>p.join(',')===key))
+      if((block?.name??'air')!==(step.op==='dig'?'air':step.item))break
+      queue.shift()
+      log('program_step_reconciled',{step,source:'jev_primitives',evidence:step.op==='dig'?match.result.removed:match.result.placed})
+    }
+  }
   return {
     next() {
       if (closed) return null
       if (selected && now() - selected.issuedAt > 120000) { queue = []; selected = null }
+      reconcile()
       if (!queue.length) {
         request()
         if(fastReady){const choice=fastReady;fastReady=null;lastAttemptContext=context();attemptSource=choice.source;return choice}
@@ -193,7 +212,7 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
     },
     record(step, { result, error } = {}) {
       remember({ type: 'action', step, source: attemptSource, context: lastAttemptContext, ok: !error, result: result?.observed ? { observed: {position: result.observed.position, inventory: result.observed.inventory} } : result, error: error ? String(error) : undefined })
-      if (error) { queue = []; selected = null; nextRequest = now(); log('program_invalidated', { step, error: String(error) }) }
+      if (error && attemptSource !== 'jev_primitives') { queue = []; selected = null; nextRequest = now(); log('program_invalidated', { step, error: String(error) }) }
     },
     cancel,
     close() { closed = true; cancel('closed') },
