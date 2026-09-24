@@ -130,19 +130,21 @@ test('Jev sees failed primitive evidence when selecting the next model program',
 
 
 test('Jev server-confirmed digging satisfies an overlapping Kimi step without crediting Kimi',async()=>{
- let release,removed=false
- const dig={op:'dig',target:[1,64,0],expect:'stone'},events=[]
- const observe=()=>({...observation(),blocks:[{name:removed?'air':'stone',positions:[[1,64,0]]},{name:'air',positions:[[2,64,0]]}]})
- const c=setup(()=>new Promise(r=>{release=r}),{tactical:true,primitives:{observe,affordances:()=>[dig,move(2)]},
-  jevChoose:async()=>({choice:'action_0'}),log:(event,data)=>events.push({event,...data})})
- c.next();await new Promise(setImmediate)
- const tactical=c.next();assert.equal(tactical.source,'jev_primitives')
- release(program([dig,move(2)]));await c.pending
- removed=true;c.record(tactical.step,{result:{removed:{name:'stone',position:[1,64,0]}}})
- assert.deepEqual(c.next().step,move(2))
- assert.ok(events.some(e=>e.event==='program_step_reconciled'&&e.source==='jev_primitives'))
- assert.equal(events.some(e=>e.event==='program_invalidated'),false)
- c.close()
+ for(const replacement of ['air','water']){
+  let release,removed=false
+  const dig={op:'dig',target:[1,64,0],expect:'stone'},events=[]
+  const observe=()=>({...observation(),blocks:[{name:removed?replacement:'stone',positions:[[1,64,0]]},{name:'air',positions:[[2,64,0]]}]})
+  const c=setup(()=>new Promise(r=>{release=r}),{tactical:true,primitives:{observe,affordances:()=>[dig,move(2)]},
+   jevChoose:async()=>({choice:'action_0'}),log:(event,data)=>events.push({event,...data})})
+  c.next();await new Promise(setImmediate)
+  const tactical=c.next();assert.equal(tactical.source,'jev_primitives')
+  release(program([dig,move(2)]));await c.pending
+  removed=true;c.record(tactical.step,{result:{removed:{name:'stone',position:[1,64,0]},replacedBy:replacement}})
+  assert.deepEqual(c.next().step,move(2))
+  assert.ok(events.some(e=>e.event==='program_step_reconciled'&&e.source==='jev_primitives'))
+  assert.equal(events.some(e=>e.event==='program_invalidated'),false)
+  c.close()
+ }
 })
 
 test('a failing Jev step in flight cannot cancel a newly ready Kimi program',async()=>{
