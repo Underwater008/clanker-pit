@@ -196,6 +196,13 @@ only a genuinely new threat, contact, fresh damage, a meaningful position
 change, or timeout restores the flee reflex. This lets the model attempt
 another local response to a persistently unreachable mob.
 
+Even after that fix, distant visible mobs repeatedly interrupted Mira's
+Kimi-authored moves and digs before server confirmation. The primitive canary
+now leaves those non-imminent threats to the model; contact within three blocks,
+fresh damage, or low health still invokes the fast flee reflex. Legacy bounded-skill
+clankers keep their existing safety threshold. This changes the model's
+control authority, not its ability to escape or win a fight.
+
 
 ## Reconcile overlapping actions
 
