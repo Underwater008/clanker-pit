@@ -171,6 +171,13 @@ This is a control-authority change, not a guarantee of good planning. Judge it
 by server-confirmed village work and sustained movement, not by the program
 text or a short successful action.
 
+Routine plans are now private thinking. The previous planner spoke a new task
+promise on every revision, which made stalled clankers repeat the same intention
+in public chat. Public clanker speech is reserved for council and reflections
+on confirmed events such as blasts, coolant feeds, repaired holes, completed
+homes, and new villagers. Reflections see recent chat and may choose silence.
+This changes when they speak; it does not by itself establish natural dialogue.
+
 
 ## Reconcile overlapping actions
 
