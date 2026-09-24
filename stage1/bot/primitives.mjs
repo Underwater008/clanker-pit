@@ -28,6 +28,12 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
       if (!groups.has(key)) groups.set(key,{name:b.name,stateId:b.stateId,solid:solid(b),editable:edit,reserved,properties:b.getProperties?.() ?? {},positions:[]})
       groups.get(key).positions.push(xyz(p))
     }
+    const feasibleDigTargets=[]
+    for(const group of groups.values())if(group.editable)for(const at of group.positions){
+      const block=bot.blockAt(vec(at))
+      try { safeDig(block);if(bot.digTime(block)<=10000)feasibleDigTargets.push({target:at,expect:block.name}) } catch {}
+    }
+    feasibleDigTargets.sort((a,b)=>vec(a.target).distanceTo(bot.entity.position)-vec(b.target).distanceTo(bot.entity.position))
     return { position: xyz(bot.entity.position), dimension: bot.game.dimension, health: bot.health, food: bot.food,
       body: {inWater:Boolean(bot.entity.isInWater),inLava:Boolean(bot.entity.isInLava),onGround:Boolean(bot.entity.onGround),
         yaw:bot.entity.yaw,pitch:bot.entity.pitch,air:bot.oxygenLevel ?? null},
@@ -36,10 +42,10 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
       unloaded, air: 'Every cell inside bounds absent from blocks and unloaded is observed air.',
       adjacent: Object.fromEntries([[1,0,'east'],[-1,0,'west'],[0,1,'south'],[0,-1,'north']].map(([x,z,d])=>[d,
         [-1,0,1].map(y=>{const p=origin.offset(x,y,z),b=bot.blockAt(p);return {position:xyz(p),name:b?.name??'unloaded',editable:editable(b)}})])),
-      blocks:[...groups.values()], entities: Object.values(bot.entities ?? {}).filter(e=>e!==bot.entity && e.position.distanceTo(bot.entity.position)<=radius)
+      blocks:[...groups.values()], feasibleDigTargets:feasibleDigTargets.slice(0,16), entities: Object.values(bot.entities ?? {}).filter(e=>e!==bot.entity && e.position.distanceTo(bot.entity.position)<=radius)
         .map(e=>({id:e.id,name:e.name,position:xyz(e.position)})),
       controls: {forward:'toward yaw',jump:'jump on ground or swim up in water',yawRadians:{south:0,west:Math.PI/2,east:-Math.PI/2,north:Math.PI}},
-      limits: { radius, maxReach:4.5, automaticDigging:false, automaticPlacement:false, inspection:'loaded local blocks, not pixels; editable is permission, not a suggested target' } }
+      limits: { radius, maxReach:4.5, automaticDigging:false, automaticPlacement:false, inspection:'loaded local blocks, not pixels; editable is permission; feasibleDigTargets includes targets currently visible, reachable, and safe to mine' } }
   }
   function inspect(p) {
     if (Math.max(Math.abs(p.x-bot.entity.position.x),Math.abs(p.z-bot.entity.position.z))>radius+1 || Math.abs(p.y-bot.entity.position.y)>4)
@@ -65,13 +71,9 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
     const add=s=>{if(!choices.some(c=>JSON.stringify(c)===JSON.stringify(s)))choices.push(s)}
     for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1],[2,0],[-2,0],[0,2],[0,-2]]) for(const dy of [0,1,-1]) {
       const p=origin.offset(dx,dy,dz),cells=[bot.blockAt(p.offset(0,-1,0)),bot.blockAt(p),bot.blockAt(p.offset(0,1,0))]
-      if(cells.every(Boolean)&&full(cells[0])&&!solid(cells[1])&&!solid(cells[2])&&!cells.some(b=>dangerous.has(b.name))){add({op:'move',target:xyz(p)});break}
+      if(!bot.entity.isInWater && cells.every(Boolean)&&full(cells[0])&&!solid(cells[1])&&!solid(cells[2])&&!cells.some(b=>dangerous.has(b.name))){add({op:'move',target:xyz(p)});break}
     }
-    for(const b of obs.blocks.filter(b=>b.editable)) for(const at of b.positions.slice().sort((a,b)=>vec(a).distanceTo(bot.entity.position)-vec(b).distanceTo(bot.entity.position))) {
-      const block=bot.blockAt(vec(at))
-      try{safeDig(block);if(bot.digTime(block)<=10000)add({op:'dig',target:at,expect:block.name})}catch{}
-      if(choices.filter(s=>s.op==='dig').length>=8)break
-    }
+    for(const target of obs.feasibleDigTargets.slice(0,8))add({op:'dig',...target})
     for(const item of bot.inventory.items().filter(i=>/(pickaxe|axe|shovel|sword)$/.test(i.name)&&i.name!==bot.heldItem?.name).slice(0,4))add({op:'equip',item:item.name})
     const table=obs.blocks.find(b=>b.name==='crafting_table')?.positions.map(vec).find(p=>p.distanceTo(bot.entity.position)<4)
     const key=JSON.stringify(obs.inventory)+JSON.stringify(table)
@@ -120,6 +122,7 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
       if(s.op==='inspect') return { observed:observe(), progress:false }
       if(s.op==='wait') { await sleep(s.ticks*50,undefined,{signal:ctl.signal});check();return { ...after(),progress:false } }
       if(s.op==='move') {
+        if(bot.entity.isInWater)throw Error('Walking from water is unavailable; use control to climb onto dry ground first')
         const p=vec(s.target), feet=inspect(p), head=inspect(p.offset(0,1,0)), floor=inspect(p.offset(0,-1,0))
         if(solid(feet)||solid(head)||!full(floor)||[feet,head,floor].some(b=>dangerous.has(b.name))) throw Error('Move destination lacks safe support/headroom')
         const m=movements(), saved={canDig:m.canDig,allow1by1towers:m.allow1by1towers,canOpenDoors:m.canOpenDoors}

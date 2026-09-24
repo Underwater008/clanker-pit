@@ -1,0 +1,1963 @@
+{
+  "isolatedModelBarrier": {
+    "event": "PRIMITIVE_CASE_RESULT",
+    "scenario": "barrier_east",
+    "policy": "model",
+    "passed": true,
+    "wallMs": 22384,
+    "planMs": 20431,
+    "plans": 1,
+    "outcomes": [
+      {
+        "step": {
+          "op": "dig",
+          "target": [
+            1,
+            -58,
+            0
+          ],
+          "expect": "stone"
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "removed": {
+            "position": [
+              1,
+              -58,
+              0
+            ],
+            "name": "stone"
+          },
+          "position": [
+            0.5,
+            -59,
+            0.5
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            }
+          ]
+        },
+        "durationMs": 653
+      },
+      {
+        "step": {
+          "op": "dig",
+          "target": [
+            1,
+            -59,
+            0
+          ],
+          "expect": "stone"
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "removed": {
+            "position": [
+              1,
+              -59,
+              0
+            ],
+            "name": "stone"
+          },
+          "position": [
+            0.5,
+            -59,
+            0.5
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            }
+          ]
+        },
+        "durationMs": 653
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            1,
+            -59,
+            0
+          ]
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            1.3322908085210405,
+            -59,
+            0.5001051685678637
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            }
+          ],
+          "moved": 0.8322908151656097
+        },
+        "durationMs": 296
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            2,
+            -59,
+            0
+          ]
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            2.5,
+            -59,
+            0.5002103371357274
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            },
+            {
+              "name": "cobblestone",
+              "count": 2
+            }
+          ],
+          "moved": 1.1677091962149106
+        },
+        "durationMs": 310
+      }
+    ],
+    "serverPosition": "PrimitiveLab has the following entity data: [2.5d, -59.0d, 0.5002103371357274d]",
+    "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+    "disturbed": false
+  },
+  "isolatedModelWaterDevelopment": {
+    "event": "PRIMITIVE_CASE_RESULT",
+    "scenario": "water",
+    "policy": "model",
+    "passed": false,
+    "wallMs": 184357,
+    "planMs": 86260,
+    "plans": 5,
+    "outcomes": [
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "jump",
+            "forward"
+          ],
+          "ticks": 8,
+          "yaw": -1.5707963267948966
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            1.0527266965712347,
+            -60.037916880170016,
+            0.5001157541796806
+          ],
+          "inventory": [],
+          "moved": 0.784854341954007,
+          "body": {
+            "inWater": true,
+            "onGround": false
+          }
+        },
+        "durationMs": 405
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "jump",
+            "forward"
+          ],
+          "ticks": 8,
+          "yaw": -1.5707963267948966
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            1.8664210920836806,
+            -59.841231091897484,
+            0.5002315083593611
+          ],
+          "inventory": [],
+          "moved": 0.8371283545525036,
+          "body": {
+            "inWater": true,
+            "onGround": false
+          }
+        },
+        "durationMs": 404
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            3,
+            -59,
+            0
+          ]
+        },
+        "source": "planner+jev",
+        "ok": false,
+        "error": "NoPath: No path to the goal!",
+        "durationMs": 2451
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "jump",
+            "forward"
+          ],
+          "ticks": 8,
+          "yaw": -1.5707963267948966
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            1.0641549562410062,
+            -58.688936902410276,
+            -1.6998987150927802
+          ],
+          "inventory": [],
+          "moved": 0.9190425647700544,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 403
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "jump",
+            "forward"
+          ],
+          "ticks": 8,
+          "yaw": -1.5707963267948966
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            2.141081857508648,
+            -60.84214414359928,
+            -1.7
+          ],
+          "inventory": [],
+          "moved": 2.407503475478552,
+          "body": {
+            "inWater": true,
+            "onGround": false
+          }
+        },
+        "durationMs": 404
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            3,
+            -59,
+            0
+          ]
+        },
+        "source": "planner+jev",
+        "ok": false,
+        "error": "NoPath: No path to the goal!",
+        "durationMs": 2544
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "jump",
+            "forward"
+          ],
+          "ticks": 8,
+          "yaw": -1.5707963267948966
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            0.5999175179302572,
+            -60.04523152668205,
+            -0.6416950121528575
+          ],
+          "inventory": [],
+          "moved": 0.9324848969037373,
+          "body": {
+            "inWater": true,
+            "onGround": false
+          }
+        },
+        "durationMs": 404
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "jump",
+            "forward"
+          ],
+          "ticks": 8,
+          "yaw": -1.5707963267948966
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            1.3460027115956679,
+            -59.26083063913301,
+            -0.6415792579731778
+          ],
+          "inventory": [],
+          "moved": 1.082556179601551,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 402
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            3,
+            -59,
+            0
+          ]
+        },
+        "source": "planner+jev",
+        "ok": false,
+        "error": "NoPath: No path to the goal!",
+        "durationMs": 1523
+      },
+      {
+        "step": {
+          "op": "inspect"
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "observed": {
+            "position": [
+              0.441326453378106,
+              -60.11759120147924,
+              1.5
+            ],
+            "dimension": "overworld",
+            "health": 20,
+            "food": 20,
+            "body": {
+              "inWater": true,
+              "inLava": false,
+              "onGround": false,
+              "yaw": -0.8149343243091929,
+              "pitch": -0.0008108959464676602,
+              "air": 20
+            },
+            "held": null,
+            "inventory": [],
+            "bounds": {
+              "min": [
+                -4,
+                -62,
+                -3
+              ],
+              "max": [
+                4,
+                -58,
+                5
+              ]
+            },
+            "unloaded": [],
+            "air": "Every cell inside bounds absent from blocks and unloaded is observed air.",
+            "adjacent": {
+              "east": [
+                {
+                  "position": [
+                    1,
+                    -62,
+                    1
+                  ],
+                  "name": "bedrock",
+                  "editable": false
+                },
+                {
+                  "position": [
+                    1,
+                    -61,
+                    1
+                  ],
+                  "name": "water",
+                  "editable": false
+                },
+                {
+                  "position": [
+                    1,
+                    -60,
+                    1
+                  ],
+                  "name": "water",
+                  "editable": false
+                }
+              ],
+              "west": [
+                {
+                  "position": [
+                    -1,
+                    -62,
+                    1
+                  ],
+                  "name": "bedrock",
+                  "editable": false
+                },
+                {
+                  "position": [
+                    -1,
+                    -61,
+                    1
+                  ],
+                  "name": "water",
+                  "editable": false
+                },
+                {
+                  "position": [
+                    -1,
+                    -60,
+                    1
+                  ],
+                  "name": "water",
+                  "editable": false
+                }
+              ],
+              "south": [
+                {
+                  "position": [
+                    0,
+                    -62,
+                    2
+                  ],
+                  "name": "bedrock",
+                  "editable": false
+                },
+                {
+                  "position": [
+                    0,
+                    -61,
+                    2
+                  ],
+                  "name": "water",
+                  "editable": false
+                },
+                {
+                  "position": [
+                    0,
+                    -60,
+                    2
+                  ],
+                  "name": "water",
+                  "editable": false
+                }
+              ],
+              "north": [
+                {
+                  "position": [
+                    0,
+                    -62,
+                    0
+                  ],
+                  "name": "bedrock",
+                  "editable": false
+                },
+                {
+                  "position": [
+                    0,
+                    -61,
+                    0
+                  ],
+                  "name": "water",
+                  "editable": false
+                },
+                {
+                  "position": [
+                    0,
+                    -60,
+                    0
+                  ],
+                  "name": "water",
+                  "editable": false
+                }
+              ]
+            },
+            "blocks": [
+              {
+                "name": "water",
+                "stateId": 82,
+                "solid": false,
+                "editable": false,
+                "reserved": false,
+                "properties": {
+                  "level": "2"
+                },
+                "positions": [
+                  [
+                    -4,
+                    -62,
+                    -3
+                  ],
+                  [
+                    -4,
+                    -62,
+                    3
+                  ],
+                  [
+                    -3,
+                    -62,
+                    4
+                  ],
+                  [
+                    -2,
+                    -62,
+                    5
+                  ],
+                  [
+                    -1,
+                    -62,
+                    5
+                  ],
+                  [
+                    0,
+                    -62,
+                    5
+                  ],
+                  [
+                    1,
+                    -62,
+                    5
+                  ],
+                  [
+                    2,
+                    -62,
+                    5
+                  ],
+                  [
+                    3,
+                    -62,
+                    4
+                  ],
+                  [
+                    4,
+                    -62,
+                    -3
+                  ],
+                  [
+                    4,
+                    -62,
+                    3
+                  ]
+                ]
+              },
+              {
+                "name": "water",
+                "stateId": 81,
+                "solid": false,
+                "editable": false,
+                "reserved": false,
+                "properties": {
+                  "level": "1"
+                },
+                "positions": [
+                  [
+                    -4,
+                    -62,
+                    -2
+                  ],
+                  [
+                    -4,
+                    -62,
+                    -1
+                  ],
+                  [
+                    -4,
+                    -62,
+                    0
+                  ],
+                  [
+                    -4,
+                    -62,
+                    1
+                  ],
+                  [
+                    -4,
+                    -62,
+                    2
+                  ],
+                  [
+                    -3,
+                    -62,
+                    -3
+                  ],
+                  [
+                    -3,
+                    -62,
+                    3
+                  ],
+                  [
+                    -3,
+                    -61,
+                    -2
+                  ],
+                  [
+                    -3,
+                    -61,
+                    -1
+                  ],
+                  [
+                    -3,
+                    -61,
+                    0
+                  ],
+                  [
+                    -3,
+                    -61,
+                    1
+                  ],
+                  [
+                    -3,
+                    -61,
+                    2
+                  ],
+                  [
+                    -2,
+                    -62,
+                    4
+                  ],
+                  [
+                    -2,
+                    -61,
+                    -3
+                  ],
+                  [
+                    -2,
+                    -61,
+                    3
+                  ],
+                  [
+                    -1,
+                    -62,
+                    4
+                  ],
+                  [
+                    -1,
+                    -61,
+                    -3
+                  ],
+                  [
+                    -1,
+                    -61,
+                    3
+                  ],
+                  [
+                    0,
+                    -62,
+                    4
+                  ],
+                  [
+                    0,
+                    -61,
+                    -3
+                  ],
+                  [
+                    0,
+                    -61,
+                    3
+                  ],
+                  [
+                    1,
+                    -62,
+                    4
+                  ],
+                  [
+                    1,
+                    -61,
+                    -3
+                  ],
+                  [
+                    1,
+                    -61,
+                    3
+                  ],
+                  [
+                    2,
+                    -62,
+                    4
+                  ],
+                  [
+                    2,
+                    -61,
+                    -3
+                  ],
+                  [
+                    2,
+                    -61,
+                    3
+                  ],
+                  [
+                    3,
+                    -62,
+                    -3
+                  ],
+                  [
+                    3,
+                    -62,
+                    3
+                  ],
+                  [
+                    3,
+                    -61,
+                    -2
+                  ],
+                  [
+                    3,
+                    -61,
+                    -1
+                  ],
+                  [
+                    3,
+                    -61,
+                    0
+                  ],
+                  [
+                    3,
+                    -61,
+                    1
+                  ],
+                  [
+                    3,
+                    -61,
+                    2
+                  ],
+                  [
+                    4,
+                    -62,
+                    -2
+                  ],
+                  [
+                    4,
+                    -62,
+                    -1
+                  ],
+                  [
+                    4,
+                    -62,
+                    0
+                  ],
+                  [
+                    4,
+                    -62,
+                    1
+                  ],
+                  [
+                    4,
+                    -62,
+                    2
+                  ]
+                ]
+              },
+              {
+                "name": "water",
+                "stateId": 83,
+                "solid": false,
+                "editable": false,
+                "reserved": false,
+                "properties": {
+                  "level": "3"
+                },
+                "positions": [
+                  [
+                    -4,
+                    -62,
+                    4
+                  ],
+                  [
+                    -3,
+                    -62,
+                    5
+                  ],
+                  [
+                    3,
+                    -62,
+                    5
+                  ],
+                  [
+                    4,
+                    -62,
+                    4
+                  ]
+                ]
+              },
+              {
+                "name": "water",
+                "stateId": 84,
+                "solid": false,
+                "editable": false,
+                "reserved": false,
+                "properties": {
+                  "level": "4"
+                },
+                "positions": [
+                  [
+                    -4,
+                    -62,
+                    5
+                  ],
+                  [
+                    4,
+                    -62,
+                    5
+                  ]
+                ]
+              },
+              {
+                "name": "bedrock",
+                "stateId": 79,
+                "solid": true,
+                "editable": false,
+                "reserved": false,
+                "properties": {},
+                "positions": [
+                  [
+                    -4,
+                    -60,
+                    -3
+                  ],
+                  [
+                    -4,
+                    -60,
+                    -2
+                  ],
+                  [
+                    -4,
+                    -60,
+                    -1
+                  ],
+                  [
+                    -4,
+                    -60,
+                    0
+                  ],
+                  [
+                    -4,
+                    -60,
+                    1
+                  ],
+                  [
+                    -4,
+                    -60,
+                    2
+                  ],
+                  [
+                    -4,
+                    -60,
+                    3
+                  ],
+                  [
+                    -4,
+                    -60,
+                    4
+                  ],
+                  [
+                    -4,
+                    -60,
+                    5
+                  ],
+                  [
+                    -3,
+                    -60,
+                    -3
+                  ],
+                  [
+                    -3,
+                    -60,
+                    -2
+                  ],
+                  [
+                    -3,
+                    -60,
+                    -1
+                  ],
+                  [
+                    -3,
+                    -60,
+                    0
+                  ],
+                  [
+                    -3,
+                    -60,
+                    1
+                  ],
+                  [
+                    -3,
+                    -60,
+                    2
+                  ],
+                  [
+                    -3,
+                    -60,
+                    3
+                  ],
+                  [
+                    -3,
+                    -60,
+                    4
+                  ],
+                  [
+                    -3,
+                    -60,
+                    5
+                  ],
+                  [
+                    -2,
+                    -62,
+                    -2
+                  ],
+                  [
+                    -2,
+                    -62,
+                    -1
+                  ],
+                  [
+                    -2,
+                    -62,
+                    0
+                  ],
+                  [
+                    -2,
+                    -62,
+                    1
+                  ],
+                  [
+                    -2,
+                    -62,
+                    2
+                  ],
+                  [
+                    -2,
+                    -60,
+                    -3
+                  ],
+                  [
+                    -2,
+                    -60,
+                    3
+                  ],
+                  [
+                    -2,
+                    -60,
+                    4
+                  ],
+                  [
+                    -2,
+                    -60,
+                    5
+                  ],
+                  [
+                    -1,
+                    -62,
+                    -2
+                  ],
+                  [
+                    -1,
+                    -62,
+                    -1
+                  ],
+                  [
+                    -1,
+                    -62,
+                    0
+                  ],
+                  [
+                    -1,
+                    -62,
+                    1
+                  ],
+                  [
+                    -1,
+                    -62,
+                    2
+                  ],
+                  [
+                    -1,
+                    -60,
+                    -3
+                  ],
+                  [
+                    -1,
+                    -60,
+                    3
+                  ],
+                  [
+                    -1,
+                    -60,
+                    4
+                  ],
+                  [
+                    -1,
+                    -60,
+                    5
+                  ],
+                  [
+                    0,
+                    -62,
+                    -2
+                  ],
+                  [
+                    0,
+                    -62,
+                    -1
+                  ],
+                  [
+                    0,
+                    -62,
+                    0
+                  ],
+                  [
+                    0,
+                    -62,
+                    1
+                  ],
+                  [
+                    0,
+                    -62,
+                    2
+                  ],
+                  [
+                    0,
+                    -60,
+                    -3
+                  ],
+                  [
+                    0,
+                    -60,
+                    3
+                  ],
+                  [
+                    0,
+                    -60,
+                    4
+                  ],
+                  [
+                    0,
+                    -60,
+                    5
+                  ],
+                  [
+                    1,
+                    -62,
+                    -2
+                  ],
+                  [
+                    1,
+                    -62,
+                    -1
+                  ],
+                  [
+                    1,
+                    -62,
+                    0
+                  ],
+                  [
+                    1,
+                    -62,
+                    1
+                  ],
+                  [
+                    1,
+                    -62,
+                    2
+                  ],
+                  [
+                    1,
+                    -60,
+                    -3
+                  ],
+                  [
+                    1,
+                    -60,
+                    3
+                  ],
+                  [
+                    1,
+                    -60,
+                    4
+                  ],
+                  [
+                    1,
+                    -60,
+                    5
+                  ],
+                  [
+                    2,
+                    -62,
+                    -2
+                  ],
+                  [
+                    2,
+                    -62,
+                    -1
+                  ],
+                  [
+                    2,
+                    -62,
+                    0
+                  ],
+                  [
+                    2,
+                    -62,
+                    1
+                  ],
+                  [
+                    2,
+                    -62,
+                    2
+                  ],
+                  [
+                    2,
+                    -60,
+                    -3
+                  ],
+                  [
+                    2,
+                    -60,
+                    3
+                  ],
+                  [
+                    2,
+                    -60,
+                    4
+                  ],
+                  [
+                    2,
+                    -60,
+                    5
+                  ],
+                  [
+                    3,
+                    -60,
+                    -3
+                  ],
+                  [
+                    3,
+                    -60,
+                    -2
+                  ],
+                  [
+                    3,
+                    -60,
+                    -1
+                  ],
+                  [
+                    3,
+                    -60,
+                    0
+                  ],
+                  [
+                    3,
+                    -60,
+                    1
+                  ],
+                  [
+                    3,
+                    -60,
+                    2
+                  ],
+                  [
+                    3,
+                    -60,
+                    3
+                  ],
+                  [
+                    3,
+                    -60,
+                    4
+                  ],
+                  [
+                    3,
+                    -60,
+                    5
+                  ],
+                  [
+                    4,
+                    -60,
+                    -3
+                  ],
+                  [
+                    4,
+                    -60,
+                    -2
+                  ],
+                  [
+                    4,
+                    -60,
+                    -1
+                  ],
+                  [
+                    4,
+                    -60,
+                    0
+                  ],
+                  [
+                    4,
+                    -60,
+                    1
+                  ],
+                  [
+                    4,
+                    -60,
+                    2
+                  ],
+                  [
+                    4,
+                    -60,
+                    3
+                  ],
+                  [
+                    4,
+                    -60,
+                    4
+                  ],
+                  [
+                    4,
+                    -60,
+                    5
+                  ]
+                ]
+              },
+              {
+                "name": "water",
+                "stateId": 88,
+                "solid": false,
+                "editable": false,
+                "reserved": false,
+                "properties": {
+                  "level": "8"
+                },
+                "positions": [
+                  [
+                    -3,
+                    -62,
+                    -2
+                  ],
+                  [
+                    -3,
+                    -62,
+                    -1
+                  ],
+                  [
+                    -3,
+                    -62,
+                    0
+                  ],
+                  [
+                    -3,
+                    -62,
+                    1
+                  ],
+                  [
+                    -3,
+                    -62,
+                    2
+                  ],
+                  [
+                    -2,
+                    -62,
+                    -3
+                  ],
+                  [
+                    -2,
+                    -62,
+                    3
+                  ],
+                  [
+                    -1,
+                    -62,
+                    -3
+                  ],
+                  [
+                    -1,
+                    -62,
+                    3
+                  ],
+                  [
+                    0,
+                    -62,
+                    -3
+                  ],
+                  [
+                    0,
+                    -62,
+                    3
+                  ],
+                  [
+                    1,
+                    -62,
+                    -3
+                  ],
+                  [
+                    1,
+                    -62,
+                    3
+                  ],
+                  [
+                    2,
+                    -62,
+                    -3
+                  ],
+                  [
+                    2,
+                    -62,
+                    3
+                  ],
+                  [
+                    3,
+                    -62,
+                    -2
+                  ],
+                  [
+                    3,
+                    -62,
+                    -1
+                  ],
+                  [
+                    3,
+                    -62,
+                    0
+                  ],
+                  [
+                    3,
+                    -62,
+                    1
+                  ],
+                  [
+                    3,
+                    -62,
+                    2
+                  ]
+                ]
+              },
+              {
+                "name": "water",
+                "stateId": 80,
+                "solid": false,
+                "editable": false,
+                "reserved": false,
+                "properties": {
+                  "level": "0"
+                },
+                "positions": [
+                  [
+                    -2,
+                    -61,
+                    -2
+                  ],
+                  [
+                    -2,
+                    -61,
+                    -1
+                  ],
+                  [
+                    -2,
+                    -61,
+                    0
+                  ],
+                  [
+                    -2,
+                    -61,
+                    1
+                  ],
+                  [
+                    -2,
+                    -61,
+                    2
+                  ],
+                  [
+                    -2,
+                    -60,
+                    -2
+                  ],
+                  [
+                    -2,
+                    -60,
+                    -1
+                  ],
+                  [
+                    -2,
+                    -60,
+                    0
+                  ],
+                  [
+                    -2,
+                    -60,
+                    1
+                  ],
+                  [
+                    -2,
+                    -60,
+                    2
+                  ],
+                  [
+                    -1,
+                    -61,
+                    -2
+                  ],
+                  [
+                    -1,
+                    -61,
+                    -1
+                  ],
+                  [
+                    -1,
+                    -61,
+                    0
+                  ],
+                  [
+                    -1,
+                    -61,
+                    1
+                  ],
+                  [
+                    -1,
+                    -61,
+                    2
+                  ],
+                  [
+                    -1,
+                    -60,
+                    -2
+                  ],
+                  [
+                    -1,
+                    -60,
+                    -1
+                  ],
+                  [
+                    -1,
+                    -60,
+                    0
+                  ],
+                  [
+                    -1,
+                    -60,
+                    1
+                  ],
+                  [
+                    -1,
+                    -60,
+                    2
+                  ],
+                  [
+                    0,
+                    -61,
+                    -2
+                  ],
+                  [
+                    0,
+                    -61,
+                    -1
+                  ],
+                  [
+                    0,
+                    -61,
+                    0
+                  ],
+                  [
+                    0,
+                    -61,
+                    1
+                  ],
+                  [
+                    0,
+                    -61,
+                    2
+                  ],
+                  [
+                    0,
+                    -60,
+                    -2
+                  ],
+                  [
+                    0,
+                    -60,
+                    -1
+                  ],
+                  [
+                    0,
+                    -60,
+                    0
+                  ],
+                  [
+                    0,
+                    -60,
+                    1
+                  ],
+                  [
+                    0,
+                    -60,
+                    2
+                  ],
+                  [
+                    1,
+                    -61,
+                    -2
+                  ],
+                  [
+                    1,
+                    -61,
+                    -1
+                  ],
+                  [
+                    1,
+                    -61,
+                    0
+                  ],
+                  [
+                    1,
+                    -61,
+                    1
+                  ],
+                  [
+                    1,
+                    -61,
+                    2
+                  ],
+                  [
+                    1,
+                    -60,
+                    -2
+                  ],
+                  [
+                    1,
+                    -60,
+                    -1
+                  ],
+                  [
+                    1,
+                    -60,
+                    0
+                  ],
+                  [
+                    1,
+                    -60,
+                    1
+                  ],
+                  [
+                    1,
+                    -60,
+                    2
+                  ],
+                  [
+                    2,
+                    -61,
+                    -2
+                  ],
+                  [
+                    2,
+                    -61,
+                    -1
+                  ],
+                  [
+                    2,
+                    -61,
+                    0
+                  ],
+                  [
+                    2,
+                    -61,
+                    1
+                  ],
+                  [
+                    2,
+                    -61,
+                    2
+                  ],
+                  [
+                    2,
+                    -60,
+                    -2
+                  ],
+                  [
+                    2,
+                    -60,
+                    -1
+                  ],
+                  [
+                    2,
+                    -60,
+                    0
+                  ],
+                  [
+                    2,
+                    -60,
+                    1
+                  ],
+                  [
+                    2,
+                    -60,
+                    2
+                  ]
+                ]
+              }
+            ],
+            "feasibleDigTargets": [],
+            "entities": [],
+            "controls": {
+              "forward": "toward yaw",
+              "jump": "jump on ground or swim up in water",
+              "yawRadians": {
+                "south": 0,
+                "west": 1.5707963267948966,
+                "east": -1.5707963267948966,
+                "north": 3.141592653589793
+              }
+            },
+            "limits": {
+              "radius": 4,
+              "maxReach": 4.5,
+              "automaticDigging": false,
+              "automaticPlacement": false,
+              "inspection": "loaded local blocks, not pixels; editable is permission; feasibleDigTargets includes targets currently visible, reachable, and safe to mine"
+            }
+          },
+          "progress": false
+        },
+        "durationMs": 1
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.57
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            1.0807491360633668,
+            -59.1876728367701,
+            1.4996315661546342
+          ],
+          "inventory": [],
+          "moved": 1.1285431617351838,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 504
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward"
+          ],
+          "ticks": 6,
+          "yaw": 3.14159
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            1.4837088144086967,
+            -60.143493276000726,
+            1.846199909436907
+          ],
+          "inventory": [],
+          "moved": 1.0936538899435333,
+          "body": {
+            "inWater": true,
+            "onGround": false
+          }
+        },
+        "durationMs": 301
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            3,
+            -59,
+            0
+          ]
+        },
+        "source": "planner+jev",
+        "ok": false,
+        "error": "Error: Action deadline 2500ms",
+        "durationMs": 2603
+      }
+    ],
+    "serverPosition": "PrimitiveLab has the following entity data: [-1.7d, -58.42596140756825d, 0.2597035950656608d]",
+    "inventory": "PrimitiveLab has the following entity data: []",
+    "disturbed": false
+  },
+  "earlierWaterHybrid": {
+    "path": "docs/evidence/primitive-motor-2026-09-23.json",
+    "note": "Earlier Jev-selected hybrid run reached grounded dry bank; Kimi planner had not returned before completion."
+  },
+  "tests": {
+    "nodePassed": 205
+  },
+  "limitations": [
+    "The model-only water trial failed after five plans and 184 seconds; the hybrid loop completed the water task in 12.2 seconds with Jev primitive steps followed by Kimi-authored steps. This does not establish reliable live recovery.",
+    "The model-only barrier was completed by Kimi-authored steps, with Jev selecting among Kimi alternatives; it was not a Jev primitive sequence.",
+    "Kimi K3 low reasoning changes latency and may reduce quality on hard decisions.",
+    "Prior live Kimi requests timed out at 60 seconds and Mira continued falling underground; this change needs live verification."
+  ],
+  "isolatedHybridWaterWithCurrentCode": {
+    "event": "PRIMITIVE_CASE_RESULT",
+    "scenario": "water",
+    "policy": "hybrid",
+    "passed": true,
+    "wallMs": 12189,
+    "planMs": 9930,
+    "plans": 1,
+    "outcomes": [
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "jev_primitives",
+        "ok": true,
+        "result": {
+          "position": [
+            1.2292948511597437,
+            -59.306345396313105,
+            0.5001591734806541
+          ],
+          "inventory": [],
+          "moved": 0.7293030774335344,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 506
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "jev_primitives",
+        "ok": true,
+        "result": {
+          "position": [
+            2.7,
+            -59.52425972805919,
+            0.5003038766448851
+          ],
+          "inventory": [],
+          "moved": 1.0601618012184264,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 506
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "jev_primitives",
+        "ok": true,
+        "result": {
+          "position": [
+            2.7,
+            -59.211896366284805,
+            0.5004485798091161
+          ],
+          "inventory": [],
+          "moved": 1.6047036402394559,
+          "body": {
+            "inWater": true,
+            "onGround": false
+          }
+        },
+        "durationMs": 503
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "jev_primitives",
+        "ok": true,
+        "result": {
+          "position": [
+            2.9610168844211047,
+            -58.539184465732006,
+            0.500593282973347
+          ],
+          "inventory": [],
+          "moved": 1.6639745486954618,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 507
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            4,
+            -59,
+            0
+          ]
+        },
+        "source": "jev_primitives",
+        "ok": true,
+        "result": {
+          "position": [
+            4.325130133703532,
+            -59,
+            0.5002577024791202
+          ],
+          "inventory": [],
+          "moved": 1.0424301830853417
+        },
+        "durationMs": 306
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            5.463560343614917,
+            -58.504799122994086,
+            0.5004602869374912
+          ],
+          "inventory": [],
+          "moved": 1.2414698113392724,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 505
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            7.388609438104363,
+            -58.2032643993313,
+            0.5006773417122854
+          ],
+          "inventory": [],
+          "moved": 1.9485218122673922,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 505
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            3,
+            -59,
+            0
+          ]
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            3.5,
+            -59,
+            0.4998987074148077
+          ],
+          "inventory": [],
+          "moved": 3.9693918407935755
+        },
+        "durationMs": 1161
+      }
+    ],
+    "serverPosition": "PrimitiveLab has the following entity data: [3.5d, -59.0d, 0.4998987074148077d]",
+    "inventory": "PrimitiveLab has the following entity data: []",
+    "disturbed": false
+  }
+}

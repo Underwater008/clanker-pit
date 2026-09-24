@@ -109,14 +109,14 @@ const clean = (value, max) =>
  */
 export function makePlanner({ name, baseUrl, apiKey, model }) {
   const label = name ?? 'llm'
-  async function chat(messages, maxTokens, deadlineMs, signal) {
+  async function chat(messages, maxTokens, deadlineMs, signal, requestOptions = {}) {
     if (!apiKey) return { error: `${label} has no API key configured` }
     if (!baseUrl || !model)
       return { error: `${label} is missing a base URL or model id` }
     const r = await post(
       `${baseUrl.replace(/\/$/, '')}/chat/completions`,
       apiKey,
-      { model, max_tokens: maxTokens, messages },
+      { model, max_tokens: maxTokens, messages, ...requestOptions },
       deadlineMs,
       signal,
     )
@@ -141,9 +141,9 @@ export function makePlanner({ name, baseUrl, apiKey, model }) {
     describe: { provider: label, baseUrl: baseUrl ?? null, model: model ?? null },
     async program({ identity, objective, observation, history, contract, signal }) {
       const r = await chat([
-        { role: 'system', content: `You control ${identity.name}, a Minecraft clanker, through primitive game actions. You decide targets and the order of work. The executor supplies mechanics and safety checks, not solutions. Pursue the given objective using the observed world and Minecraft knowledge. Return JSON {"intention":"short next objective", "alternatives":[{"reason":"brief rationale", "steps":[{"op":"inspect"}]}]}. Every step MUST use the "op" field (not "action", "type", or a string) plus only the arguments in its contract. Example: {"op":"dig","target":[1,64,0],"expect":"stone"}. Supply 1-3 meaningfully different feasible programs of 1-8 steps; do not pad with alternatives. All target/table coordinates must be observed: inside bounds and not unloaded, or explicitly listed in blocks. Cells inside bounds absent from blocks and unloaded are air. The adjacent summary gives nearby feet/head/support facts. Think through support, headroom, reach, held tool, ingredients, and expected block names. Move never digs, dig never walks, crafting never gathers. You can include prerequisites and later steps that become feasible after earlier steps succeed. A failed step cancels the remaining program and returns evidence to you; revise the plan instead of repeating the failed action unchanged. Successful block removal does not prove pickup: move to the dropped item and wait if needed, then use observed inventory. Do not dig protected blocks or place in standing/exit space. Use inspect to obtain fresh local information when needed. A wait or a sentence is not progress. Do not invent new operations, issue code/commands, or claim completion from intention. Prefer several useful steps per plan when their prerequisites are known. Say nothing for narration; the intention is internal planning, not character dialogue.` },
+        { role: 'system', content: `You control ${identity.name}, a Minecraft clanker, through primitive game actions. You decide targets and the order of work. The executor supplies mechanics and safety checks, not solutions. Pursue the given objective using the observed world and Minecraft knowledge. Return JSON {"intention":"short next objective", "alternatives":[{"reason":"brief rationale", "steps":[{"op":"inspect"}]}]}. Every step MUST use the "op" field (not "action", "type", or a string) plus only the arguments in its contract. Example: {"op":"dig","target":[1,64,0],"expect":"stone"}. Supply 1-3 meaningfully different feasible programs of 1-8 steps; do not pad with alternatives. All target/table coordinates must be observed: inside bounds and not unloaded, or explicitly listed in blocks. Cells inside bounds absent from blocks and unloaded are air. The adjacent summary gives nearby feet/head/support facts. Think through support, headroom, reach, held tool, ingredients, and expected block names. Use feasibleDigTargets for a dig you can start now; editable only means permitted. Inspect refreshes state but cannot make an occluded block visible. Move never digs, dig never walks, crafting never gathers. You can include prerequisites and later steps that become feasible after earlier steps succeed. A failed step cancels the remaining program and returns evidence to you; revise the plan instead of repeating the failed action unchanged. Successful block removal does not prove pickup: move to the dropped item and wait if needed, then use observed inventory. Do not dig protected blocks or place in standing/exit space. Use inspect to obtain fresh local information when needed. A wait or a sentence is not progress. Do not invent new operations, issue code/commands, or claim completion from intention. Prefer several useful steps per plan when their prerequisites are known. Say nothing for narration; the intention is internal planning, not character dialogue.` },
         { role: 'user', content: JSON.stringify({ objective, contract, observation, verified_history: history }) },
-      ], 3072, 60000, signal)
+      ], 3072, 60000, signal, label === 'kimi' && model === 'kimi-k3' ? { reasoning_effort: 'low' } : {})
       if (r.error) return r
       try { return { ...validatePrograms(parseJsonish(r.content), observation), model: r.model ?? model } }
       catch (e) { return { error: `Invalid action program: ${String(e)}` } }

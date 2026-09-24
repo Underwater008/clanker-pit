@@ -7,7 +7,7 @@ function fixture(protectedBlock=()=>false){
  let removed=false,calls=0
  const client=new EventEmitter()
  const bot={entity:{position:new Vec3(.5,64,.5),eyeHeight:1.62,onGround:true},game:{dimension:'overworld'},health:20,food:20,
-  entities:{},inventory:{items:()=>[]},registry:{blocksByName:{air:{minStateId:0}}},_client:client,
+  entities:{},inventory:{items:()=>[]},registry:{blocksByName:{air:{minStateId:0}},itemsByName:{}},_client:client,
   pathfinder:{setGoal(){}},clearControlStates(){},stopDigging(){},canDigBlock:()=>true,digTime:()=>1,
   blockAt(p){const stone=p.x===1&&p.y===64&&p.z===0&&!removed;return {name:stone?'stone':p.y<64?'bedrock':'air',stateId:stone?1:0,position:p,boundingBox:stone||p.y<64?'block':'empty'}},
   async dig(){calls++;removed=true},quit(){},
@@ -48,4 +48,20 @@ test('occluded dig targets are rejected before any mining packet',async()=>{
  const {bot,executor,calls}=fixture();bot.canSeeBlock=()=>false
  await assert.rejects(executor.execute({op:'dig',target:[1,64,0],expect:'stone'}),/occluded/)
  assert.equal(calls(),0)
+})
+
+
+test('local observation exposes only currently feasible dig targets',()=>{
+ const {bot,executor}=fixture()
+ bot.canSeeBlock=()=>false
+ assert.deepEqual(executor.observe().feasibleDigTargets,[])
+ bot.canSeeBlock=()=>true
+ assert.deepEqual(executor.observe().feasibleDigTargets,[{target:[1,64,0],expect:'stone'}])
+})
+
+
+test('walking from water fails with a usable prerequisite',async()=>{
+ const {bot,executor}=fixture();bot.entity.isInWater=true
+ await assert.rejects(executor.execute({op:'move',target:[2,64,0]}),/control to climb onto dry ground/)
+ assert.equal(executor.affordances().some(a=>a.op==='move'),false)
 })

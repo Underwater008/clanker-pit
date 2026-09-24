@@ -1,7 +1,7 @@
 // Model-authored programs, not a menu of scenario-specific jobs.
 export const ACTION_CONTRACT = {
   inspect: 'No arguments. Return fresh local blocks/inventory. Does not move.',
-  move: 'target:[x,y,z] integer feet cell. Walk only; no automatic digging/placing. Must have safe support/headroom.',
+  move: 'target:[x,y,z] integer feet cell. Walk only from dry ground; no automatic digging/placing. Destination must have safe support/headroom. Use control to swim/climb first.',
   control: 'keys:array from forward/back/left/right/jump/sneak, ticks:1..10, optional yaw radians. Bounded native movement input; jump also swims upward in water. Yaw: 0=south (+z), pi/2=west (-x), -pi/2=east (+x), pi=north (-z). No attack/use/flight.',
   step: 'dx,dz numbers; horizontal displacement at most 0.8 blocks, while sneaking. Fine positioning on edges; no jumping or flight.',
   dig: 'target:[x,y,z], expect:block_name. Remove exactly one reachable editable block; no walking or automatic tool selection.',
@@ -149,7 +149,7 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
         source = 'planner'
         if (program.alternatives.length > 1 && jevChoose) {
           const options = Object.fromEntries(program.alternatives.map((p) => [p.id, `${p.reason} Steps: ${JSON.stringify(p.steps)}`]))
-          const pick = await jevChoose({ identity, stance: { intention: program.intention }, observation,
+          const pick = await jevChoose({ identity, stance: { intention: program.intention, verified_history: compactPrimitiveHistory(memory.history.slice(-6)) }, observation,
             options, questionId: 'model_authored_program', signal: job.controller.signal })
           if (closed || revision !== epoch || job.controller.signal.aborted) return
           const match = program.alternatives.find((p) => p.id === pick.choice)
@@ -157,7 +157,8 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
           else { source = 'planner_first_alternative'; log('program_selector_error', { error: pick.error ?? 'Invalid Jev program choice' }) }
         }
         const current = primitives.observe()
-        if ((!tactical && Math.hypot(...current.position.map((n, i) => n - observation.position[i])) > .75) || current.dimension !== observation.dimension)
+        if ((!tactical && (Math.hypot(current.position[0]-observation.position[0],current.position[2]-observation.position[2]) > .75 ||
+            Math.abs(current.position[1]-observation.position[1]) > 2.5)) || current.dimension !== observation.dimension)
           throw Error('Position changed while planning; discard stale program')
         const previous = memory.history.findLast((h) => h.type === 'action' && !h.ok)
         if (previous?.context === context() && JSON.stringify(previous.step) === JSON.stringify(candidate.steps[0]))
