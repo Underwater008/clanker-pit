@@ -205,7 +205,8 @@ export class GuestQueue {
   /** Advance the schedule. Returns pending transitions for the gateway:
    * {spawn: entry} when a turn should start, {end: {entry, reason}} when the
    * active turn hit its cap or went idle. */
-  tick() {
+  tick({ paused = false } = {}) {
+    if (paused) return this.active ? { end: this.finishActive('server-destroyed') } : {}
     const now = this.now()
     this.refill()
     if (this.active) {

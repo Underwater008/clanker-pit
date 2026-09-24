@@ -30,6 +30,12 @@ evidence before relying on historical notes or another agent's claims.
   their physical homes remain and the next clanker can inherit the vacant lot.
   Founders respawn beside the beds in their assigned homes.
 
+- A nearby confirmed guest blast drains 10 coolant. At zero, the next blast
+  ends the round. After 15 seconds, `round-restart.mjs` restores and verifies
+  the Server fixture, then starts the next round with 10 coolant. The existing
+  world, clankers, homes, inventories and queued guests remain. This is a labeled
+  match fixture; failed restoration retries without advancing the round.
+
 ## Current architecture and source map
 
 | Area | Entrypoints and responsibility |
@@ -63,6 +69,9 @@ never controls the contestants. This is not a screenshot-driven model agent.
 
 - Keep movement, hunger/threat responses, and stuck recovery responsive while
   model requests are pending. Use bounded actions, timeouts, and feasible choices.
+- Village clearance is an explicit action independent of wood demand. Inspect
+  natural trunks/leaves locally, preserve placed timber/leaves and construction,
+  and keep saplings outside the village and guest approach.
 - Confirm success from authoritative game updates: actual position, changed
   blocks, and inventory. An LLM intention or resolved action promise is not proof.
 - Navigation should detour or clear safe terrain and recover from stalls. Preserve

@@ -10,6 +10,18 @@ import {
 
 const minute = 60_000
 
+test('Server reboot ends an active turn and preserves queued guests until resumed', () => {
+  const { queue, advance } = makeQueue()
+  queue.join('Xiao')
+  queue.join('Ada')
+  assert.equal(queue.tick().spawn.nickname, 'Xiao')
+  assert.equal(queue.tick({ paused: true }).end.reason, 'server-destroyed')
+  advance(4 * minute)
+  assert.deepEqual(queue.tick({ paused: true }), {})
+  assert.deepEqual(queue.status().queuePreview, ['Ada'])
+  assert.equal(queue.tick().spawn.nickname, 'Ada')
+})
+
 test('filler names are scheduled entries without public source labels or tokens', () => {
   const { queue, advance } = makeQueue({ fillersEnabled: true, maxQueue: 20 })
   const first = queue.tick().spawn

@@ -28,6 +28,7 @@ import {
   HOME_LOTS,
   ROLES,
   ROLE_LABELS,
+  EXPLOSION_PENALTY,
 } from './village.mjs'
 
 const flag = new Vec3(100, 64, -200)
@@ -300,9 +301,6 @@ test('coolant economy: feeds count, booms overheat, booting resets the meter', (
   village.feedCoolant('B')
   const boom = village.overheat()
   assert.ok(boom.after < boom.before)
-  village.overheat()
-  village.overheat()
-  village.overheat()
   assert.equal(village.raw.waterFed, 0)
   // At capacity, no more villagers boot even with a full meter.
   village.adopt({ population: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] })
@@ -324,6 +322,21 @@ test('coolant economy: feeds count, booms overheat, booting resets the meter', (
   assert.equal(reloaded.snapshot().beds.done, 4)
   assert.equal(reloaded.snapshot().startedAt, village.raw.createdAt)
   assert.equal(reloaded.raw.waterFed, village.raw.waterTarget)
+})
+
+test('a confirmed blast drains ten coolant and never makes the meter negative', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'village-blast-'))
+  try {
+    const village = createVillageState({ path: join(dir, 'village.json') })
+    assert.equal(EXPLOSION_PENALTY, 10)
+    village.adopt({ waterFed: 25 })
+    assert.deepEqual(village.overheat('boom:1'), { before: 25, after: 15, changed: true })
+    assert.deepEqual(village.overheat('boom:2'), { before: 15, after: 5, changed: true })
+    assert.deepEqual(village.overheat('boom:3'), { before: 5, after: 0, changed: true })
+    assert.equal(village.overheat('boom:3'), null)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('only Server-booted clankers retire, and a new identity inherits the empty home lot', () => {

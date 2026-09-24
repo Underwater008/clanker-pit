@@ -38,6 +38,8 @@ import {
 } from './village.mjs'
 import { runCouncil } from './council.mjs'
 import { Memory } from './memory.mjs'
+import { Rcon } from 'rcon-client'
+import { createRoundRestarter, restoreServer } from './round-restart.mjs'
 
 const STATE_PATH = process.env.STATE_PATH ?? '/workspace/arena/state.json'
 const DATA_DIR = process.env.BOT_DATA_DIR ?? '/workspace/arena/bot-state'
@@ -174,6 +176,7 @@ const VILLAGE_OWNED_KEYS = [
   'homeLots', 'homes', 'homeUpgrades',
   'wall', 'wallUpgrade', 'gate', 'beds',
   'roles', 'processedGuestEvents', 'lastBoomAt', 'lastFedBy',
+  'round',
 ]
 const village = createVillageState({
   path: villageFile,
@@ -213,7 +216,15 @@ const isEnemyPlayer = (username) => {
  * this shared chain so deposits cannot interleave between clankers. */
 let basinChain = Promise.resolve()
 function withBasin(fn) {
-  const run = basinChain.then(fn, fn)
+  const guarded = async () => {
+    const round = village.raw.round
+    const result = await fn()
+    // A deposit begun before defeat/reboot must not credit the new round.
+    if (result?.fedCoolant && (round !== village.raw.round || round?.phase === 'restarting'))
+      return { ...result, fedCoolant: false }
+    return result
+  }
+  const run = basinChain.then(guarded, guarded)
   basinChain = run.then(
     () => {},
     () => {},
@@ -270,8 +281,13 @@ function mergeGuestState() {
         : Infinity
       const nickname = event.nickname ?? 'A creeper guest'
       if (distance <= EXPLOSION_RADIUS) {
-        const r = village.overheat(eventId)
+        const r = village.overheat(eventId, event)
         if (!r) continue
+        if (r.destroyed) {
+          chat('system', 'server', `${nickname} destroyed the Server! Round ${village.raw.round.number} ends. Rebooting in 15 seconds; the village stays.`)
+          log('director', 'server_destroyed', village.raw.round)
+          continue
+        }
         chat(
           'system',
           'server',
@@ -987,6 +1003,7 @@ function onActionOutcome(name, action, result) {
   if (!villageEnabled) return
   if (result?.fedCoolant) {
     const r = village.feedCoolant(name)
+    if (!r) return
     chat(
       'system',
       'server',
@@ -1085,7 +1102,25 @@ log('director', 'survival_start', {
   mirrorLimit: MIRROR_LIMIT,
 })
 const structureTimer = setInterval(() => villageUpdate('refresh_structures', refreshVillageStructures), 2000)
-const guestTimer = setInterval(() => villageUpdate('merge_guest_events', mergeGuestState), 1000)
+const restartRound = createRoundRestarter({
+  village,
+  restore: (flag) => withBasin(async () => {
+    const client = await Rcon.connect({ host: HOST,
+      port: Number(process.env.RCON_PORT ?? 25575),
+      password: process.env.RCON_PASSWORD ?? 'clanker-dev', timeout: 5000 })
+    client.on('error', () => {})
+    try { await restoreServer(client, flag) } finally { await client.end() }
+  }),
+  onRestart: (round) => {
+    chat('system', 'round', `Round ${round.number} begins. Server restored with ${village.raw.waterFed} starting coolant (round fixture). Village and clankers preserved.`)
+    log('director', 'round_restarted', { round: round.number, source: 'match_fixture' })
+  },
+  onError: (error) => log('director', 'round_restart_retry', { error: String(error).slice(0, 200) }),
+})
+const guestTimer = setInterval(() => {
+  const merged = villageUpdate('merge_guest_events', () => { mergeGuestState(); return true })
+  if (villageEnabled && merged && !stopping) void restartRound()
+}, 1000)
 const telemetry = setInterval(() => {
   atomic(STATE_PATH, {
     updated: new Date().toISOString(),

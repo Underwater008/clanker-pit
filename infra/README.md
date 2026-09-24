@@ -102,6 +102,15 @@ command; neither port 22 on the public IP nor an HTTP proxy URL is a substitute.
 The command uses the project SSH private key. The RunPod API key is used only to
 discover the pod, not to authenticate SSH. Refresh the mapping after a restart.
 
+The status command also prints RunPod's basic SSH fallback (`ssh -tt ...@ssh.runpod.io`).
+Use that interactive connection if direct TCP stalls before the SSH greeting;
+it does not support SCP/SFTP. On September 23, the direct mapping accepted TCP
+but stalled during banner exchange while basic SSH worked with the same key.
+Inside the pod, sshd was listening on port 22 and returned its greeting immediately
+over loopback. This isolated the failure to the direct network path, rather than
+key authentication or a stopped Minecraft server.
+
+
 `https://<pod-id>-8080.proxy.runpod.net` is the video service and
 `https://<pod-id>-8081.proxy.runpod.net/arena/state.json` is telemetry. An HTTP
 404 on these URLs does not diagnose an SSH or API-key failure.
@@ -315,6 +324,16 @@ run clears new leaves from a founder's respawn tile even with a complete marker.
 four source blocks with its missing bank and support, then stays unchanged on
 a second pass.
 
+`lab-round-restart.mjs` uses only RCON 25576 to verify damaged/flooded Server
+fixture restoration, a persisted countdown surviving controller reload, and
+exactly one round increment. It owns six empty cells at (1200,250,1200), cleans
+them up, and makes no model calls. Run with `MODEL_MODE=off` on the isolated lab.
+
+
+`lab-vegetation.mjs` uses isolated Minecraft 25566/RCON 25576 to verify a clanker
+with full wood stocks can clear a natural trunk, preserves placed timber/leaves,
+and cannot replant inside the village. The lab uses scripted action selection.
+
 ## Village round: protect the Server
 
 `SCENARIO=village` (set by pod-bootstrap) gives the controller its defense game.
@@ -341,7 +360,16 @@ drinks" moment), and every `FLAG_WATER_TARGET` buckets boots one new
 villager from `VILLAGER_POOL` (cap `MAX_POPULATION`, restored after
 controller restarts, single atomic write per boot). A creeper boom within
 `FLAG_EXPLOSION_RADIUS` of the core makes the Server overheat, dropping
-`FLAG_EXPLOSION_PENALTY` buckets of coolant.
+`FLAG_EXPLOSION_PENALTY` buckets of coolant (default 10). Reaching zero leaves
+the Server vulnerable; the next distinct confirmed nearby blast ends the round.
+The winner and 15-second reboot countdown persist in `village.json`. Guests
+pause while queued viewers retain their places. `round-restart.mjs` restores
+only the Server's six reserved fixture cells, verifies the actual blocks, then
+advances the round number, resets its timer and grants 10 starting coolant
+(labeled round fixture). World terrain, construction, clankers, inventories and
+roles remain. Restoration failures retry after five seconds without advancing
+the round; an occupied solid fixture cell requires operator attention rather
+than overwriting construction. Old or duplicate blasts cannot score the reboot.
 The default boot cost is 40 buckets. An existing round keeps its coolant and
 residents when the controller raises a lower persisted target at startup; it
 never lowers an established target automatically. Public telemetry reports

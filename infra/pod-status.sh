@@ -23,7 +23,7 @@ if [ -z "$POD_ID" ]; then
 fi
 [[ "$POD_ID" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo 'Invalid pod id' >&2; exit 2; }
 
-QUERY='{"query":"{ pod(input: {podId: \"'$POD_ID'\"}) { id desiredStatus costPerHr runtime { ports { ip isIpPublic privatePort publicPort } } } }"}'
+QUERY='{"query":"{ pod(input: {podId: \"'$POD_ID'\"}) { id desiredStatus costPerHr machine { podHostId } runtime { ports { ip isIpPublic privatePort publicPort } } } }"}'
 
 check() {
   printf 'header = \"Authorization: Bearer %s\"\n' "$RUNPOD_API_KEY" | \
@@ -38,12 +38,15 @@ pod = (resp.get('data') or {}).get('pod')
 if not pod:
     print('RunPod did not return this pod:', str(resp)[:200]); sys.exit(2)
 print(f\"pod: {pod['id']} desiredStatus: {pod['desiredStatus']}\")
+from pathlib import Path
+import shlex
+key = shlex.quote(str(Path('pod_ed25519').resolve()))
+proxy = (pod.get('machine') or {}).get('podHostId')
+if proxy:
+    print(f\"Basic SSH fallback (interactive only): ssh -tt -i {key} {shlex.quote(proxy + '@ssh.runpod.io')}\")
 ports = (pod.get('runtime') or {}).get('ports') or []
 for p in ports:
     if p.get('privatePort') == 22 and p.get('isIpPublic'):
-        from pathlib import Path
-        import shlex
-        key = shlex.quote(str(Path('pod_ed25519').resolve()))
         print(f\"ssh -i {key} -p {p['publicPort']} root@{p['ip']}\")
         sys.exit(0)
 print('runtime not ready (image pulling / booting)')

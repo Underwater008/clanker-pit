@@ -54,12 +54,14 @@ const log = (event, data = {}) =>
 
 /* ---------- village fixture (read-only) ------------------------------------ */
 let anatomy = null
+let roundRestarting = false
 function loadVillage() {
   const fixture = readVillageFixture(join(DATA_DIR, 'village.json'))
   anatomy = fixture ? serverAnatomy(fixture.flag) : null
+  roundRestarting = fixture?.round?.phase === 'restarting'
 }
 loadVillage()
-setInterval(loadVillage, 10000)
+setInterval(loadVillage, 500)
 
 /* ---------- public snapshot ------------------------------------------------ */
 let eventSeq = 0
@@ -684,7 +686,7 @@ setInterval(() => {
     for (const key of ['forward', 'back', 'left', 'right', 'jump'])
       bot.setControlState(key, false)
   }
-  const transition = queue.tick()
+  const transition = queue.tick({ paused: roundRestarting })
   if (transition.spawn) {
     if (!anatomy) {
       log('spawn_refused', { reason: 'village fixture missing' })
@@ -697,7 +699,9 @@ setInterval(() => {
   if (transition.end) {
     const { entry, reason } = transition.end
     log('turn_end', { nickname: entry.nickname, reason })
-    if (reason === 'yield')
+    if (reason === 'server-destroyed')
+      emitChat('gate', 'The Server is rebooting. Queued guests keep their place.')
+    else if (reason === 'yield')
       emitChat('gate', `${entry.nickname} left the arena. The next creeper is up.`)
     else if (reason === 'idle')
       emitChat('gate', `${entry.nickname}'s creeper wandered off.`)
