@@ -203,6 +203,14 @@ fresh damage, or low health still invokes the fast flee reflex. Legacy bounded-s
 clankers keep their existing safety threshold. This changes the model's
 control authority, not its ability to escape or win a fight.
 
+The legacy clankers still had a separate stall: Cinder remained in a water
+pocket and repeatedly waited because its walking recovery graph requires dry
+footing. Stalled, immersed clankers now receive bounded native swim inputs for
+locally inspected open directions. Jev chooses among these recovery actions;
+the executor confirms real displacement and blocks a no-progress choice in
+the same local context. This is a general motor option, not a specific route
+through the current arena. It does not imply a completed coolant delivery.
+
 
 ## Reconcile overlapping actions
 

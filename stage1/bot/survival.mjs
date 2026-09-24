@@ -6,7 +6,7 @@ import { craftConfirmed, craftableRecipe } from './crafting.mjs'
 import { coolantSource, coolantCells, isCoolantBucket } from './coolant.mjs'
 import { createProgressMemory } from './progress.mjs'
 import { inspectVegetation, naturalLeaf, safeSaplingSite } from './vegetation.mjs'
-import { localContext, localRecoveryRoutes, localPassagePlans, localWaterHatch, recoveryKey } from './recovery.mjs'
+import { localContext, localRecoveryRoutes, localPassagePlans, localWaterHatch, localSwimRoutes, recoveryKey } from './recovery.mjs'
 import {
   wallBlueprint,
   wallReinforcementBlueprint,
@@ -2051,6 +2051,10 @@ export function installSurvival(bot, state, log, opts = {}) {
   }
   function recoveryOptions() {
     const choices = new Map()
+    for (const route of localSwimRoutes(bot)) choices.set(`recover_swim:${route.direction}`, {
+      ...route, kind: 'swim',
+      description: `Swim ${route.direction} for ten native movement ticks through inspected open space; verify actual displacement and choose again from the changed local view.`,
+    })
     const hatch = localWaterHatch(bot, (p) => constructionBlock(p) || resourceBusy(p))
     if (hatch) choices.set(recoveryKey('recover_water_hatch', hatch.position), {
       ...hatch, kind: 'water_hatch',
@@ -2189,6 +2193,24 @@ export function installSurvival(bot, state, log, opts = {}) {
     } finally { activeMoves.canDig = canDig }
   }
   async function executeSkill(action) {
+    if (action.startsWith('recover_swim:')) {
+      const option = recoveryOptions().get(action)
+      if (!option || option.kind !== 'swim') throw new Error('Swimming passage is no longer locally open')
+      const before = bot.entity.position.clone(), revision = skillRevision
+      bot.pathfinder.setGoal(null)
+      if (option.yaw != null) await bot.look(option.yaw, bot.entity.pitch, true)
+      bot.setControlState('jump', true)
+      if (option.yaw != null) bot.setControlState('forward', true)
+      try {
+        for (let tick = 0; tick < 10; tick++) {
+          if (revision !== skillRevision || bot.health <= 0 || emergency()) throw new Error('Swim interrupted by safety or cancellation')
+          await sleep(50)
+        }
+      } finally { bot.clearControlStates() }
+      const moved = before.distanceTo(bot.entity.position)
+      if (moved < 0.3) throw new Error('Swimming made no observed positional progress')
+      return { swam: option.direction, moved, position: bot.entity.position.clone() }
+    }
     if (action.startsWith('recover_water_hatch:')) {
       const option = recoveryOptions().get(action)
       if (!option || option.kind !== 'water_hatch') throw new Error('Water hatch is no longer locally safe')
@@ -2587,7 +2609,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         max_drop_blocks: villageCtx ? 1 : 2,
         pillar_climbing: false,
         recovery: 'short alternate routes; safe terrain clearing; optional remembered doorway in own extension sidewalls only; preserve roofs, beds, fixtures and other homes',
-        explicit_recovery_targets: 'recover_walk:x:y:z, recover_stair:x:y:z and recover_passage:x:y:z are supplied only after repeated no-progress attempts; choose an offered key, never invent coordinates.',
+        explicit_recovery_targets: 'recover_walk:x:y:z, recover_stair:x:y:z, recover_passage:x:y:z, and recover_swim:direction are supplied only after repeated no-progress attempts; choose an offered key, never invent coordinates.',
       },
       shelter: {
         materials: ['planks', 'cobblestone', 'stone', 'dirt'],
