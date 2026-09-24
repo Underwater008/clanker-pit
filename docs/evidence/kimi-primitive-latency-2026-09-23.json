@@ -1735,9 +1735,229 @@
     "nodePassed": 205
   },
   "limitations": [
-    "The model-only water trial failed after five plans and 184 seconds; the Kimi plus Jev system is not yet proven to escape water reliably.",
+    "The model-only water trial failed after five plans and 184 seconds; the hybrid loop completed the water task in 12.2 seconds with Jev primitive steps followed by Kimi-authored steps. This does not establish reliable live recovery.",
     "The model-only barrier was completed by Kimi-authored steps, with Jev selecting among Kimi alternatives; it was not a Jev primitive sequence.",
     "Kimi K3 low reasoning changes latency and may reduce quality on hard decisions.",
     "Prior live Kimi requests timed out at 60 seconds and Mira continued falling underground; this change needs live verification."
-  ]
+  ],
+  "isolatedHybridWaterWithCurrentCode": {
+    "event": "PRIMITIVE_CASE_RESULT",
+    "scenario": "water",
+    "policy": "hybrid",
+    "passed": true,
+    "wallMs": 12189,
+    "planMs": 9930,
+    "plans": 1,
+    "outcomes": [
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "jev_primitives",
+        "ok": true,
+        "result": {
+          "position": [
+            1.2292948511597437,
+            -59.306345396313105,
+            0.5001591734806541
+          ],
+          "inventory": [],
+          "moved": 0.7293030774335344,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 506
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "jev_primitives",
+        "ok": true,
+        "result": {
+          "position": [
+            2.7,
+            -59.52425972805919,
+            0.5003038766448851
+          ],
+          "inventory": [],
+          "moved": 1.0601618012184264,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 506
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "jev_primitives",
+        "ok": true,
+        "result": {
+          "position": [
+            2.7,
+            -59.211896366284805,
+            0.5004485798091161
+          ],
+          "inventory": [],
+          "moved": 1.6047036402394559,
+          "body": {
+            "inWater": true,
+            "onGround": false
+          }
+        },
+        "durationMs": 503
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "jev_primitives",
+        "ok": true,
+        "result": {
+          "position": [
+            2.9610168844211047,
+            -58.539184465732006,
+            0.500593282973347
+          ],
+          "inventory": [],
+          "moved": 1.6639745486954618,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 507
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            4,
+            -59,
+            0
+          ]
+        },
+        "source": "jev_primitives",
+        "ok": true,
+        "result": {
+          "position": [
+            4.325130133703532,
+            -59,
+            0.5002577024791202
+          ],
+          "inventory": [],
+          "moved": 1.0424301830853417
+        },
+        "durationMs": 306
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            5.463560343614917,
+            -58.504799122994086,
+            0.5004602869374912
+          ],
+          "inventory": [],
+          "moved": 1.2414698113392724,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 505
+      },
+      {
+        "step": {
+          "op": "control",
+          "keys": [
+            "forward",
+            "jump"
+          ],
+          "ticks": 10,
+          "yaw": -1.5707963267948966
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            7.388609438104363,
+            -58.2032643993313,
+            0.5006773417122854
+          ],
+          "inventory": [],
+          "moved": 1.9485218122673922,
+          "body": {
+            "inWater": false,
+            "onGround": false
+          }
+        },
+        "durationMs": 505
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            3,
+            -59,
+            0
+          ]
+        },
+        "source": "planner+jev",
+        "ok": true,
+        "result": {
+          "position": [
+            3.5,
+            -59,
+            0.4998987074148077
+          ],
+          "inventory": [],
+          "moved": 3.9693918407935755
+        },
+        "durationMs": 1161
+      }
+    ],
+    "serverPosition": "PrimitiveLab has the following entity data: [3.5d, -59.0d, 0.4998987074148077d]",
+    "inventory": "PrimitiveLab has the following entity data: []",
+    "disturbed": false
+  }
 }

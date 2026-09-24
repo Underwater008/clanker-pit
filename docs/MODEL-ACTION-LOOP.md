@@ -140,7 +140,10 @@ selecting the next model program.
 
 The model-only water case remained unsuccessful after five plans. Kimi planned
 swimming and moved but repeatedly tried a walking leg from water; one revised
-plan also drifted away. This is a measured limit, not autonomous escape proof.
+plan also drifted away. With the current code, the hybrid loop reached grounded
+dry bank in 12.2 seconds: Jev selected primitive steps while Kimi planned, then
+Kimi-authored swimming steps completed the objective. This is isolated evidence,
+not live village escape proof.
 The [recorded isolated trial](evidence/kimi-primitive-latency-2026-09-23.json)
 contains successful and failed outcomes. Long-term village task completion and
 natural dialogue remain unproven.
