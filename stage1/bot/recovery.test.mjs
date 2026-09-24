@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Vec3 } from 'vec3'
-import { localPassagePlans, localContext } from './recovery.mjs'
+import { localPassagePlans, localWaterHatch, localContext } from './recovery.mjs'
 import { createProgressMemory } from './progress.mjs'
 
 function scene() {
@@ -38,6 +38,21 @@ test('even remodeling cannot remove beds, supplies, unknown space or expose haza
   const {bot,put} = scene(); put(1,64,0,'stone')
   const read=bot.blockAt; bot.blockAt=p=>p.x===2?null:read(p)
   assert.equal(localPassagePlans(bot).length,0)
+})
+test('roofed water pocket offers only a safe natural overhead hatch', () => {
+  const { bot, put } = scene()
+  bot.entity.position = new Vec3(.5, 61.2, .5)
+  bot.entity.isInWater = true
+  bot.canDigBlock = () => true
+  put(0,61,0,'water'); put(0,62,0,'water'); put(0,63,0,'grass_block')
+  assert.ok(localWaterHatch(bot)?.position.equals(new Vec3(0,63,0)))
+  assert.equal(localWaterHatch(bot, () => true), null, 'construction is protected')
+  put(0,63,0,'oak_planks')
+  assert.equal(localWaterHatch(bot), null, 'a player-built ceiling is preserved')
+  put(0,63,0,'dirt'); put(0,64,0,'lava')
+  assert.equal(localWaterHatch(bot), null, 'a hazardous exit is rejected')
+  put(0,64,0,'air'); bot.entity.isInWater = false
+  assert.equal(localWaterHatch(bot), null, 'the option requires a water pocket')
 })
 test('access failures outlive cooldowns and crafting; changed terrain invalidates them', () => {
   const {bot,put}=scene(), state={}; let time=1000

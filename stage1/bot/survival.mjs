@@ -6,7 +6,7 @@ import { craftConfirmed, craftableRecipe } from './crafting.mjs'
 import { coolantSource, coolantCells, isCoolantBucket } from './coolant.mjs'
 import { createProgressMemory } from './progress.mjs'
 import { inspectVegetation, naturalLeaf, safeSaplingSite } from './vegetation.mjs'
-import { localContext, localRecoveryRoutes, localPassagePlans, recoveryKey } from './recovery.mjs'
+import { localContext, localRecoveryRoutes, localPassagePlans, localWaterHatch, recoveryKey } from './recovery.mjs'
 import {
   wallBlueprint,
   wallReinforcementBlueprint,
@@ -2040,6 +2040,11 @@ export function installSurvival(bot, state, log, opts = {}) {
   }
   function recoveryOptions() {
     const choices = new Map()
+    const hatch = localWaterHatch(bot, (p) => constructionBlock(p) || resourceBusy(p))
+    if (hatch) choices.set(recoveryKey('recover_water_hatch', hatch.position), {
+      ...hatch, kind: 'water_hatch',
+      description: `Open the inspected natural ${hatch.name} ceiling at (${hatch.position.x},${hatch.position.y},${hatch.position.z}) and swim toward the clear space above; preserve construction and confirm the block change and position.`,
+    })
     for (const route of localRecoveryRoutes(bot)) {
       const p = route.destination
       choices.set(recoveryKey('recover_walk', p), {
@@ -2173,6 +2178,38 @@ export function installSurvival(bot, state, log, opts = {}) {
     } finally { activeMoves.canDig = canDig }
   }
   async function executeSkill(action) {
+    if (action.startsWith('recover_water_hatch:')) {
+      const option = recoveryOptions().get(action)
+      if (!option || option.kind !== 'water_hatch') throw new Error('Water hatch is no longer locally safe')
+      const before = bot.entity.position.clone(), revision = skillRevision
+      const block = bot.blockAt(option.position)
+      const tool = bestEquipment(bot.inventory.items(), ['dirt', 'grass_block', 'clay'].includes(block.name) ? '_shovel' : '_pickaxe')
+      if (tool) await bot.equip(tool, 'hand')
+      if (revision !== skillRevision || emergency() ||
+          localWaterHatch(bot, (p) => constructionBlock(p) || resourceBusy(p))?.stateId !== option.stateId)
+        throw new Error('Water hatch changed before clearing')
+      let confirmed = false
+      const update = (packet) => {
+        if (option.position.equals(new Vec3(packet.location.x, packet.location.y, packet.location.z)) &&
+            packet.type === bot.registry.blocksByName.air.minStateId) confirmed = true
+      }
+      bot._client.on('block_change', update)
+      try {
+        await bounded(() => bot.dig(block, true), escapeDigBudget(bot.digTime(block)), () => bot.stopDigging())
+        const deadline = Date.now() + 1800
+        while (!confirmed && Date.now() < deadline) await sleep(50)
+        if (!confirmed || bot.blockAt(option.position)?.name !== 'air')
+          throw new Error('Water hatch clearing was not confirmed by the server')
+      } finally { bot._client.removeListener('block_change', update) }
+      bot.pathfinder.setGoal(null)
+      bot.setControlState('jump', true)
+      await sleep(1800)
+      if (revision !== skillRevision || bot.health <= 0) throw new Error('Water hatch swim was interrupted')
+      const rose = Math.max(0, bot.entity.position.y - before.y)
+      log('water_hatch_opened', { position: option.position, block: option.name,
+        from: before, now: bot.entity.position.clone(), rose })
+      return { openedWaterHatch: true, position: bot.entity.position.clone(), rose }
+    }
     if (action.startsWith('recover_walk:') || action.startsWith('recover_stair:') || action.startsWith('recover_passage:')) {
       const option = recoveryOptions().get(action)
       if (!option) throw new Error('Recovery destination is no longer locally safe')
