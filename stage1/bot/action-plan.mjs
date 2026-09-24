@@ -47,15 +47,19 @@ export function validatePrograms(value, observation) {
   if (!value || typeof value.intention !== 'string' || !Array.isArray(value.alternatives) ||
       value.alternatives.length < 1 || value.alternatives.length > 3) throw Error('Return 1-3 alternative programs')
   const known = observedPositions(observation)
-  const alternatives = value.alternatives.map((p, index) => {
-    if (typeof p.reason !== 'string' || !Array.isArray(p.steps) || p.steps.length < 1 || p.steps.length > 8)
-      throw Error('Each program needs a reason and 1-8 primitive steps')
-    const steps = p.steps.map(validateAction)
-    for (const s of steps) for (const key of ['target', 'table'])
-      if (s[key] && !known.has(s[key].join(','))) throw Error('Target was not in the supplied local observation')
-    return { id: `program_${index + 1}`, reason: p.reason.slice(0, 300), steps }
+  const alternatives = [], rejectedAlternatives = []
+  value.alternatives.forEach((p, index) => {
+    try {
+      if (typeof p?.reason !== 'string' || !Array.isArray(p.steps) || p.steps.length < 1 || p.steps.length > 8)
+        throw Error('Each program needs a reason and 1-8 primitive steps')
+      const steps = p.steps.map(validateAction)
+      for (const s of steps) for (const key of ['target', 'table'])
+        if (s[key] && !known.has(s[key].join(','))) throw Error('Target was not in the supplied local observation')
+      alternatives.push({ id: `program_${index + 1}`, reason: p.reason.slice(0, 300), steps })
+    } catch (error) { rejectedAlternatives.push({ alternative: index + 1, error: String(error).slice(0, 180) }) }
   })
-  return { intention: value.intention.slice(0, 400), alternatives }
+  if(!alternatives.length)throw Error(`No valid programs: ${rejectedAlternatives.map(r=>r.error).join('; ')}`)
+  return { intention: value.intention.slice(0, 400), alternatives, rejectedAlternatives }
 }
 export const primitiveLabel = (s) => {
   if(s.op==='control'){
@@ -108,7 +112,15 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
   function requestTactical() {
     if(!tactical || !jevChoose || fast || now()<nextFastAt || closed) return
     const steps=primitives.affordances?.() ?? [], fingerprint=context()
-    const candidates=steps.filter(step=>!memory.history.some(h=>h.type==='action'&&!h.ok&&h.context===fingerprint&&JSON.stringify(h.step)===JSON.stringify(step)))
+    const recentlyReverses = step => ['dig','place'].includes(step.op) && memory.history.some(h=>{
+      if(h.type!=='action'||!h.ok||now()-h.at>30000||h.step?.target?.join(',')!==step.target?.join(','))return false
+      return step.op==='dig' ? h.step.op==='place'&&h.result?.placed?.name===step.expect :
+        h.step.op==='dig'&&h.result?.removed?.name===step.item
+    })
+    // Jev's free-choice step should not immediately undo a verified block
+    // mutation. Kimi may still explicitly plan the reversal when it is useful.
+    const candidates=steps.filter(step=>!recentlyReverses(step)&&
+      !memory.history.some(h=>h.type==='action'&&!h.ok&&h.context===fingerprint&&JSON.stringify(h.step)===JSON.stringify(step)))
     if(candidates.length<2)return
     const job={controller:new AbortController(),revision:epoch,startedAt:now()};fast=job;nextFastAt=now()+1000
     const options=Object.fromEntries(candidates.map((step,i)=>[`action_${i}`,`${primitiveLabel(step)}. ${JSON.stringify(step)}`]))
@@ -145,6 +157,8 @@ export function createActionPlanner({ planner, jevChoose, identity, objective, p
           throw Error(response.error)
         }
         const program = validatePrograms(response, observation)
+        for(const rejected of [...(response.rejectedAlternatives??[]),...program.rejectedAlternatives])
+          log('program_alternative_rejected',rejected)
         let candidate = program.alternatives[0]
         source = 'planner'
         if (program.alternatives.length > 1 && jevChoose) {

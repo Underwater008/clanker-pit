@@ -160,3 +160,15 @@ server-confirmed result and the current local block. If already done, it logs
 remaining Kimi-authored steps. It never reports the Jev action as a Kimi
 achievement. A failed Jev action in flight no longer cancels a newly ready
 Kimi program. These are generic sequencing rules, not an escape route.
+
+
+## Avoid immediate reversal and preserve valid alternatives
+
+The live canary placed an oak log at `[-692,65,324]`, dug it 16 seconds later,
+replaced it, and dug it again 20 seconds later. Jev's free-choice candidates
+now omit a dig or placement that exactly reverses a verified change to the
+same block within 30 seconds. Kimi can explicitly plan the reversal if a
+current objective calls for it. This is a labeled controller guard against
+wasted work, not model reasoning. The planner also retains a valid Kimi
+alternative when another alternative targets an unobserved cell; rejected
+alternatives are logged instead of discarding the whole response.
