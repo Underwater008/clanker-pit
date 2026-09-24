@@ -133,3 +133,16 @@ test('Jev preserves HTTP billing status and never retries a 402 response', async
   assert.match(result.error, /no available credits/)
   assert.equal(calls, 1)
 })
+
+test('primitive planner receives mechanics and observations without a scripted job menu', async (t) => {
+  let request
+  const observation={position:[0,64,0],blocks:[{name:'stone',positions:[[1,64,0]]}]}
+  t.mock.method(globalThis,'fetch',async(_url,options)=>{
+    request=JSON.parse(options.body)
+    return {ok:true,status:200,text:async()=>JSON.stringify({choices:[{message:{content:JSON.stringify({intention:'Clear a block',alternatives:[{reason:'Observed obstacle',steps:[{op:'dig',target:[1,64,0],expect:'stone'}]}]})}}]})}
+  })
+  const result=await planner().program({identity,objective:'Go east',observation,history:[],contract:{dig:'one block'}})
+  assert.equal(result.alternatives[0].steps[0].op,'dig')
+  const sent=JSON.parse(request.messages[1].content)
+  assert.equal(sent.actions,undefined);assert.deepEqual(sent.observation,observation)
+})

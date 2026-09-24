@@ -1,0 +1,4576 @@
+{
+  "hybrid": {
+    "event": "LAB_PRIMITIVES_COMPLETE",
+    "results": [
+      {
+        "scenario": "barrier_east",
+        "policy": "hybrid",
+        "passed": true,
+        "wallMs": 3644,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                1,
+                -59,
+                0
+              ],
+              "expect": "stone"
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  1,
+                  -59,
+                  0
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 654
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                1,
+                -58,
+                0
+              ],
+              "expect": "stone"
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  1,
+                  -58,
+                  0
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 657
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                1,
+                -59,
+                0
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "position": [
+                1.3322910179218335,
+                -59,
+                0.500307446069403
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 0.8322910747067082
+            },
+            "durationMs": 237
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "position": [
+                2.5,
+                -59,
+                0.5003583287707433
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 1.1677089831867686
+            },
+            "durationMs": 255
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [2.5d, -59.0d, 0.5003583287707433d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+        "disturbed": false
+      },
+      {
+        "scenario": "barrier_north",
+        "policy": "hybrid",
+        "passed": true,
+        "wallMs": 2798,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -59,
+                -1
+              ],
+              "expect": "stone"
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -59,
+                  -1
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 652
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -58,
+                -1
+              ],
+              "expect": "stone"
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -58,
+                  -1
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 651
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -2
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "position": [
+                0.5002969335132725,
+                -59,
+                -1.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 2.0000000220423777
+            },
+            "durationMs": 475
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [0.5002969335132725d, -59.0d, -1.5d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+        "disturbed": false
+      },
+      {
+        "scenario": "craft",
+        "policy": "hybrid",
+        "passed": true,
+        "wallMs": 6350,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "craft",
+              "item": "oak_planks",
+              "times": 1
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "crafted": "oak_planks",
+              "gained": 4,
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_log",
+                  "count": 2
+                },
+                {
+                  "name": "oak_planks",
+                  "count": 4
+                }
+              ]
+            },
+            "durationMs": 3
+          },
+          {
+            "step": {
+              "op": "craft",
+              "item": "crafting_table",
+              "times": 1
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "crafted": "crafting_table",
+              "gained": 1,
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_log",
+                  "count": 2
+                },
+                {
+                  "name": "crafting_table",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 6
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                1,
+                -59,
+                0
+              ],
+              "item": "crafting_table"
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  1,
+                  -59,
+                  0
+                ],
+                "name": "crafting_table"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_log",
+                  "count": 2
+                }
+              ]
+            },
+            "durationMs": 558
+          },
+          {
+            "step": {
+              "op": "craft",
+              "item": "oak_planks",
+              "times": 1,
+              "table": [
+                1,
+                -59,
+                0
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "crafted": "oak_planks",
+              "gained": 4,
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_log",
+                  "count": 1
+                },
+                {
+                  "name": "oak_planks",
+                  "count": 4
+                }
+              ]
+            },
+            "durationMs": 9
+          },
+          {
+            "step": {
+              "op": "craft",
+              "item": "stick",
+              "times": 1,
+              "table": [
+                1,
+                -59,
+                0
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "crafted": "stick",
+              "gained": 4,
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_log",
+                  "count": 1
+                },
+                {
+                  "name": "oak_planks",
+                  "count": 2
+                },
+                {
+                  "name": "stick",
+                  "count": 4
+                }
+              ]
+            },
+            "durationMs": 4
+          },
+          {
+            "step": {
+              "op": "craft",
+              "item": "oak_planks",
+              "times": 1,
+              "table": [
+                1,
+                -59,
+                0
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "crafted": "oak_planks",
+              "gained": 4,
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_planks",
+                  "count": 6
+                },
+                {
+                  "name": "stick",
+                  "count": 4
+                }
+              ]
+            },
+            "durationMs": 2
+          },
+          {
+            "step": {
+              "op": "craft",
+              "item": "wooden_pickaxe",
+              "times": 1,
+              "table": [
+                1,
+                -59,
+                0
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "crafted": "wooden_pickaxe",
+              "gained": 1,
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_planks",
+                  "count": 3
+                },
+                {
+                  "name": "stick",
+                  "count": 2
+                },
+                {
+                  "name": "wooden_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 8
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [0.5d, -59.0d, 0.5d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 3, Slot: 9b, id: \"minecraft:oak_planks\"}, {count: 2, Slot: 10b, id: \"minecraft:stick\"}, {count: 1, Slot: 11b, id: \"minecraft:wooden_pickaxe\"}]",
+        "disturbed": false
+      },
+      {
+        "scenario": "gap",
+        "policy": "hybrid",
+        "passed": true,
+        "wallMs": 3625,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                2,
+                -60,
+                0
+              ],
+              "item": "dirt"
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  2,
+                  -60,
+                  0
+                ],
+                "name": "dirt"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ]
+            },
+            "durationMs": 70
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                1,
+                -60,
+                0
+              ],
+              "item": "dirt"
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  1,
+                  -60,
+                  0
+                ],
+                "name": "dirt"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 2
+                }
+              ]
+            },
+            "durationMs": 52
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "position": [
+                2.5,
+                -59,
+                0.5002968395568627
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 2
+                }
+              ],
+              "moved": 2.0000000220284306
+            },
+            "durationMs": 412
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                3,
+                -59,
+                0
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "position": [
+                3.3322905727222194,
+                -59,
+                0.5000911588901402
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 2
+                }
+              ],
+              "moved": 0.8322905981367424
+            },
+            "durationMs": 257
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [3.3322905727222194d, -59.0d, 0.5000911588901402d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 2, Slot: 0b, id: \"minecraft:dirt\"}]",
+        "disturbed": false
+      },
+      {
+        "scenario": "changed",
+        "policy": "hybrid",
+        "passed": true,
+        "wallMs": 5877,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                1,
+                -59,
+                0
+              ],
+              "expect": "stone"
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  1,
+                  -59,
+                  0
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 653
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -59,
+                -1
+              ],
+              "expect": "stone"
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -59,
+                  -1
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 650
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -58,
+                -1
+              ],
+              "expect": "stone"
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -58,
+                  -1
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 653
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -2
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "position": [
+                0.5002968160678686,
+                -59,
+                -1.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 2.0000000220249445
+            },
+            "durationMs": 413
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                1,
+                -59,
+                -2
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "position": [
+                1.3325878340036093,
+                -59,
+                -1.4996925669800885
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 0.8322910747157951
+            },
+            "durationMs": 255
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                -2
+              ]
+            },
+            "source": "jev_primitives",
+            "ok": true,
+            "result": {
+              "position": [
+                2.5,
+                -59,
+                -1.4996416973282352
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 1.167412167104706
+            },
+            "durationMs": 255
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [2.5d, -59.0d, -1.4996416973282352d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 3}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+        "disturbed": true
+      }
+    ],
+    "limitation": "Small fixtures and one random seed. Scripted baseline is hand-authored for these tasks. Does not establish general intelligence or broad model superiority."
+  },
+  "baselines": {
+    "event": "LAB_PRIMITIVES_COMPLETE",
+    "results": [
+      {
+        "scenario": "barrier_east",
+        "policy": "scripted",
+        "passed": true,
+        "wallMs": 1732,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "equip",
+              "item": "stone_pickaxe"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "held": "stone_pickaxe",
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 1
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                1,
+                -58,
+                0
+              ],
+              "expect": "stone"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  1,
+                  -58,
+                  0
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 656
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                1,
+                -59,
+                0
+              ],
+              "expect": "stone"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  1,
+                  -59,
+                  0
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 659
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "position": [
+                2.5,
+                -59,
+                0.5001625445018822
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 2.0000000066051786
+            },
+            "durationMs": 415
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [2.5d, -59.0d, 0.5001625445018822d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+        "disturbed": false
+      },
+      {
+        "scenario": "barrier_east",
+        "policy": "random",
+        "passed": false,
+        "wallMs": 28310,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 118
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 153
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 154
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 152
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                2
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 152
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 154
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                2
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 149
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 152
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                1,
+                -58,
+                0
+              ],
+              "expect": "stone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  1,
+                  -58,
+                  0
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 653
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                1,
+                -59,
+                0
+              ],
+              "expect": "stone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  1,
+                  -59,
+                  0
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 655
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.5,
+                -59,
+                -1.4852574264072043
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 1.9852574264072043
+            },
+            "durationMs": 6395
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                -1,
+                -59,
+                -2
+              ],
+              "item": "cobblestone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  -1,
+                  -59,
+                  -2
+                ],
+                "name": "cobblestone"
+              },
+              "position": [
+                0.5,
+                -59,
+                -1.4852574264072043
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 97
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                0,
+                -59,
+                -3
+              ],
+              "item": "cobblestone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  0,
+                  -59,
+                  -3
+                ],
+                "name": "cobblestone"
+              },
+              "position": [
+                0.5,
+                -59,
+                -1.4852574264072043
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 607
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -59,
+                -3
+              ],
+              "expect": "cobblestone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -59,
+                  -3
+                ],
+                "name": "cobblestone"
+              },
+              "position": [
+                0.5,
+                -59,
+                -1.4852574264072043
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 10053
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Action deadline 2342ms",
+            "durationMs": 8002
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                3,
+                -59,
+                -1
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                3.5,
+                -59,
+                -0.4361718906121603
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ],
+              "moved": 1.2119247236145794
+            },
+            "durationMs": 340
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                -1
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                2.669391083720307,
+                -59,
+                -0.4890532937625967
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ],
+              "moved": 0.832290583031242
+            },
+            "durationMs": 303
+          },
+          {
+            "step": {
+              "op": "equip",
+              "item": "stone_pickaxe"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "held": "stone_pickaxe",
+              "position": [
+                2.669391083720307,
+                -59,
+                -0.4890532937625967
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 1
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [2.669391083720307d, -59.0d, -0.4890532937625967d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}]",
+        "disturbed": false
+      },
+      {
+        "scenario": "barrier_north",
+        "policy": "scripted",
+        "passed": true,
+        "wallMs": 1783,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "equip",
+              "item": "stone_pickaxe"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "held": "stone_pickaxe",
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 1
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -58,
+                -1
+              ],
+              "expect": "stone"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -58,
+                  -1
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 652
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -59,
+                -1
+              ],
+              "expect": "stone"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -59,
+                  -1
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 652
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -2
+              ]
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "position": [
+                0.49979779012158526,
+                -59,
+                -1.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 2.0000000102222084
+            },
+            "durationMs": 477
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [0.49979779012158526d, -59.0d, -1.5d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+        "disturbed": false
+      },
+      {
+        "scenario": "barrier_north",
+        "policy": "random",
+        "passed": false,
+        "wallMs": 29873,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -58,
+                -1
+              ],
+              "expect": "stone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -58,
+                  -1
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 653
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -59,
+                -1
+              ],
+              "expect": "stone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -59,
+                  -1
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 651
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                0,
+                -59,
+                -2
+              ],
+              "item": "cobblestone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  0,
+                  -59,
+                  -2
+                ],
+                "name": "cobblestone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 73
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "NoPath: No path to the goal!",
+            "durationMs": 149
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                2
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 152
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "NoPath: No path to the goal!",
+            "durationMs": 153
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": 0,
+              "dz": -0.6
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.49976155444323056,
+                -59,
+                -0.12441440316397173
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ],
+              "moved": 0.6244144486916544
+            },
+            "durationMs": 617
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": -0.6,
+              "dz": 0
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Fine movement target not reached safely",
+            "durationMs": 2102
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -58,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "NoPath: No path to the goal!",
+            "durationMs": 108
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": -0.6,
+              "dz": 0
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Fine movement target not reached safely",
+            "durationMs": 2111
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -59,
+                -2
+              ],
+              "expect": "cobblestone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -59,
+                  -2
+                ],
+                "name": "cobblestone"
+              },
+              "position": [
+                0.3,
+                -59,
+                -0.14189003888411472
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 10051
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.4279147351296372,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ],
+              "moved": 0.6545112691787174
+            },
+            "durationMs": 173
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -1
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.4879410992207215,
+                -59,
+                -0.33012345685720007
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ],
+              "moved": 0.8322908854544443
+            },
+            "durationMs": 302
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                0,
+                -59,
+                0
+              ],
+              "item": "cobblestone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  0,
+                  -59,
+                  0
+                ],
+                "name": "cobblestone"
+              },
+              "position": [
+                0.4879410992207215,
+                -59,
+                -0.33012345685720007
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 1113
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -59,
+                0
+              ],
+              "expect": "cobblestone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -59,
+                  0
+                ],
+                "name": "cobblestone"
+              },
+              "position": [
+                0.4879410992207215,
+                -59,
+                -0.33012345685720007
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 10050
+          },
+          {
+            "step": {
+              "op": "equip",
+              "item": "stone_pickaxe"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "held": "stone_pickaxe",
+              "position": [
+                0.4879410992207215,
+                -59,
+                -0.33012345685720007
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 1
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -2,
+                -59,
+                -1
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -1.5013760588900684,
+                -59,
+                -0.6913290152282239
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ],
+              "moved": 2.0218437652183003
+            },
+            "durationMs": 1137
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -2,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -1.5006677327157218,
+                -59,
+                -1.3182345651977365
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ],
+              "moved": 0.6269059501301183
+            },
+            "durationMs": 254
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [-1.5006677327157218d, -59.0d, -1.3182345651977365d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}]",
+        "disturbed": false
+      },
+      {
+        "scenario": "craft",
+        "policy": "scripted",
+        "passed": true,
+        "wallMs": 978,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "craft",
+              "item": "oak_planks",
+              "times": 3
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "crafted": "oak_planks",
+              "gained": 12,
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_planks",
+                  "count": 12
+                }
+              ]
+            },
+            "durationMs": 7
+          },
+          {
+            "step": {
+              "op": "craft",
+              "item": "stick",
+              "times": 1
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "crafted": "stick",
+              "gained": 4,
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_planks",
+                  "count": 10
+                },
+                {
+                  "name": "stick",
+                  "count": 4
+                }
+              ]
+            },
+            "durationMs": 4
+          },
+          {
+            "step": {
+              "op": "craft",
+              "item": "crafting_table",
+              "times": 1
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "crafted": "crafting_table",
+              "gained": 1,
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_planks",
+                  "count": 6
+                },
+                {
+                  "name": "stick",
+                  "count": 4
+                },
+                {
+                  "name": "crafting_table",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 4
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                2,
+                -59,
+                0
+              ],
+              "item": "crafting_table"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  2,
+                  -59,
+                  0
+                ],
+                "name": "crafting_table"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_planks",
+                  "count": 6
+                },
+                {
+                  "name": "stick",
+                  "count": 4
+                }
+              ]
+            },
+            "durationMs": 905
+          },
+          {
+            "step": {
+              "op": "craft",
+              "item": "wooden_pickaxe",
+              "times": 1,
+              "table": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "crafted": "wooden_pickaxe",
+              "gained": 1,
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_planks",
+                  "count": 3
+                },
+                {
+                  "name": "stick",
+                  "count": 2
+                },
+                {
+                  "name": "wooden_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 57
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [0.5d, -59.0d, 0.5d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 3, Slot: 9b, id: \"minecraft:oak_planks\"}, {count: 2, Slot: 10b, id: \"minecraft:stick\"}, {count: 1, Slot: 11b, id: \"minecraft:wooden_pickaxe\"}]",
+        "disturbed": false
+      },
+      {
+        "scenario": "craft",
+        "policy": "random",
+        "passed": false,
+        "wallMs": 13799,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                0,
+                -59,
+                -1
+              ],
+              "item": "oak_log"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  0,
+                  -59,
+                  -1
+                ],
+                "name": "oak_log"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_log",
+                  "count": 2
+                }
+              ]
+            },
+            "durationMs": 564
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                2,
+                -59,
+                0
+              ],
+              "item": "oak_log"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  2,
+                  -59,
+                  0
+                ],
+                "name": "oak_log"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "oak_log",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 606
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                -2,
+                -59,
+                0
+              ],
+              "item": "oak_log"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  -2,
+                  -59,
+                  0
+                ],
+                "name": "oak_log"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": []
+            },
+            "durationMs": 1110
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.6801138704604454,
+                -59,
+                -1.5134689855069998
+              ],
+              "inventory": [],
+              "moved": 2.0215089319443607
+            },
+            "durationMs": 1111
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                -2,
+                -59,
+                0
+              ],
+              "expect": "oak_log"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  -2,
+                  -59,
+                  0
+                ],
+                "name": "oak_log"
+              },
+              "position": [
+                0.6801138704604454,
+                -59,
+                -1.5134689855069998
+              ],
+              "inventory": []
+            },
+            "durationMs": 3053
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                2.364202034851737,
+                -59,
+                -1.5028166191324746
+              ],
+              "inventory": [],
+              "moved": 1.6841218537719318
+            },
+            "durationMs": 475
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                3,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                3.5,
+                -59,
+                -1.501316986618463
+              ],
+              "inventory": [],
+              "moved": 1.1357989551556258
+            },
+            "durationMs": 303
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                2.6677107877998623,
+                -59,
+                -1.5002509873052863
+              ],
+              "inventory": [],
+              "moved": 0.8322898948679249
+            },
+            "durationMs": 305
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                4,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                4.351960716218757,
+                -59,
+                -1.4998607160871837
+              ],
+              "inventory": [],
+              "moved": 1.6842499736353498
+            },
+            "durationMs": 506
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                3,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                3.5,
+                -59,
+                -1.5000341699619733
+              ],
+              "inventory": [],
+              "moved": 0.8519607338758193
+            },
+            "durationMs": 253
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                3,
+                -59,
+                -4
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                3.5003902712181905,
+                -59,
+                -3.5
+              ],
+              "inventory": [],
+              "moved": 1.9999658681165828
+            },
+            "durationMs": 452
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                1,
+                -59,
+                -4
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                1.5,
+                -59,
+                -3.5003902712182744
+              ],
+              "inventory": [],
+              "moved": 2.000390309288667
+            },
+            "durationMs": 506
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -59,
+                -1
+              ],
+              "expect": "oak_log"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -59,
+                  -1
+                ],
+                "name": "oak_log"
+              },
+              "position": [
+                1.5,
+                -59,
+                -3.5003902712182744
+              ],
+              "inventory": []
+            },
+            "durationMs": 3051
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                1,
+                -59,
+                -5
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                1.500216817343438,
+                -59,
+                -4.332681371490995
+              ],
+              "inventory": [],
+              "moved": 0.8322911285138973
+            },
+            "durationMs": 276
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -5
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.6792809915723514,
+                -59,
+                -4.469695900595431
+              ],
+              "inventory": [],
+              "moved": 0.8322911817508137
+            },
+            "durationMs": 305
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -4
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.5278882519878871,
+                -59,
+                -3.651290223071383
+              ],
+              "inventory": [],
+              "moved": 0.8322905830312423
+            },
+            "durationMs": 303
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                1,
+                -59,
+                -4
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                1.3502531040266803,
+                -59,
+                -3.523133412320815
+              ],
+              "inventory": [],
+              "moved": 0.8322908854544444
+            },
+            "durationMs": 300
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                1,
+                -59,
+                -3
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                1.4708260144387748,
+                -59,
+                -2.6996227640124633
+              ],
+              "inventory": [],
+              "moved": 0.8322905830312419
+            },
+            "durationMs": 301
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [1.4708260144387748d, -59.0d, -2.6996227640124633d]",
+        "inventory": "PrimitiveLab has the following entity data: []",
+        "disturbed": false
+      },
+      {
+        "scenario": "gap",
+        "policy": "scripted",
+        "passed": true,
+        "wallMs": 3746,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "step",
+              "dx": 0.6,
+              "dz": 0
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "position": [
+                1.105154689716115,
+                -59,
+                0.5001300904060608
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 4
+                }
+              ],
+              "moved": 0.6051547036989148
+            },
+            "durationMs": 561
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                1,
+                -60,
+                0
+              ],
+              "item": "dirt"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  1,
+                  -60,
+                  0
+                ],
+                "name": "dirt"
+              },
+              "position": [
+                1.143807054197617,
+                -59,
+                0.5001300904060608
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ]
+            },
+            "durationMs": 1061
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                1,
+                -59,
+                0
+              ]
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "position": [
+                1.5,
+                -59,
+                0.5001300904060608
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ],
+              "moved": 0.3561929458023829
+            },
+            "durationMs": 51
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": 0.6,
+              "dz": 0
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "position": [
+                2.1244145474012712,
+                -59,
+                0.5002601808121216
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ],
+              "moved": 0.6244145609527761
+            },
+            "durationMs": 610
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                2,
+                -60,
+                0
+              ],
+              "item": "dirt"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  2,
+                  -60,
+                  0
+                ],
+                "name": "dirt"
+              },
+              "position": [
+                2.143807054197617,
+                -59,
+                0.5002601808121216
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 2
+                }
+              ]
+            },
+            "durationMs": 1106
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                3,
+                -59,
+                0
+              ]
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "position": [
+                3.5,
+                -59,
+                0.5002637982929101
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 2
+                }
+              ],
+              "moved": 1.3561929458072077
+            },
+            "durationMs": 356
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [3.5d, -59.0d, 0.5002637982929101d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 2, Slot: 0b, id: \"minecraft:dirt\"}]",
+        "disturbed": false
+      },
+      {
+        "scenario": "gap",
+        "policy": "random",
+        "passed": false,
+        "wallMs": 8716,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.500296416753726,
+                -59,
+                -1.5
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 4
+                }
+              ],
+              "moved": 2.000000021965723
+            },
+            "durationMs": 467
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": 0,
+              "dz": 0.6
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.5001120900465483,
+                -59,
+                -0.875585514193572
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 4
+                }
+              ],
+              "moved": 0.6244145130129831
+            },
+            "durationMs": 608
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": 0,
+              "dz": -0.6
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.5002964167537838,
+                -59,
+                -1.4768535252382091
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 4
+                }
+              ],
+              "moved": 0.6012680392985386
+            },
+            "durationMs": 609
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -2,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -1.5,
+                -59,
+                -1.499571802320672
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 4
+                }
+              ],
+              "moved": 2.0004254235016172
+            },
+            "durationMs": 503
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": -0.6,
+              "dz": 0
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -2.1244144858064273,
+                -59,
+                -1.4997561290279364
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 4
+                }
+              ],
+              "moved": 0.6244145130129825
+            },
+            "durationMs": 611
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                -3,
+                -59,
+                -3
+              ],
+              "item": "dirt"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  -3,
+                  -59,
+                  -3
+                ],
+                "name": "dirt"
+              },
+              "position": [
+                -2.143806990689816,
+                -59,
+                -1.4997561290279364
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ]
+            },
+            "durationMs": 448
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -3,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -2.516045989648966,
+                -59,
+                0.3373924962172231
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ],
+              "moved": 1.8744804463067333
+            },
+            "durationMs": 557
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -3,
+                -59,
+                2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -2.5043457503302307,
+                -59,
+                2.5
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ],
+              "moved": 2.16263915413961
+            },
+            "durationMs": 555
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -3,
+                -59,
+                3
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -2.501830775580907,
+                -59,
+                3.3322808231945493
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ],
+              "moved": 0.8322846230439358
+            },
+            "durationMs": 301
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": 0,
+              "dz": -0.6
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -2.5016464488736716,
+                -59,
+                2.7078663373881215
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ],
+              "moved": 0.6244145130129829
+            },
+            "durationMs": 608
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -3,
+                -59,
+                3
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -2.5008659643446585,
+                -59,
+                3.3127328998029495
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ],
+              "moved": 0.6048670659604728
+            },
+            "durationMs": 251
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": 0,
+              "dz": 0.6
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -2.501050291051836,
+                -59,
+                3.9178875298240934
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ],
+              "moved": 0.6051546580935839
+            },
+            "durationMs": 604
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": 0.6,
+              "dz": 0
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -1.8766358052454086,
+                -59,
+                3.9567684003731793
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 3
+                }
+              ],
+              "moved": 0.6256238264161301
+            },
+            "durationMs": 561
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                -1,
+                -59,
+                3
+              ],
+              "item": "dirt"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  -1,
+                  -59,
+                  3
+                ],
+                "name": "dirt"
+              },
+              "position": [
+                -1.85724330036202,
+                -59,
+                3.9567684003731793
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 2
+                }
+              ]
+            },
+            "durationMs": 200
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                -2,
+                -59,
+                5
+              ],
+              "item": "dirt"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  -2,
+                  -59,
+                  5
+                ],
+                "name": "dirt"
+              },
+              "position": [
+                -1.85724330036202,
+                -59,
+                3.9567684003731793
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 604
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -4,
+                -59,
+                3
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -3.5,
+                -59,
+                3.5014466864480345
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 1
+                }
+              ],
+              "moved": 1.7046898361218676
+            },
+            "durationMs": 456
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -4,
+                -59,
+                4
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                -3.5003072111786295,
+                -59,
+                4.3337377046201055
+              ],
+              "inventory": [
+                {
+                  "name": "dirt",
+                  "count": 1
+                }
+              ],
+              "moved": 0.8322910748702109
+            },
+            "durationMs": 302
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                -5,
+                -59,
+                4
+              ],
+              "item": "dirt"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  -5,
+                  -59,
+                  4
+                ],
+                "name": "dirt"
+              },
+              "position": [
+                -3.5003072111786295,
+                -59,
+                4.3337377046201055
+              ],
+              "inventory": []
+            },
+            "durationMs": 453
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [-3.5003072111786295d, -59.0d, 4.3337377046201055d]",
+        "inventory": "PrimitiveLab has the following entity data: []",
+        "disturbed": false
+      },
+      {
+        "event": "PRIMITIVE_CASE_RESULT",
+        "scenario": "changed",
+        "policy": "scripted",
+        "passed": false,
+        "wallMs": 1181,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "equip",
+              "item": "stone_pickaxe"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "held": "stone_pickaxe",
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 1
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                1,
+                -58,
+                0
+              ],
+              "expect": "stone"
+            },
+            "source": "scripted",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  1,
+                  -58,
+                  0
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 652
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                1,
+                -59,
+                0
+              ],
+              "expect": "stone"
+            },
+            "source": "scripted",
+            "ok": false,
+            "error": "Error: World changed: expected stone, observed bedrock",
+            "durationMs": 0
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "scripted",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 122
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                -2
+              ]
+            },
+            "source": "scripted",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 152
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [0.5d, -59.0d, 0.5d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 1}, id: \"minecraft:stone_pickaxe\"}, {count: 1, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+        "disturbed": true
+      },
+      {
+        "scenario": "changed",
+        "policy": "random",
+        "passed": false,
+        "wallMs": 11753,
+        "planMs": 0,
+        "plans": 0,
+        "outcomes": [
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 111
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 152
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 154
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                1,
+                -59,
+                0
+              ],
+              "expect": "stone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  1,
+                  -59,
+                  0
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 654
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                2
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 103
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 152
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                -2,
+                -59,
+                0
+              ]
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Navigation ended before reaching the goal",
+            "durationMs": 152
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -59,
+                -1
+              ],
+              "expect": "stone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -59,
+                  -1
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 652
+          },
+          {
+            "step": {
+              "op": "dig",
+              "target": [
+                0,
+                -58,
+                -1
+              ],
+              "expect": "stone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "removed": {
+                "position": [
+                  0,
+                  -58,
+                  -1
+                ],
+                "name": "stone"
+              },
+              "position": [
+                0.5,
+                -59,
+                0.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 650
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": -0.6,
+              "dz": 0
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Fine movement target not reached safely",
+            "durationMs": 2112
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": 0.6,
+              "dz": 0
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Fine movement target not reached safely",
+            "durationMs": 2118
+          },
+          {
+            "step": {
+              "op": "step",
+              "dx": 0,
+              "dz": 0.6
+            },
+            "source": "random",
+            "ok": false,
+            "error": "Error: Fine movement target not reached safely",
+            "durationMs": 2102
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.48774295249702215,
+                -59,
+                -1.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 2.210143108231556
+            },
+            "durationMs": 551
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -3
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.49472078038066253,
+                -59,
+                -2.3322115968878423
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 0.8322408498004567
+            },
+            "durationMs": 302
+          },
+          {
+            "step": {
+              "op": "move",
+              "target": [
+                0,
+                -59,
+                -2
+              ]
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "position": [
+                0.49755356086394564,
+                -59,
+                -1.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 2
+                }
+              ],
+              "moved": 0.8322164181508792
+            },
+            "durationMs": 253
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                0,
+                -59,
+                -1
+              ],
+              "item": "cobblestone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  0,
+                  -59,
+                  -1
+                ],
+                "name": "cobblestone"
+              },
+              "position": [
+                0.49755356086394564,
+                -59,
+                -1.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                },
+                {
+                  "name": "cobblestone",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 706
+          },
+          {
+            "step": {
+              "op": "place",
+              "target": [
+                2,
+                -59,
+                -2
+              ],
+              "item": "cobblestone"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "placed": {
+                "position": [
+                  2,
+                  -59,
+                  -2
+                ],
+                "name": "cobblestone"
+              },
+              "position": [
+                0.49755356086394564,
+                -59,
+                -1.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 555
+          },
+          {
+            "step": {
+              "op": "equip",
+              "item": "stone_pickaxe"
+            },
+            "source": "random",
+            "ok": true,
+            "result": {
+              "held": "stone_pickaxe",
+              "position": [
+                0.49755356086394564,
+                -59,
+                -1.5
+              ],
+              "inventory": [
+                {
+                  "name": "stone_pickaxe",
+                  "count": 1
+                }
+              ]
+            },
+            "durationMs": 0
+          }
+        ],
+        "serverPosition": "PrimitiveLab has the following entity data: [0.49755356086394564d, -59.0d, -1.5d]",
+        "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 3}, id: \"minecraft:stone_pickaxe\"}]",
+        "disturbed": true
+      }
+    ],
+    "limitation": "Small fixtures and one random seed. Scripted baseline is hand-authored for these tasks. Does not establish general intelligence or broad model superiority."
+  },
+  "plannerOnlyDevelopmentCases": [
+    {
+      "event": "PRIMITIVE_CASE_RESULT",
+      "scenario": "barrier_east",
+      "policy": "model",
+      "passed": true,
+      "wallMs": 45266,
+      "planMs": 43410,
+      "plans": 1,
+      "outcomes": [
+        {
+          "step": {
+            "op": "dig",
+            "target": [
+              1,
+              -59,
+              0
+            ],
+            "expect": "stone"
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "removed": {
+              "position": [
+                1,
+                -59,
+                0
+              ],
+              "name": "stone"
+            },
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              }
+            ]
+          },
+          "durationMs": 654
+        },
+        {
+          "step": {
+            "op": "dig",
+            "target": [
+              1,
+              -58,
+              0
+            ],
+            "expect": "stone"
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "removed": {
+              "position": [
+                1,
+                -58,
+                0
+              ],
+              "name": "stone"
+            },
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              },
+              {
+                "name": "cobblestone",
+                "count": 1
+              }
+            ]
+          },
+          "durationMs": 658
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              2,
+              -59,
+              0
+            ]
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "position": [
+              2.5,
+              -59,
+              0.5001626854366501
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              },
+              {
+                "name": "cobblestone",
+                "count": 2
+              }
+            ],
+            "moved": 2.000000006616638
+          },
+          "durationMs": 457
+        }
+      ],
+      "serverPosition": "PrimitiveLab has the following entity data: [2.5d, -59.0d, 0.5001626854366501d]",
+      "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+      "disturbed": false
+    },
+    {
+      "event": "PRIMITIVE_CASE_RESULT",
+      "scenario": "barrier_north",
+      "policy": "model",
+      "passed": true,
+      "wallMs": 37756,
+      "planMs": 35785,
+      "plans": 1,
+      "outcomes": [
+        {
+          "step": {
+            "op": "dig",
+            "target": [
+              0,
+              -59,
+              -1
+            ],
+            "expect": "stone"
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "removed": {
+              "position": [
+                0,
+                -59,
+                -1
+              ],
+              "name": "stone"
+            },
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              }
+            ]
+          },
+          "durationMs": 654
+        },
+        {
+          "step": {
+            "op": "dig",
+            "target": [
+              0,
+              -58,
+              -1
+            ],
+            "expect": "stone"
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "removed": {
+              "position": [
+                0,
+                -58,
+                -1
+              ],
+              "name": "stone"
+            },
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              },
+              {
+                "name": "cobblestone",
+                "count": 1
+              }
+            ]
+          },
+          "durationMs": 658
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              0,
+              -59,
+              -1
+            ]
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "position": [
+              0.5000903025010934,
+              -59,
+              -0.33229116761722827
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              },
+              {
+                "name": "cobblestone",
+                "count": 1
+              }
+            ],
+            "moved": 0.8322911725160798
+          },
+          "durationMs": 255
+        },
+        {
+          "step": {
+            "op": "move",
+            "target": [
+              0,
+              -59,
+              -2
+            ]
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "position": [
+              0.5001806050021869,
+              -59,
+              -1.5
+            ],
+            "inventory": [
+              {
+                "name": "stone_pickaxe",
+                "count": 1
+              },
+              {
+                "name": "cobblestone",
+                "count": 2
+              }
+            ],
+            "moved": 1.1677088358744563
+          },
+          "durationMs": 304
+        }
+      ],
+      "serverPosition": "PrimitiveLab has the following entity data: [0.5001806050021869d, -59.0d, -1.5d]",
+      "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+      "disturbed": false
+    },
+    {
+      "event": "PRIMITIVE_CASE_RESULT",
+      "scenario": "craft",
+      "policy": "model",
+      "passed": true,
+      "wallMs": 73888,
+      "planMs": 73129,
+      "plans": 2,
+      "outcomes": [
+        {
+          "step": {
+            "op": "craft",
+            "item": "oak_planks",
+            "times": 3
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "crafted": "oak_planks",
+            "gained": 12,
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_planks",
+                "count": 12
+              }
+            ]
+          },
+          "durationMs": 7
+        },
+        {
+          "step": {
+            "op": "craft",
+            "item": "crafting_table",
+            "times": 1
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "crafted": "crafting_table",
+            "gained": 1,
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_planks",
+                "count": 8
+              },
+              {
+                "name": "crafting_table",
+                "count": 1
+              }
+            ]
+          },
+          "durationMs": 4
+        },
+        {
+          "step": {
+            "op": "place",
+            "target": [
+              1,
+              -59,
+              0
+            ],
+            "item": "crafting_table"
+          },
+          "source": "planner+jev",
+          "ok": false,
+          "error": "Error: Do not place into the immediate standing/exit space",
+          "durationMs": 0
+        },
+        {
+          "step": {
+            "op": "place",
+            "target": [
+              2,
+              -59,
+              0
+            ],
+            "item": "crafting_table"
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "placed": {
+              "position": [
+                2,
+                -59,
+                0
+              ],
+              "name": "crafting_table"
+            },
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_planks",
+                "count": 8
+              }
+            ]
+          },
+          "durationMs": 590
+        },
+        {
+          "step": {
+            "op": "craft",
+            "item": "stick",
+            "times": 1
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "crafted": "stick",
+            "gained": 4,
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_planks",
+                "count": 6
+              },
+              {
+                "name": "stick",
+                "count": 4
+              }
+            ]
+          },
+          "durationMs": 3
+        },
+        {
+          "step": {
+            "op": "craft",
+            "item": "wooden_pickaxe",
+            "times": 1,
+            "table": [
+              2,
+              -59,
+              0
+            ]
+          },
+          "source": "planner+jev",
+          "ok": true,
+          "result": {
+            "crafted": "wooden_pickaxe",
+            "gained": 1,
+            "position": [
+              0.5,
+              -59,
+              0.5
+            ],
+            "inventory": [
+              {
+                "name": "oak_planks",
+                "count": 3
+              },
+              {
+                "name": "stick",
+                "count": 2
+              },
+              {
+                "name": "wooden_pickaxe",
+                "count": 1
+              }
+            ]
+          },
+          "durationMs": 52
+        }
+      ],
+      "serverPosition": "PrimitiveLab has the following entity data: [0.5d, -59.0d, 0.5d]",
+      "inventory": "PrimitiveLab has the following entity data: [{count: 3, Slot: 9b, id: \"minecraft:oak_planks\"}, {count: 2, Slot: 10b, id: \"minecraft:stick\"}, {count: 1, Slot: 11b, id: \"minecraft:wooden_pickaxe\"}]",
+      "disturbed": false
+    }
+  ],
+  "limitations": [
+    "Only five small fixtures and one random seed.",
+    "Hybrid cases finished through Jev primitive choices before Kimi returned; no claim that Kimi improved those results.",
+    "Planner-only development runs solved east/north obstructions and crafting, but incurred 37-74 seconds and included rejected programs/timeouts. Gap testing was interrupted after a timeout to revise the controller.",
+    "The scripted baseline is hand-authored for the fixtures; the random baseline uses the same generic affordances as Jev.",
+    "No claim of human-like reasoning or sustained village success."
+  ],
+  "checks": {
+    "nodePassed": 196,
+    "infraPassed": 34
+  },
+  "scriptedChangedControl": {
+    "event": "PRIMITIVE_CASE_RESULT",
+    "scenario": "changed_control",
+    "policy": "scripted",
+    "passed": true,
+    "wallMs": 2315,
+    "planMs": 0,
+    "plans": 0,
+    "outcomes": [
+      {
+        "step": {
+          "op": "equip",
+          "item": "stone_pickaxe"
+        },
+        "source": "scripted",
+        "ok": true,
+        "result": {
+          "held": "stone_pickaxe",
+          "position": [
+            0.5,
+            -59,
+            0.5
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            }
+          ]
+        },
+        "durationMs": 2
+      },
+      {
+        "step": {
+          "op": "dig",
+          "target": [
+            1,
+            -58,
+            0
+          ],
+          "expect": "stone"
+        },
+        "source": "scripted",
+        "ok": true,
+        "result": {
+          "removed": {
+            "position": [
+              1,
+              -58,
+              0
+            ],
+            "name": "stone"
+          },
+          "position": [
+            0.5,
+            -59,
+            0.5
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            }
+          ]
+        },
+        "durationMs": 654
+      },
+      {
+        "step": {
+          "op": "dig",
+          "target": [
+            1,
+            -59,
+            0
+          ],
+          "expect": "stone"
+        },
+        "source": "scripted",
+        "ok": true,
+        "result": {
+          "removed": {
+            "position": [
+              1,
+              -59,
+              0
+            ],
+            "name": "stone"
+          },
+          "position": [
+            0.5,
+            -59,
+            0.5
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            },
+            {
+              "name": "cobblestone",
+              "count": 1
+            }
+          ]
+        },
+        "durationMs": 658
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            2,
+            -59,
+            0
+          ]
+        },
+        "source": "scripted",
+        "ok": true,
+        "result": {
+          "position": [
+            2.5,
+            -59,
+            0.5002969335131866
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            },
+            {
+              "name": "cobblestone",
+              "count": 2
+            }
+          ],
+          "moved": 2.0000000220423777
+        },
+        "durationMs": 493
+      },
+      {
+        "step": {
+          "op": "move",
+          "target": [
+            2,
+            -59,
+            -2
+          ]
+        },
+        "source": "scripted",
+        "ok": true,
+        "result": {
+          "position": [
+            2.5002969335132708,
+            -59,
+            -1.5
+          ],
+          "inventory": [
+            {
+              "name": "stone_pickaxe",
+              "count": 1
+            },
+            {
+              "name": "cobblestone",
+              "count": 2
+            }
+          ],
+          "moved": 2.000296955552292
+        },
+        "durationMs": 506
+      }
+    ],
+    "serverPosition": "PrimitiveLab has the following entity data: [2.5002969335132708d, -59.0d, -1.5d]",
+    "inventory": "PrimitiveLab has the following entity data: [{count: 1, Slot: 0b, components: {\"minecraft:damage\": 2}, id: \"minecraft:stone_pickaxe\"}, {count: 2, Slot: 1b, id: \"minecraft:cobblestone\"}]",
+    "disturbed": false
+  }
+}

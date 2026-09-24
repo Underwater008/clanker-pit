@@ -1,3 +1,4 @@
+import { createActionPlanner, primitiveLabel } from './action-plan.mjs'
 // Persistent survival cast: Kimi plans, Jev selects feasible skills, Mineflayer executes.
 //
 // SCENARIO=village adds the Server-defense game: the clankers spawn around a
@@ -403,6 +404,7 @@ function currentRoles() {
 /* ---------- actors --------------------------------------------------------- */
 function actor(name, index) {
   const founder = foundingNames.includes(name)
+  const primitiveMode = (process.env.PRIMITIVE_CLANKERS ?? '').split(',').map((n) => n.trim().toLowerCase()).includes(name.toLowerCase())
   const identity = identityFor(name)
   // Each clanker thinks with its own routed LLM (CLANKER_MODELS in models.mjs).
   const planner = plannerFor(name)
@@ -449,6 +451,7 @@ function actor(name, index) {
     planRequest = null,
     reflectRequest = null,
     decisions = null,
+    actionPlanner = null,
     lastPlan = 0,
     failures = 0,
     task = 'connecting',
@@ -561,6 +564,7 @@ function actor(name, index) {
   function report() {
     STATE[name] = {
       offline: !connected,
+      controlMode: primitiveMode ? 'model_primitives' : 'bounded_skills',
       health: bot?.health ?? 0,
       food: bot?.food ?? 0,
       inventory:
@@ -626,6 +630,12 @@ function actor(name, index) {
         error: data.error ?? null,
         requestPending: data.requestPending ?? false,
       })
+      if (brain.jev.length > 12) brain.jev.splice(0, brain.jev.length - 12)
+    }
+    if (event === 'primitive_decision') {
+      brain.jev.push({ t: new Date().toISOString(), choice: primitiveLabel(data.step),
+        source: data.source, durationMs: data.durationMs, model: data.model,
+        confidence: data.confidence, options: {}, reason: 'Primitive selection while planner is pending' })
       if (brain.jev.length > 12) brain.jev.splice(0, brain.jev.length - 12)
     }
     if (event === 'planner_plan')
@@ -717,7 +727,63 @@ function actor(name, index) {
       }
     }
   }
+  async function primitiveLoop(thisEpoch) {
+    if (!MODELS) { task = 'primitive controller disabled: models are off'; return }
+    const controller = createActionPlanner({ planner, jevChoose, identity, state, tactical: true,
+      primitives: skills.primitives,
+      objective: () => ({ motivation: identity.current_goal, role: state.role,
+        instruction: 'Keep the village alive through useful Minecraft work. Identify a reachable concrete objective, make a short executable plan, and revise it from results.',
+        situation: skills.observation(), beliefs: memory.recentContext(3, 2) }),
+      log: (event, data) => {
+        actorLog(event, data)
+        if (event === 'program_ready') {
+          state.plan = { goal: state.plan.goal, intention: data.intention, steps: data.steps.map(primitiveLabel),
+            program: data.steps, source: data.source, issuedAt: data.issuedAt }
+          brain.think = { t: new Date().toISOString(), intention: data.intention, steps: state.plan.steps,
+            model: { provider: planner.name, model: data.model }, thinking: data.reason }
+          save()
+        }
+      },
+    })
+    actionPlanner = controller
+    try {
+      while (connected && epoch === thisEpoch && !stopping) {
+        const urgent = skills.emergency()
+        let step, source
+        if (urgent) { controller.cancel('safety_reflex'); step = urgent; source = 'safety_reflex' }
+        else {
+          const next = controller.next()
+          brain.planner = { ...controller.status, provider: planner.name, model: planner.describe.model }
+          if (!next) { task = `planning: ${controller.status.status}`; await sleep(150); continue }
+          step = next.step; source = next.source
+        }
+        const label = typeof step === 'string' ? step : primitiveLabel(step)
+        task = label
+        const started = Date.now()
+        brain.action = { action: label, source, status: 'running', startedAt: new Date(started).toISOString() }
+        actorLog('action_start', { action: label, primitive: typeof step === 'object' ? step : null, source })
+        try {
+          const result = await skills.execute(step, { source })
+          if (!connected || epoch !== thisEpoch) break
+          if (typeof step === 'object') controller.record(step, { result })
+          const outcome = { action: label, primitive: step, source, ok: true, result,
+            durationMs: Date.now() - started, at: new Date().toISOString() }
+          brain.action = { ...brain.action, status: 'succeeded', result, completedAt: outcome.at }
+          state.recent.push(outcome); memory.event('action', outcome); actorLog('action_result', outcome)
+        } catch (error) {
+          if (!connected || epoch !== thisEpoch) break
+          if (typeof step === 'object') controller.record(step, { error })
+          const outcome = { action: label, primitive: step, source, ok: false, error: String(error),
+            evidence: error.primitiveEvidence, durationMs: Date.now() - started, at: new Date().toISOString() }
+          brain.action = { ...brain.action, status: 'failed', error: outcome.error, completedAt: outcome.at }
+          state.recent.push(outcome); memory.event('action', outcome); actorLog('action_failed', outcome)
+        }
+        save(); report(); await sleep(100)
+      }
+    } finally { controller.close(); if (actionPlanner === controller) actionPlanner = null }
+  }
   async function loop(thisEpoch) {
+    if (primitiveMode) return primitiveLoop(thisEpoch)
     // Jev decisions are requested while the previous action runs, so the bot
     // starts its next action immediately instead of idling between cycles.
     const loopDecisions = MODELS
@@ -908,6 +974,7 @@ function actor(name, index) {
       epoch++
       staleRevision++
       decisions?.cancel('death')
+      actionPlanner?.close()
       skills?.stop()
       lastPlan = Math.min(lastPlan, Date.now() - PLAN_INTERVAL)
       planRequest?.controller.abort()
@@ -952,6 +1019,7 @@ function actor(name, index) {
       if (bot !== connection) return
       connected = false
       decisions?.close()
+      actionPlanner?.close()
       planRequest?.controller.abort()
       reflectRequest?.controller.abort()
       if (brain.action?.status === 'running') brain.action = {
@@ -989,6 +1057,7 @@ function actor(name, index) {
   actors.push(() => {
     clearInterval(reportTimer)
     decisions?.close()
+    actionPlanner?.close()
     planRequest?.controller.abort()
     reflectRequest?.controller.abort()
     skills?.stop()
