@@ -4,6 +4,29 @@ const hazards = new Set(['water', 'lava', 'fire', 'soul_fire', 'cactus', 'magma_
   'powder_snow', 'sweet_berry_bush', 'sand', 'red_sand', 'gravel'])
 const solid = (b) => b?.boundingBox === 'block'
 
+// A walking graph cannot start inside water. Advertise only inspected native
+// swimming inputs, including a vertical rise and open cardinal corridors.
+// The caller chooses an input and confirms displacement from server position.
+export function localSwimRoutes(bot) {
+  if (!bot.entity.isInWater) return []
+  const origin = bot.entity.position.floored()
+  const unsafe = new Set(['lava', 'fire', 'soul_fire', 'cactus', 'magma_block', 'powder_snow', 'sweet_berry_bush'])
+  const clear = p => { const b = bot.blockAt(p); return b && !solid(b) && !unsafe.has(b.name) }
+  const routes = []
+  if (clear(origin.offset(0, 1, 0)) && clear(origin.offset(0, 2, 0)))
+    routes.push({ direction: 'up', yaw: null })
+  for (const [direction, dx, dz, yaw] of [
+    ['north', 0, -1, 0], ['south', 0, 1, Math.PI],
+    ['west', -1, 0, Math.PI / 2], ['east', 1, 0, -Math.PI / 2],
+  ]) {
+    const feet = origin.offset(dx, 0, dz), head = feet.offset(0, 1, 0)
+    if (clear(feet) && clear(head) ||
+        solid(bot.blockAt(feet)) && clear(head) && clear(feet.offset(0, 2, 0)) && clear(origin.offset(0, 2, 0)))
+      routes.push({ direction, yaw })
+  }
+  return routes
+}
+
 // A small local walk graph. No RCON, hidden-world survey, excavation, towers,
 // or teleports. Returning explicit destinations lets the planner choose an
 // approach rather than merely narrating an opaque "explore" skill.

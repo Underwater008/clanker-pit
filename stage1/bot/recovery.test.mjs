@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Vec3 } from 'vec3'
-import { localPassagePlans, localWaterHatch, localContext } from './recovery.mjs'
+import { localPassagePlans, localWaterHatch, localSwimRoutes, localContext } from './recovery.mjs'
 import { createProgressMemory } from './progress.mjs'
 
 function scene() {
@@ -53,6 +53,21 @@ test('roofed water pocket offers only a safe natural overhead hatch', () => {
   assert.equal(localWaterHatch(bot), null, 'a hazardous exit is rejected')
   put(0,64,0,'air'); bot.entity.isInWater = false
   assert.equal(localWaterHatch(bot), null, 'the option requires a water pocket')
+})
+test('swimming recovery offers inspected open directions and no blocked wall input', () => {
+  const { bot, put } = scene()
+  bot.entity.isInWater = true
+  const read = bot.blockAt
+  bot.blockAt = p => { const b = read(p); return { ...b, boundingBox: b.name === 'water' ? 'empty' : b.boundingBox } }
+  put(0,64,0,'water'); put(0,65,0,'water'); put(0,66,0,'stone')
+  put(1,64,0,'stone'); put(1,65,0,'stone')
+  put(0,64,-1,'water'); put(0,65,-1,'water')
+  const routes = localSwimRoutes(bot).map(r => r.direction)
+  assert.ok(routes.includes('north'))
+  assert.ok(!routes.includes('east'))
+  assert.ok(!routes.includes('up'))
+  bot.entity.isInWater = false
+  assert.deepEqual(localSwimRoutes(bot), [])
 })
 test('access failures outlive cooldowns and crafting; changed terrain invalidates them', () => {
   const {bot,put}=scene(), state={}; let time=1000
