@@ -42,6 +42,7 @@ evidence before relying on historical notes or another agent's claims.
 | --- | --- |
 | Controller | `stage1/bot/ambient.mjs`: cast lifecycle, planning, village scenario, council, chat/brain telemetry, reconnects; `decision.mjs`: overlapped Jev scheduling |
 | Model-authored programs | `action-plan.mjs` + `primitives.mjs`: opt-in `PRIMITIVE_CLANKERS` loop, typed local actions, verified results and failure-driven replanning; see `docs/MODEL-ACTION-LOOP.md` |
+| Personal needs | `stage1/bot/ambitions.mjs`: persisted home, equipment and treasure projects with observed fulfillment and safe downtime priorities |
 | Gameplay | `stage1/bot/survival.mjs`: perception, feasible actions, navigation, survival and village skills (build wall/gate/home/torches, iron→bucket, coolant feeding, guard/patrol/attack); `crafting.mjs`: server-confirmed crafting |
 | Village | `stage1/bot/village.mjs`: layout blueprints and economy; `coolant.mjs` + `coolant-setup.mjs`: remote spring datapack and backed-up fixture migration; `council.mjs`: role discussion + deterministic assignment; `flag-setup.mjs` + `fixture-grant.mjs`: idempotent round fixtures (labeled, RCON) |
 | Home beds | `stage1/bot/home-beds.mjs`: labeled, idempotent founder bed and respawn-point fixture after the cast joins |

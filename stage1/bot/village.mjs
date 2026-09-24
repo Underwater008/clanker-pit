@@ -302,6 +302,12 @@ export function roadSpots(flag) {
   return offsets.map(([x, z]) => plus(flag, x, 0, z))
 }
 
+// A finite level apron includes the blast-scarred ground outside the walls.
+export function villageFloorContains(flag, position) {
+  const x = position.x - flag.x, z = position.z - flag.z
+  return Math.abs(x) <= WALL_RADIUS + 4 && z >= -WALL_RADIUS - 4 && z <= WALL_RADIUS + 6
+}
+
 /** Find exposed gaps in the originally solid village floor. Repairing the
  * surface from a stable neighboring block also closes deep blast craters. */
 export function blastHoleTargets(flag, blockAt) {
@@ -314,13 +320,16 @@ export function blastHoleTargets(flag, blockAt) {
     }),
   ].map((p) => `${p.x},${p.z}`))
   const out = []
-  for (let z = -WALL_RADIUS; z <= WALL_RADIUS + 6; z++)
-    for (let x = -WALL_RADIUS; x <= WALL_RADIUS; x++) {
-      if (z > WALL_RADIUS && Math.abs(x) > 2) continue
+  for (let z = -WALL_RADIUS - 4; z <= WALL_RADIUS + 6; z++)
+    for (let x = -WALL_RADIUS - 4; x <= WALL_RADIUS + 4; x++) {
       if (reserved.has(`${f.x + x},${f.z + z}`)) continue
       const top = plus(f, x, 0, z)
       const above = blockAt(top.offset(0, 1, 0))
-      if (!above || above.boundingBox === 'block') continue
+      if (above?.name !== 'air' || blockAt(top.offset(0, 2, 0))?.name !== 'air') continue
+      // Do not cap fluids, unloaded cavities, or an occupied cell. Deep dry
+      // craters need only a surface layer, grown outward from a stable edge.
+      const below = blockAt(top.offset(0, -1, 0))
+      if (!below || ['water', 'lava'].includes(below.name)) continue
       if (blockAt(top)?.name !== 'air') continue
       if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => {
         const side = blockAt(top.offset(dx, 0, dz))

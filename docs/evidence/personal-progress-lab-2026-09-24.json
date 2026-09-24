@@ -1,0 +1,66 @@
+{
+  "date": "2026-09-24",
+  "environment": "isolated Minecraft 1.21.1, loopback 25566/25576",
+  "policy": "scripted_lab",
+  "production_deployed": false,
+  "fixtures": "Floor crater, exposed ores, iron pickaxe, coal and additional diamonds granted by lab; no model calls",
+  "events": [
+    {
+      "action": "mine_diamond_ore",
+      "result": {
+        "block": "diamond_ore",
+        "position": {
+          "x": 14,
+          "y": -56,
+          "z": 6
+        },
+        "collected": [
+          {
+            "name": "diamond",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "action": "mine_gold_ore",
+      "result": {
+        "block": "gold_ore",
+        "position": {
+          "x": 14,
+          "y": -56,
+          "z": 8
+        },
+        "collected": [
+          {
+            "name": "raw_gold",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "action": "smelt_gold",
+      "result": {
+        "smelted": 1,
+        "item": "gold_ingot"
+      }
+    },
+    {
+      "event": "PERSONAL_LAB_PASS",
+      "floorBlocks": 4,
+      "deepCavityPreserved": true,
+      "diamondMined": 1,
+      "goldSmelted": 1,
+      "worn": "diamond_boots",
+      "personal": {
+        "preference": "home",
+        "active": "home",
+        "since": 1790287206936,
+        "work": 9,
+        "want": "A complete home of my own",
+        "fulfilled": []
+      }
+    }
+  ]
+}

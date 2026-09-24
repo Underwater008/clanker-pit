@@ -4,6 +4,7 @@ import { Vec3 } from 'vec3'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { craftConfirmed, craftableRecipe } from './crafting.mjs'
 import { coolantSource, coolantCells, isCoolantBucket } from './coolant.mjs'
+import { personalNeeds, prioritizePersonal } from './ambitions.mjs'
 import { createProgressMemory } from './progress.mjs'
 import { inspectVegetation, naturalLeaf, safeSaplingSite } from './vegetation.mjs'
 import { localContext, localRecoveryRoutes, localPassagePlans, localWaterHatch, localSwimRoutes, recoveryKey } from './recovery.mjs'
@@ -22,6 +23,7 @@ import {
   farmPlots,
   roadSpots,
   blastHoleTargets,
+  villageFloorContains,
   WALL_RADIUS,
   isBuildMaterial,
 } from './village.mjs'
@@ -52,7 +54,9 @@ export const GOALS = {
   build_village:
     'Raise the wall, gate, torches, and your own home around the Server.',
   improve_village:
-    'Clear natural trees and canopy around the Server for access and sightlines, repair blast holes, tend wheat, pave lanes, reinforce walls, and enlarge homes within their lots.',
+    'Clear natural trees and canopy around the Server for access and sightlines, lay flat surfaces across blast craters, tend wheat, pave lanes, reinforce walls, and enlarge homes within their lots.',
+  personal_progress:
+    'Pursue your own persistent needs: a larger home, better worn armor and tools, and a reserve of diamonds and gold. Plan executable prerequisites and keep urgent survival and village duties first.',
   stockpile_defense:
     'Upgrade stone tools and weapons to iron, craft and wear armor, and supply torches and coolant buckets.',
 }
@@ -68,6 +72,7 @@ export const isShelterMaterial = (n) => isBuildMaterial(n) || isPlank(n) || n ==
 const isPick = (n) => n.endsWith('_pickaxe')
 const stoneNames = new Set(['stone', 'cobblestone', 'coal_ore'])
 const ironOreNames = new Set(['iron_ore', 'deepslate_iron_ore'])
+const preciousOreNames = new Set(['diamond_ore', 'deepslate_diamond_ore', 'gold_ore', 'deepslate_gold_ore'])
 const hostiles = new Set([
   'zombie',
   'husk',
@@ -534,9 +539,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       )
     }
     if (layout && position.y === layout.flag.y) {
-      const x = position.x - layout.flag.x, z = position.z - layout.flag.z
-      if (Math.abs(x) <= WALL_RADIUS && Math.abs(z) <= WALL_RADIUS ||
-          z > WALL_RADIUS && z <= WALL_RADIUS + 6 && Math.abs(x) <= 2) return true
+      if (villageFloorContains(layout.flag, position)) return true
     }
     const key = position.toString()
     return villageConstruction.has(key) || shelterConstruction.has(key)
@@ -583,6 +586,8 @@ export function installSurvival(bot, state, log, opts = {}) {
       moves.exclusionAreasStep.push((block) => {
         if (escaping || !block?.position) return 0
         const p = block.position
+        // The repair apron includes natural slopes: do not fence clankers in
+        // before its surface exists. Keep the existing inner-floor boundary.
         const dx = p.x - layout.flag.x, dz = p.z - layout.flag.z
         const withinVillage = Math.abs(dx) <= WALL_RADIUS && Math.abs(dz) <= WALL_RADIUS ||
           dz > WALL_RADIUS && dz <= WALL_RADIUS + 6 && Math.abs(dx) <= 2
@@ -738,7 +743,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       !(isLog(b.name) && failedTrees.some((tree) =>
         tree.until > Date.now() &&
         Math.hypot(b.position.x - tree.x, b.position.z - tree.z) < 3)) &&
-      !((isLog(b.name) || stoneNames.has(b.name) || ironOreNames.has(b.name)) &&
+      !((isLog(b.name) || stoneNames.has(b.name) || ironOreNames.has(b.name) || preciousOreNames.has(b.name)) &&
         (constructionBlock(b.position) || resourceBusy(b.position))) &&
       (blocked.get(b.position.toString()) ?? 0) < Date.now() &&
       b.position.y >= bot.entity.position.y - 3 &&
@@ -1060,7 +1065,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   }
   async function dig(block, toolSuffix) {
     const resource = isLog(block.name) || stoneNames.has(block.name) ||
-      ironOreNames.has(block.name) || ['grass_block', 'dirt'].includes(block.name)
+      ironOreNames.has(block.name) || preciousOreNames.has(block.name) || ['grass_block', 'dirt'].includes(block.name)
     const release = resource ? claimResource(block) : () => {}
     const before = bot.inventory.items().map((item) => ({ name: item.name, count: item.count }))
     try {
@@ -1084,6 +1089,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       const gained = inventoryGains(before, bot.inventory.items())
       const expected = isLog(block.name) ? block.name
         : block.name === 'coal_ore' ? 'coal'
+          : preciousOreNames.has(block.name) ? (block.name.includes('diamond') ? 'diamond' : 'raw_gold')
           : ironOreNames.has(block.name) ? 'raw_iron'
             : stoneNames.has(block.name) ? 'cobblestone'
               : ['grass_block', 'dirt'].includes(block.name) ? 'dirt' : null
@@ -1329,7 +1335,10 @@ export function installSurvival(bot, state, log, opts = {}) {
         target.offset(0, 0, 1), target.offset(0, 0, -1)]
       const support = references.map((p) => bot.blockAt(p)).find((block) =>
         solid(block) && !['sand', 'red_sand', 'gravel'].includes(block.name))
-      if (!support || bot.blockAt(target)?.name !== 'air')
+      if (!support || !holeTargets().some((p) => p.equals(target)) ||
+          Object.values(bot.entities).some((e) => e.position &&
+            Math.abs(e.position.x - target.x - 0.5) < 0.8 && Math.abs(e.position.z - target.z - 0.5) < 0.8 &&
+            e.position.y < target.y + 1 && e.position.y + (e.height ?? 1.8) > target.y))
         throw new Error('Blast-hole support changed before repair')
       if (bot.entity.position.distanceTo(target.offset(0.5, 0.5, 0.5)) > 4.4)
         throw new Error('Blast hole is out of placement reach')
@@ -1337,8 +1346,11 @@ export function installSurvival(bot, state, log, opts = {}) {
       if (!available) throw new Error('Repair material left inventory')
       await bot.equip(available, 'hand')
       if (bot.heldItem?.name !== available.name) throw new Error('Repair material is not held')
-      await bounded(() => bot._placeBlockWithOptions(support, target.minus(support.position),
-        { forceLook: true, swingArm: 'right' }), 7000)
+      bot.setControlState('sneak', true)
+      try {
+        await bounded(() => bot._placeBlockWithOptions(support, target.minus(support.position),
+          { forceLook: true, swingArm: 'right' }), 7000)
+      } finally { bot.setControlState('sneak', false) }
       await awaitBlock(target, (b) => b?.name === available.name)
       return { placed: available.name, position: target, repairedHole: true }
     } finally {
@@ -1393,6 +1405,8 @@ export function installSurvival(bot, state, log, opts = {}) {
       throw new Error('Road spot still has an obstruction')
     return { ...await useToolOnGround(spot, '_shovel', 'dirt_path'), road: true }
   }
+  const preciousOreNearby = (kind) => nearbyBlock((b) =>
+    [ `${kind}_ore`, `deepslate_${kind}_ore` ].includes(b.name), 16, `${kind}16`, 1500)
   const oreNearby = () => nearbyBlock((b) => ironOreNames.has(b.name), 16, 'ore16', 1500)
   const wallEarthNearby = () => bot.findBlocks({
     matching: (b) => ['grass_block', 'dirt'].includes(b.name) &&
@@ -1406,14 +1420,16 @@ export function installSurvival(bot, state, log, opts = {}) {
     .sort((a, b) => a.position.distanceTo(bot.entity.position) -
       b.position.distanceTo(bot.entity.position))[0]
   const furnaceNearby = () => nearbyBlock((b) => b.name === 'furnace', 16, 'furnace16', 1500)
-  async function smeltIron() {
+  async function smeltMetal(kind = 'iron') {
     const run = async () => {
       const furnaceBlock = furnaceNearby()
       if (!furnaceBlock) throw new Error('No furnace nearby')
       // Re-find everything inside the serialized section: another clanker's
       // smelt may have run while this one waited for the chain.
-      const raw = bot.inventory.items().find((i) => i.name === 'raw_iron')
-      if (!raw) throw new Error('No raw iron to smelt')
+      const inputName = `raw_${kind}`, outputName = `${kind}_ingot`
+      const before = countItems(bot.inventory.items(), outputName)
+      const raw = bot.inventory.items().find((i) => i.name === inputName)
+      if (!raw) throw new Error(`No ${inputName} to smelt`)
       const fuel =
         bot.inventory.items().find((i) => i.name === 'coal') ??
         bot.inventory.items().find((i) => isPlank(i.name)) ??
@@ -1423,6 +1439,10 @@ export function installSurvival(bot, state, log, opts = {}) {
       // bot.openFurnace can hang if the window never opens (destroyed block,
       // server hiccup) — bound it like every other action.
       const furnace = await bounded(() => bot.openFurnace(furnaceBlock), 10000)
+      if (furnace.inputItem() || furnace.outputItem()) {
+        await furnace.close().catch(() => {})
+        throw new Error('Shared furnace contains another job; leave its items untouched')
+      }
     try {
       // One coal smelts 8 items; a plank or log smelts 1.5. Never batch more
       // than the fuel on hand can finish.
@@ -1434,16 +1454,16 @@ export function installSurvival(bot, state, log, opts = {}) {
         null,
         fuelCount,
       )
-      await furnace.putInput(bot.registry.itemsByName.raw_iron.id, null, count)
+      await furnace.putInput(bot.registry.itemsByName[inputName].id, null, count)
       const perItemMs = 11000
       const deadline = Date.now() + count * perItemMs + 9000
       while (Date.now() < deadline) {
         const out = furnace.outputItem()
-        if (out?.name === 'iron_ingot' && out.count >= count) break
+        if (out?.name === outputName && out.count >= count) break
         await sleep(500)
       }
       const out = furnace.outputItem()
-      if (out?.name !== 'iron_ingot' || out.count < count)
+      if (out?.name !== outputName || out.count < count)
         throw new Error(`Furnace produced ${out?.count ?? 0}/${count} ingots`)
       await furnace.takeOutput()
     } catch (error) {
@@ -1456,9 +1476,9 @@ export function installSurvival(bot, state, log, opts = {}) {
     } finally {
       await furnace.close().catch(() => {})
     }
-      const gained = countItems(bot.inventory.items(), 'iron_ingot')
-      if (gained < 1) throw new Error('Smelting did not yield iron ingots')
-      return { smelted: gained }
+      const gained = countItems(bot.inventory.items(), outputName) - before
+      if (gained < 1) throw new Error(`Smelting did not yield ${outputName}`)
+      return { smelted: gained, item: outputName }
     }
     const runNow = furnaceChain.then(run, run)
     furnaceChain = runNow.then(
@@ -1675,7 +1695,7 @@ export function installSurvival(bot, state, log, opts = {}) {
     const shelterLoaded = blueprint.every((p) => bot.blockAt(p) != null)
     const shelterLocal = localShelter(origin, bot.entity.position)
     const built = blueprint.filter((p) => solid(bot.blockAt(p))).length
-    return {
+    const observed = {
       health: bot.health,
       food: bot.food,
       threats: threats().map((e) => ({
@@ -1689,6 +1709,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         inspected_descent: villageCtx ? safePerchLanding(bot, villageCtx.flag.y) : null,
       },
       inventory: items.map((i) => ({ name: i.name, count: i.count })),
+      equipment: (bot.inventory.slots?.slice(5, 9) ?? []).filter(Boolean).map((i) => ({ name: i.name, count: 1 })),
       resources: {
         tree: logs ? { name: logs.name, position: logs.position } : null,
         stone: stone ? { name: stone.name, position: stone.position } : null,
@@ -1788,6 +1809,8 @@ export function installSurvival(bot, state, log, opts = {}) {
           })()
         : {}),
     }
+    if (villageCtx) observed.personal = personalNeeds(state, observed, bot.username)
+    return observed
   }
   function ordinaryCandidates(obs) {
     const items = bot.inventory.items()
@@ -1898,8 +1921,9 @@ export function installSurvival(bot, state, log, opts = {}) {
       const V = obs.village ?? {}
       const dx = bot.entity.position.x - villageCtx.flag.x
       const dz = bot.entity.position.z - villageCtx.flag.z
-      const onGradedFloor = (Math.abs(dx) <= WALL_RADIUS + 0.5 &&
-        Math.abs(dz) <= WALL_RADIUS + 0.5) ||
+      const nearRepairArea = villageFloorContains(villageCtx.flag, bot.entity.position.floored()) &&
+        Math.abs(bot.entity.position.y - (villageCtx.flag.y + 1)) <= 3
+      const onGradedFloor = (Math.abs(dx) <= WALL_RADIUS + 0.5 && Math.abs(dz) <= WALL_RADIUS + 0.5) ||
         (dz >= WALL_RADIUS - 0.5 && dz <= WALL_RADIUS + 6.5 && Math.abs(dx) <= 2.5)
       const nearVillage = onGradedFloor &&
         Math.abs(bot.entity.position.y - (villageCtx.flag.y + 1)) <= 3
@@ -1909,18 +1933,18 @@ export function installSurvival(bot, state, log, opts = {}) {
       }
       const materials = buildMaterialCount(Boolean(obs.resources.workbench))
       const wallMaterials = materials + n('dirt')
-      if (nearVillage && ['guard', 'builder'].includes(state.role) &&
+      if (nearRepairArea &&
           V.repairable_blast_holes > 0 && n((name) => ['dirt', 'cobblestone', 'stone'].includes(name)) > 0)
-        vadd('repair_blast_hole', 'Seal one blast hole in the village floor from stable neighboring ground.')
+        vadd('repair_blast_hole', 'Lay one floor block across a dry crater at village ground level, extending the flat surface from a stable edge.')
       if (nearVillage && wallMaterials >= 1 && !V.wall?.complete)
         vadd(
           'build_wall',
           'Raise up to two blocks of the perimeter wall; use gathered earth as a first barricade when stone or wood is scarce.',
         )
-      if (nearVillage && (state.role ?? null) === 'builder' &&
-          wallMaterials < 1 && (!V.wall?.complete || !V.my_home?.complete))
+      if (nearRepairArea && wallMaterials < 1 &&
+          (V.repairable_blast_holes > 0 || !V.wall?.complete || !V.my_home?.complete) && wallEarthNearby())
         vadd('gather_wall_earth',
-          'Gather one dirt block outside the village footprint for the finite wall or a starter home.')
+          'Gather one dirt block outside the village footprint for ground repairs, the wall, or a starter home.')
       if (nearVillage && materials >= 1 && !V.gate?.complete)
         vadd(
           'build_gate',
@@ -2007,6 +2031,21 @@ export function installSurvival(bot, state, log, opts = {}) {
             'Mine one iron ore with a stone-or-better pickaxe for equipment upgrades and buckets.',
           )
       }
+      const diamondUpgrades = [
+        ['pickaxe', 3, 2], ['sword', 2, 1], ['chestplate', 8, 0],
+        ['leggings', 7, 0], ['helmet', 5, 0], ['boots', 4, 0], ['axe', 3, 2],
+      ]
+      for (const [suffix, cost, sticks] of diamondUpgrades)
+        if (obs.resources.workbench && n('diamond') >= cost && n('stick') >= sticks &&
+            gearTier(bestEquipment(ownedGear, `_${suffix}`)?.name ?? '') < 4)
+          vadd(`craft_diamond_${suffix}`, `Craft a diamond ${suffix} for your personal equipment upgrade.`)
+      if (gearTier(bestEquipment(items, '_pickaxe')?.name ?? '') >= 3) {
+        for (const kind of ['diamond', 'gold'])
+          if (n(kind === 'gold' ? 'raw_gold' : 'diamond') < 32 && preciousOreNearby(kind))
+            vadd(`mine_${kind}_ore`, `Mine one locally observed ${kind} ore with an iron-or-better pickaxe and collect its drop.`)
+      }
+      if (n('raw_gold') && furnaceNearby() && n((name) => name === 'coal' || isPlank(name) || isLog(name)))
+        vadd('smelt_gold', 'Smelt raw gold into ingots for your personal treasure reserve.')
       const hasCoolant = items.some(coolantItem)
       if (remoteSpring && nearVillage && !hasCoolant && !n('bucket') && n('water_bucket'))
         vadd('empty_ordinary_water', 'Empty an ordinary water bucket into the drain without coolant credit, freeing the bucket for an expedition.')
@@ -2049,7 +2088,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       for (const [key, description] of Object.entries(vo))
         if (!ordered[key]) ordered[key] = description
       const merged = { ...ordered, ...options }
-      return merged
+      return prioritizePersonal(merged, obs, state)
     }
     return options
   }
@@ -2154,6 +2193,7 @@ export function installSurvival(bot, state, log, opts = {}) {
           (before.floored().equals(after.floored()) && current.terrain !== context.terrain)
         const evidence = progress.record({ context: context.key, accessContext: context.accessKey, action: typeof action === 'object' ? JSON.stringify(action) : action, before, after, changed,
           ok: !error, error: error ?? (!changed && before.distanceTo(after) < 0.75 ? 'No observed movement, block or inventory progress' : null), source })
+        if (state.personal && !error && evidence.progress) state.personal.work++
         log('action_progress', evidence)
       }
     }
@@ -2572,7 +2612,15 @@ export function installSurvival(bot, state, log, opts = {}) {
         if (!b) throw new Error('No reachable iron ore')
         return dig(b, '_pickaxe')
       }
-      if (action === 'smelt_iron') return smeltIron()
+      if (action === 'mine_diamond_ore' || action === 'mine_gold_ore') {
+        if (gearTier(bestEquipment(bot.inventory.items(), '_pickaxe')?.name ?? '') < 3)
+          throw new Error('Precious ore requires an iron-or-better pickaxe')
+        const block = preciousOreNearby(action === 'mine_gold_ore' ? 'gold' : 'diamond')
+        if (!block) throw new Error('No locally observed precious ore')
+        return dig(block, '_pickaxe')
+      }
+      if (action === 'smelt_iron') return smeltMetal('iron')
+      if (action === 'smelt_gold') return smeltMetal('gold')
       if (action === 'scoop_water') return scoopWater()
       if (action === 'feed_server') return feedServer()
       if (action === 'empty_ordinary_water') return feedServer({ disposeOrdinary: true })
@@ -2611,6 +2659,8 @@ export function installSurvival(bot, state, log, opts = {}) {
               'harvest_wheat', 'gather_wheat_seeds', 'pave_road',
               'craft_stone_hoe', 'craft_stone_shovel', 'craft_bread', 'place_torch',
               'craft_stone_sword', 'craft_torch', 'craft_bucket', 'mine_iron_ore',
+              'mine_diamond_ore', 'mine_gold_ore', 'smelt_gold',
+              ...['pickaxe', 'sword', 'axe', 'helmet', 'chestplate', 'leggings', 'boots'].map((s) => `craft_diamond_${s}`),
               'smelt_iron', 'scoop_water', 'feed_server', 'patrol',
               'travel_to_coolant', 'empty_ordinary_water', 'craft_iron_sword', 'craft_iron_pickaxe',
               'craft_iron_axe', 'craft_iron_helmet', 'craft_iron_chestplate',
@@ -2632,6 +2682,7 @@ export function installSurvival(bot, state, log, opts = {}) {
         max_height_difference: 8,
         preserve_previous_sites: true,
       },
+      personal_projects: 'Persistent home, equipment and treasure needs. Precious ore must be locally observed; no hidden ore lookup or deep mining expedition skill. Home expansion stays within its safe reserved footprint.',
       execution: 'Only currently offered action keys are executable; targets come from loaded local blocks.',
     }),
     observation,
