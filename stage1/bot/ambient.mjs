@@ -729,10 +729,13 @@ function actor(name, index) {
   }
   async function primitiveLoop(thisEpoch) {
     if (!MODELS) { task = 'primitive controller disabled: models are off'; return }
-    const controller = createActionPlanner({ planner, jevChoose, identity, state, tactical: true,
+    // The live canary needs a model-authored purpose before changing terrain.
+    // Jev judges Kimi's alternative programs; ungrounded atomic Jev choices
+    // dug Mira into a pit while Kimi was still planning.
+    const controller = createActionPlanner({ planner, jevChoose, identity, state, tactical: false,
       primitives: skills.primitives,
       objective: () => ({ motivation: identity.current_goal, role: state.role,
-        instruction: 'Keep the village alive through useful Minecraft work. Identify a reachable concrete objective, make a short executable plan, and revise it from results.',
+        instruction: 'Stay alive and regain safe access to your role first. Choose a visible, measurable village need, then make a short executable plan toward it. Do not gather or alter nearby blocks merely because they are available; connect each change to the objective. Reassess actual position, blocks, and inventory after failures.',
         situation: skills.observation(), beliefs: memory.recentContext(3, 2) }),
       log: (event, data) => {
         actorLog(event, data)

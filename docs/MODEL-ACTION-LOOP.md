@@ -27,15 +27,19 @@ dig one block, place one block, craft a recipe, equip, toggle a simple block,
 and wait. Movement cannot implicitly dig/place; digging cannot walk to its
 target; crafting cannot gather missing ingredients. Block/inventory/position
 updates determine outcomes. In particular, Mineflayer's optimistic local air
-update does not count as successful digging: a server packet is required.
+update does not count as successful digging: a server packet is required. Water
+can immediately fill a mined cell, so the confirmed replacement may be air or
+water.
 
 The executor retains construction/hazard protection, reach checks, finite
 coordinates, time limits and serial execution. Model requests do not block
-hunger/threat safety checks. While Kimi plans, Jev can select a currently feasible primitive from a bounded
-local affordance set. This set contains individual movements, block operations
-and craftable recipes, not task solutions. Choices are labeled `jev_primitives`;
-Kimi programs take priority when ready. Selector failures remain visible and
-never silently become scripted work. Waiting is exposed as `planning`.
+hunger/threat safety checks. The live canary waits for a Kimi-authored program
+before changing terrain, and Jev selects among its meaningful alternatives.
+Waiting is exposed as `planning`. The experimental tactical mode can let Jev
+choose atomic primitives while Kimi plans; its choices are labeled
+`jev_primitives` and never silently become Kimi achievements. That mode is
+disabled in the live controller after it repeatedly dug unrelated terrain.
+Safety and swimming physics continue during planning.
 
 Observations are loaded local block data, not screenshots. The bounded observed
 box includes explicit unloaded cells; omitted cells within it are observed air.
@@ -147,6 +151,25 @@ not live village escape proof.
 The [recorded isolated trial](evidence/kimi-primitive-latency-2026-09-23.json)
 contains successful and failed outcomes. Long-term village task completion and
 natural dialogue remain unproven.
+
+## Live control correction
+
+The first live canary exposed a reversed heading label: Mineflayer moves north
+(-Z) at yaw zero, while our model contract called that south. The model then
+authored a labeled southward swim that actually moved north into water. The
+contract, local observation, and action labels now use the native convention.
+An immersed clanker may mine visible permitted terrain beside water; a dry
+clanker still preserves the water barrier. A dig is only credited after a
+server block-change packet and a matching air or water replacement. The latter
+matters because water immediately filled some mined dirt cells in the live
+ravine; those were previously misreported as failed digs.
+
+Mira's earlier tactical Jev loop confirmed many digs but made little village
+progress and deepened a pit while Kimi was planning. The live controller now
+lets Kimi author the short program and Jev select among its alternatives.
+This is a control-authority change, not a guarantee of good planning. Judge it
+by server-confirmed village work and sustained movement, not by the program
+text or a short successful action.
 
 
 ## Reconcile overlapping actions
