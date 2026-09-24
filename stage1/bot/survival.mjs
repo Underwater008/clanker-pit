@@ -434,6 +434,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   let fleeTurn = 0
   let fleeing = false
   const fleeFailureGate = createFleeFailureGate()
+  const attackFailureGate = createFleeFailureGate()
   let blockedRoutes = 0
   let lastBlockedRoute = 0
   let escapeSession = null
@@ -652,7 +653,9 @@ export function installSurvival(bot, state, log, opts = {}) {
         const flagThreats = visibleThreats.filter(
           (e) => e.position.distanceTo(villageCtx.flag) < 12,
         )
-        if (closeThreats.length || flagThreats.length || enemyPlayers().filter(danger).length)
+        const guardThreats = [...new Map([...closeThreats, ...flagThreats, ...enemyPlayers().filter(danger)]
+          .map(e => [e.id, e])).values()]
+        if (guardThreats.length && !attackFailureGate.shouldYield(guardThreats, bot.entity.position, lastHurtAt))
           return 'attack_threat'
       }
     }
@@ -1584,8 +1587,16 @@ export function installSurvival(bot, state, log, opts = {}) {
       bot.health > 6 &&
       target.position.distanceTo(villageCtx.flag) < 24
     ) {
-      if (target.position.distanceTo(bot.entity.position) > 2.6)
-        await walk(new goals.GoalFollow(target, 2), 6000)
+      if (target.position.distanceTo(bot.entity.position) > 2.6) {
+        const before = bot.entity.position.clone()
+        try { await walk(new goals.GoalFollow(target, 2), 6000) }
+        catch (error) {
+          if (attackFailureGate.recordFailure(target, before, bot.entity.position, targets))
+            log('attack_route_yield', { target: target.name ?? target.username,
+              reason: 'Repeated attack approaches made no positional progress; choosing another local action' })
+          throw error
+        }
+      }
       await bot.lookAt(target.position.offset(0, 0.8, 0))
       bot.attack(target)
       await sleep(800)
@@ -2218,8 +2229,9 @@ export function installSurvival(bot, state, log, opts = {}) {
       const block = bot.blockAt(option.position)
       const tool = bestEquipment(bot.inventory.items(), ['dirt', 'grass_block', 'clay'].includes(block.name) ? '_shovel' : '_pickaxe')
       if (tool) await bot.equip(tool, 'hand')
-      if (revision !== skillRevision || emergency() ||
-          localWaterHatch(bot, (p) => constructionBlock(p) || resourceBusy(p))?.stateId !== option.stateId)
+      const fresh = localWaterHatch(bot, (p) => constructionBlock(p) || resourceBusy(p))
+      if (revision !== skillRevision || emergency() || !fresh?.position.equals(option.position) ||
+          fresh.stateId !== option.stateId)
         throw new Error('Water hatch changed before clearing')
       let confirmed = false
       const update = (packet) => {
@@ -2236,12 +2248,14 @@ export function installSurvival(bot, state, log, opts = {}) {
       } finally { bot._client.removeListener('block_change', update) }
       bot.pathfinder.setGoal(null)
       bot.setControlState('jump', true)
-      await sleep(1800)
+      try { await sleep(1800) }
+      finally { bot.setControlState('jump', false) }
       if (revision !== skillRevision || bot.health <= 0) throw new Error('Water hatch swim was interrupted')
       const rose = Math.max(0, bot.entity.position.y - before.y)
+      const escaped = rose >= 0.75 && !bot.entity.isInWater
       log('water_hatch_opened', { position: option.position, block: option.name,
-        from: before, now: bot.entity.position.clone(), rose })
-      return { openedWaterHatch: true, position: bot.entity.position.clone(), rose }
+        from: before, now: bot.entity.position.clone(), rose, escaped })
+      return { openedWaterHatch: true, position: bot.entity.position.clone(), rose, escaped }
     }
     if (action.startsWith('recover_walk:') || action.startsWith('recover_stair:') || action.startsWith('recover_passage:')) {
       const option = recoveryOptions().get(action)

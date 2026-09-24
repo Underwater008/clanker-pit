@@ -211,6 +211,15 @@ the executor confirms real displacement and blocks a no-progress choice in
 the same local context. This is a general motor option, not a specific route
 through the current arena. It does not imply a completed coolant delivery.
 
+The live swim run exposed two more evidence problems. A natural hatch could be
+opened with a confirmed block update while Cinder rose zero blocks, and its
+temporary jump input remained set afterward. Hatch results now report whether
+the clanker actually escaped the water, and jump is released after the attempt.
+Separately, Tally's guard reflex retried an unreachable attack dozens of times
+from the same position. After repeated zero-progress approaches to the same
+known threats, it now yields to other choices until contact, damage, a new
+threat, movement, or timeout restores the reflex.
+
 
 ## Reconcile overlapping actions
 
