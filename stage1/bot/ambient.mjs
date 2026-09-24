@@ -536,6 +536,8 @@ function actor(name, index) {
         identity,
         memoryContext: memory.recentContext(6, 3),
         event: { type, data },
+        recentChat: CHAT.filter((entry) => ['say', 'council', 'guest'].includes(entry.kind))
+          .slice(-8).map(({ from, text }) => ({ from, text })),
         observation: safelyObserve(),
         obsRevision: request.revision,
         signal: request.controller.signal,
@@ -713,7 +715,8 @@ function actor(name, index) {
       memory.event('plan', { goal: r.goal, intention: r.intention })
       // Route through actorLog so brain.think telemetry is populated.
       actorLog('planner_plan', r)
-      if (r.says) say(r.says)
+      // A plan is private thinking. Repeated plans during a stall must not
+      // become repeated promises in public chat.
     } catch (e) {
       brain.planner = {
         ...brain.planner, status: 'error', error: String(e),
@@ -1085,6 +1088,7 @@ function onActionOutcome(name, action, result) {
       coolant: r.after,
       target: village.raw.waterTarget,
     })
+    handles.get(name)?.reflect('coolant_fed', { coolant: r.after, target: village.raw.waterTarget })
     if (r.after >= village.raw.waterTarget) {
       const villager = village.bootVillager()
       if (villager) {
@@ -1115,6 +1119,8 @@ function onActionOutcome(name, action, result) {
       village.setHome(name, obs.village.my_home)
       if (obs.village.my_home.complete)
         chat('system', 'home', `${name} finished their own home.`)
+      if (obs.village.my_home.complete)
+        handles.get(name)?.reflect('home_completed', { home: obs.village.my_home })
     }
   }
   if (action === 'expand_home' && result?.placed > 0) {
@@ -1137,6 +1143,8 @@ function onActionOutcome(name, action, result) {
     if (obs?.village?.wall_upgrade?.complete)
       chat('system', 'village', 'The perimeter wall is reinforced around the homes. The gate road remains open.')
   }
+  if (result?.repairedHole)
+    handles.get(name)?.reflect('blast_hole_repaired', { position: result.position })
 }
 
 /* ---------- boot ----------------------------------------------------------- */
