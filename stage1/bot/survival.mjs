@@ -303,6 +303,35 @@ export function navigationGoalSummary(goal) {
   }
 }
 
+// A visible mob can be below a ledge or across a basin without a usable escape
+// route. After repeated zero-progress routes, let the planner try a different
+// local action. Contact, fresh damage, a new threat, movement, or elapsed time
+// immediately makes the reflex eligible again.
+export function createFleeFailureGate({ now = Date.now, retryMs = 60000 } = {}) {
+  let failed = null
+  const moved = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) >= 1.5
+  return {
+    recordFailure(threat, before, after) {
+      if (!threat || moved(before, after)) { failed = null; return false }
+      if (failed?.id !== threat.id || moved(failed.position, after) || now() - failed.at >= retryMs)
+        failed = { id: threat.id, position: { x: after.x, y: after.y, z: after.z }, count: 0, at: now() }
+      failed.count++
+      failed.at = now()
+      return failed.count === 2
+    },
+    reset() { failed = null },
+    shouldYield(threats, position, lastHurtAt) {
+      if (!failed || failed.count < 2) return false
+      if (now() - failed.at >= retryMs || moved(failed.position, position) || lastHurtAt > failed.at ||
+          threats.some((e) => e.id !== failed.id || e.position.distanceTo(position) < 2)) {
+        failed = null
+        return false
+      }
+      return threats.length > 0
+    },
+  }
+}
+
 export async function navigateWithRecovery({ bot, goal, run, ms, emergency, log }) {
   const deadline = Date.now() + ms
   let lastError
@@ -395,6 +424,7 @@ export function installSurvival(bot, state, log, opts = {}) {
   let failedScouts = 0
   let fleeTurn = 0
   let fleeing = false
+  const fleeFailureGate = createFleeFailureGate()
   let blockedRoutes = 0
   let lastBlockedRoute = 0
   let escapeSession = null
@@ -617,13 +647,13 @@ export function installSurvival(bot, state, log, opts = {}) {
           return 'attack_threat'
       }
     }
-    if (closeThreats.length) return 'flee'
+    if (closeThreats.length && !fleeFailureGate.shouldYield(closeThreats, bot.entity.position, lastHurtAt)) return 'flee'
     if (bot.food < 16 && bot.inventory.items().some((i) => edible.has(i.name)))
       return 'eat'
     return null
   }
   bot.on('entityHurt', (entity) => {
-    if (entity === bot.entity) lastHurtAt = Date.now()
+    if (entity === bot.entity) { lastHurtAt = Date.now(); fleeFailureGate.reset() }
     if (entity === bot.entity && escaping) {
       skillRevision++
       bot.pathfinder.setGoal(null)
@@ -2167,6 +2197,7 @@ export function installSurvival(bot, state, log, opts = {}) {
       const threat = threats()[0]
       if (!threat) return { safe: true }
       const p = bot.entity.position
+      const before = p.clone()
       const dx = p.x - threat.position.x,
         dz = p.z - threat.position.z
       const angle = Math.atan2(dz, dx)
@@ -2185,12 +2216,16 @@ export function installSurvival(bot, state, log, opts = {}) {
               1,
             ), 2500)
             fleeTurn = 0
+            fleeFailureGate.reset()
             return { retreatedFrom: threat.name, safe: !emergency(), position: bot.entity.position }
           } catch (error) {
             lastError = error
           }
         }
         fleeTurn++
+        if (fleeFailureGate.recordFailure(threat, before, bot.entity.position))
+          log('flee_route_yield', { threat: threat.name, position: bot.entity.position.clone(),
+            reason: 'Repeated escape routes made no positional progress; planning another local action' })
         throw lastError
       } finally {
         fleeing = false
