@@ -146,3 +146,19 @@ test('primitive planner receives mechanics and observations without a scripted j
   const sent=JSON.parse(request.messages[1].content)
   assert.equal(sent.actions,undefined);assert.deepEqual(sent.observation,observation)
 })
+
+
+test('Kimi K3 uses low reasoning for short primitive programs only',async(t)=>{
+ const requests=[]
+ t.mock.method(globalThis,'fetch',async(_url,options)=>{
+  requests.push(JSON.parse(options.body))
+  return {ok:true,status:200,text:async()=>JSON.stringify({choices:[{message:{content:JSON.stringify({intention:'Inspect',alternatives:[{reason:'Check local state',steps:[{op:'inspect'}]}]})}}]})}
+ })
+ const kimi=makePlanner({name:'kimi',baseUrl:'https://example.invalid/v1',apiKey:'test-key',model:'kimi-k3'})
+ await kimi.program({identity,objective:'Observe',observation:{position:[0,64,0],blocks:[]},history:[],contract:{inspect:'observe'}})
+ assert.equal(requests[0].reasoning_effort,'low')
+ assert.equal(requests[0].model,'kimi-k3')
+ const other=planner()
+ await other.program({identity,objective:'Observe',observation:{position:[0,64,0],blocks:[]},history:[],contract:{inspect:'observe'}})
+ assert.equal(requests[1].reasoning_effort,undefined)
+})

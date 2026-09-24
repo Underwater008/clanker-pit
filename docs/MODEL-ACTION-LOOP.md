@@ -118,3 +118,29 @@ block changes, crafted amounts, and errors). Full execution evidence remains
 persisted. Historical narration/intentions are not substituted for the current
 objective. Request sizes are logged so latency claims can be checked; this
 change alone is not proof that the provider's timeout problem is resolved.
+
+
+## Kimi planning latency and visible dig reach
+
+The first live canary repeatedly timed out after 60 seconds despite the smaller
+context. Runpod documents that Kimi K3 has always-on reasoning with a selectable
+reasoning effort; short primitive programs now request `low`. This setting is
+used only for Kimi K3 primitive programs. The clanker's configured model,
+legacy goal planner, and other OpenAI-compatible providers keep their existing
+parameters. See [Runpod's Kimi model documentation](https://docs.runpod.io/public-endpoints/models/moonshot-kimi).
+
+An isolated Kimi-authored program now cleared a two-block obstruction and walked
+through it in 22.4 seconds; the selected program arrived after 20.4 seconds.
+Jev chose among Kimi's alternatives. Local perception now lists currently
+feasible dig targets, including line of sight and reach, so Kimi can choose
+upper/lower block order without a scripted obstacle solution. Swimming changes
+in height no longer invalidate a pending plan. Walking from water has an
+explicit prerequisite, and Jev receives verified failed action evidence when
+selecting the next model program.
+
+The model-only water case remained unsuccessful after five plans. Kimi planned
+swimming and moved but repeatedly tried a walking leg from water; one revised
+plan also drifted away. This is a measured limit, not autonomous escape proof.
+The [recorded isolated trial](evidence/kimi-primitive-latency-2026-09-23.json)
+contains successful and failed outcomes. Long-term village task completion and
+natural dialogue remain unproven.

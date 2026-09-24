@@ -100,3 +100,25 @@ test('model context removes duplicate snapshots but preserves failures and verif
  assert.equal(objective.role,'builder');assert.deepEqual(objective.situation,{village:{coolant:8}})
  assert.deepEqual(objective.beliefs,['A remembered hazard'])
 })
+
+
+test('vertical swimming does not discard a fresh model plan, but large travel does',async()=>{
+ for(const [position,valid] of [[[.5,65.2,.5],true],[[1.5,64,.5],false]]){
+  let release,p=position
+  const c=setup(()=>new Promise(r=>{release=r}),{primitives:{observe:()=>({...observation(),position:p})}})
+  p=[.5,64,.5];c.next();p=position;release(program([move(1)]));await c.pending
+  assert.equal(c.status.status,valid?'ready':'error')
+  c.close()
+ }
+})
+
+
+test('Jev sees failed primitive evidence when selecting the next model program',async()=>{
+ const state={primitiveMemory:{history:[{type:'action',step:move(1),ok:false,error:'NoPath'}]}}
+ let stance
+ const c=setup(async()=>({intention:'Find another route',alternatives:[{reason:'repeat',steps:[move(1)]},{reason:'go elsewhere',steps:[move(2)]}]}),{
+  state,jevChoose:async input=>{stance=input.stance;return {choice:'program_2'}}})
+ c.next();await c.pending
+ assert.match(stance.verified_history[0].error,/NoPath/)
+ c.close()
+})
