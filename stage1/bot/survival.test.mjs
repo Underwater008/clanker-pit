@@ -34,6 +34,7 @@ test('failed escape routes yield to planning until danger changes', () => {
   const gate = createFleeFailureGate({ now: () => clock, retryMs: 60000 })
   const at = new Vec3(0, 64, 0)
   const drowned = { id: 7, position: new Vec3(3, 62, 0) }
+  const phantom = { id: 8, position: new Vec3(4, 66, 0) }
   assert.equal(gate.recordFailure(drowned, at, at), false)
   assert.equal(gate.shouldYield([drowned], at, 0), false)
   clock += 1000
@@ -44,6 +45,10 @@ test('failed escape routes yield to planning until danger changes', () => {
   gate.recordFailure(drowned, at, at)
   assert.equal(gate.shouldYield([drowned], at, 0), true)
   assert.equal(gate.shouldYield([{ id: 8, position: drowned.position }], at, 0), false, 'new mob restores reflex')
+  gate.recordFailure(drowned, at, at, [drowned, phantom])
+  gate.recordFailure(drowned, at, at, [drowned, phantom])
+  assert.equal(gate.shouldYield([drowned, phantom], at, 0), true, 'already nearby mobs do not cancel the yield')
+  assert.equal(gate.shouldYield([drowned, phantom, { id: 9, position: new Vec3(5, 64, 0) }], at, 0), false, 'a genuinely new mob restores reflex')
   gate.recordFailure(drowned, at, at)
   gate.recordFailure(drowned, at, at)
   assert.equal(gate.shouldYield([{ ...drowned, position: new Vec3(1, 64, 0) }], at, 0), false, 'contact restores reflex')
