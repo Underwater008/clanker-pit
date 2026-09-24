@@ -311,10 +311,11 @@ export function createFleeFailureGate({ now = Date.now, retryMs = 60000 } = {}) 
   let failed = null
   const moved = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) >= 1.5
   return {
-    recordFailure(threat, before, after) {
+    recordFailure(threat, before, after, nearbyThreats = [threat]) {
       if (!threat || moved(before, after)) { failed = null; return false }
       if (failed?.id !== threat.id || moved(failed.position, after) || now() - failed.at >= retryMs)
-        failed = { id: threat.id, position: { x: after.x, y: after.y, z: after.z }, count: 0, at: now() }
+        failed = { id: threat.id, position: { x: after.x, y: after.y, z: after.z }, seenIds: new Set(), count: 0, at: now() }
+      for (const entity of [threat, ...nearbyThreats]) failed.seenIds.add(entity.id)
       failed.count++
       failed.at = now()
       return failed.count === 2
@@ -323,7 +324,7 @@ export function createFleeFailureGate({ now = Date.now, retryMs = 60000 } = {}) 
     shouldYield(threats, position, lastHurtAt) {
       if (!failed || failed.count < 2) return false
       if (now() - failed.at >= retryMs || moved(failed.position, position) || lastHurtAt > failed.at ||
-          threats.some((e) => e.id !== failed.id || e.position.distanceTo(position) < 2)) {
+          threats.some((e) => !failed.seenIds.has(e.id) || e.position.distanceTo(position) < 2)) {
         failed = null
         return false
       }
@@ -2260,7 +2261,8 @@ export function installSurvival(bot, state, log, opts = {}) {
           }
         }
         fleeTurn++
-        if (fleeFailureGate.recordFailure(threat, before, bot.entity.position))
+        if (fleeFailureGate.recordFailure(threat, before, bot.entity.position,
+            threats().filter(e => e.position.distanceTo(bot.entity.position) < 9)))
           log('flee_route_yield', { threat: threat.name, position: bot.entity.position.clone(),
             reason: 'Repeated escape routes made no positional progress; planning another local action' })
         throw lastError

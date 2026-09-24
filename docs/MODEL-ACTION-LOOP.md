@@ -188,6 +188,14 @@ rechecks the world before each step. This grounds the immediate action without
 encoding a route or village solution. Later steps and changing terrain can
 still fail and require replanning.
 
+A subsequent live run also showed Mira stationary for minutes while failed
+flee routes repeated. The failure gate had correctly recorded zero progress,
+but every other mob already in range counted as a new threat and instantly
+restarted the reflex. It now remembers the nearby threat IDs at failure time;
+only a genuinely new threat, contact, fresh damage, a meaningful position
+change, or timeout restores the flee reflex. This lets the model attempt
+another local response to a persistently unreachable mob.
+
 
 ## Reconcile overlapping actions
 
