@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createActionPlanner, validatePrograms, validateAction, compactPrimitiveHistory, compactPrimitiveObjective } from './action-plan.mjs'
+import { ACTION_CONTRACT, createActionPlanner, validatePrograms, validateAction, primitiveLabel, compactPrimitiveHistory, compactPrimitiveObjective } from './action-plan.mjs'
 const observation=()=>({position:[0.5,64,0.5],dimension:'overworld',inventory:[],blocks:[{name:'air',positions:[[0,64,0],[1,64,0],[2,64,0]]}]})
 const program=(steps)=>({intention:'Reach a useful place',alternatives:[{reason:'Local route',steps}]})
 const move=(x)=>({op:'move',target:[x,64,0]})
@@ -74,6 +74,11 @@ test('tactical provider errors never become silently scripted work',async()=>{
 test('native input is bounded and cannot add attack/use/flight controls',()=>{
  assert.equal(validateAction({op:'control',keys:['forward','jump'],ticks:10,yaw:0}).op,'control')
  for(const input of [{op:'control',keys:['attack'],ticks:10},{op:'control',keys:['forward'],ticks:999},{op:'control',keys:['jump'],ticks:10,yaw:Infinity}])assert.throws(()=>validateAction(input),/bounded movement/)
+})
+test('model and viewer direction labels match native Minecraft forward yaw',()=>{
+ assert.match(ACTION_CONTRACT.control,/0=north \(-z\)/)
+ for(const [yaw,label] of [[0,'north (-z)'],[Math.PI/2,'west (-x)'],[-Math.PI/2,'east (+x)'],[Math.PI,'south (+z)']])
+  assert.match(primitiveLabel({op:'control',keys:['forward'],ticks:5,yaw}),new RegExp(label.replace(/[()+]/g,'\\$&')))
 })
 
 

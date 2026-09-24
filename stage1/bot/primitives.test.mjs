@@ -65,3 +65,21 @@ test('walking from water fails with a usable prerequisite',async()=>{
  await assert.rejects(executor.execute({op:'move',target:[2,64,0]}),/control to climb onto dry ground/)
  assert.equal(executor.affordances().some(a=>a.op==='move'),false)
 })
+test('local observation gives the same cardinal yaw convention as native movement',()=>{
+ const {executor}=fixture()
+ assert.deepEqual(executor.observe().controls.yawRadians,
+  {north:0,west:Math.PI/2,east:-Math.PI/2,south:Math.PI})
+})
+
+test('an immersed clanker can mine beside water, but a dry one cannot flood its footing',async()=>{
+ const {bot,executor,confirm}=fixture()
+ const read=bot.blockAt.bind(bot)
+ bot.blockAt=p=>p.x===1&&p.y===64&&p.z===1
+  ? {name:'water',stateId:9,position:p,boundingBox:'empty'}:read(p)
+ await assert.rejects(executor.execute({op:'dig',target:[1,64,0],expect:'stone'}),/Unsafe or unobserved neighbor/)
+ bot.entity.isInWater=true
+ const dig=bot.dig.bind(bot)
+ bot.dig=async()=>{await dig();confirm()}
+ const result=await executor.execute({op:'dig',target:[1,64,0],expect:'stone'})
+ assert.deepEqual(result.removed,{position:[1,64,0],name:'stone'})
+})

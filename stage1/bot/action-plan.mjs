@@ -2,7 +2,7 @@
 export const ACTION_CONTRACT = {
   inspect: 'No arguments. Return fresh local blocks/inventory. Does not move.',
   move: 'target:[x,y,z] integer feet cell. Walk only from dry ground; no automatic digging/placing. Destination must have safe support/headroom. Use control to swim/climb first.',
-  control: 'keys:array from forward/back/left/right/jump/sneak, ticks:1..10, optional yaw radians. Bounded native movement input; jump also swims upward in water. Yaw: 0=south (+z), pi/2=west (-x), -pi/2=east (+x), pi=north (-z). No attack/use/flight.',
+  control: 'keys:array from forward/back/left/right/jump/sneak, ticks:1..10, optional yaw radians. Bounded native movement input; jump also swims upward in water. Yaw: 0=north (-z), pi/2=west (-x), -pi/2=east (+x), pi=south (+z). No attack/use/flight.',
   step: 'dx,dz numbers; horizontal displacement at most 0.8 blocks, while sneaking. Fine positioning on edges; no jumping or flight.',
   dig: 'target:[x,y,z], expect:block_name. Remove exactly one reachable editable block; no walking or automatic tool selection.',
   place: 'target:[x,y,z], item:item_name. Place one carried solid block against a reachable face; no walking, towers or replacement.',
@@ -63,7 +63,7 @@ export function validatePrograms(value, observation) {
 }
 export const primitiveLabel = (s) => {
   if(s.op==='control'){
-    const direction=s.yaw==null?'current facing':Math.abs(s.yaw)<.01?'south (+z)':Math.abs(s.yaw-Math.PI/2)<.01?'west (-x)':Math.abs(s.yaw+Math.PI/2)<.01?'east (+x)':Math.abs(Math.abs(s.yaw)-Math.PI)<.01?'north (-z)':`yaw ${s.yaw}`
+    const direction=s.yaw==null?'current facing':Math.abs(s.yaw)<.01?'north (-z)':Math.abs(s.yaw-Math.PI/2)<.01?'west (-x)':Math.abs(s.yaw+Math.PI/2)<.01?'east (+x)':Math.abs(Math.abs(s.yaw)-Math.PI)<.01?'south (+z)':`yaw ${s.yaw}`
     return `Move ${s.keys.join('+')} for ${s.ticks} ticks toward ${direction}${s.keys.includes('jump')?' (jump/swim up)':''}`
   }
   return `${s.op}${s.target ? ` ${s.target.join(',')}` : s.item ? ` ${s.item}` : ''}`
