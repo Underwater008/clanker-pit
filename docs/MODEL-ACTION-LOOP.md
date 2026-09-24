@@ -147,3 +147,16 @@ not live village escape proof.
 The [recorded isolated trial](evidence/kimi-primitive-latency-2026-09-23.json)
 contains successful and failed outcomes. Long-term village task completion and
 natural dialogue remain unproven.
+
+
+## Reconcile overlapping actions
+
+The first live low-latency plan exposed a coordination race: at 03:26:36 UTC
+Kimi selected a dig at `[-692,66,325]`; Jev finished digging that exact log
+at 03:26:39; the queued Kimi step then failed at 03:26:40 because it saw air.
+The controller now checks a queued dig or placement against Jev's
+server-confirmed result and the current local block. If already done, it logs
+`program_step_reconciled` with `source: jev_primitives` and continues the
+remaining Kimi-authored steps. It never reports the Jev action as a Kimi
+achievement. A failed Jev action in flight no longer cancels a newly ready
+Kimi program. These are generic sequencing rules, not an escape route.
