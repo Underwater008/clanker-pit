@@ -187,7 +187,7 @@ const villageEnabled = SCENARIO === 'village' && village.exists
 const scenarioGoals = Object.fromEntries(Object.entries(GOALS).filter(([goal]) =>
   villageEnabled
     ? !['build_shelter', 'improve_camp'].includes(goal)
-    : !['protect_server', 'build_village', 'improve_village', 'stockpile_defense'].includes(goal),
+    : !['protect_server', 'build_village', 'improve_village', 'stockpile_defense', 'personal_progress'].includes(goal),
 ))
 if (SCENARIO === 'village' && !village.exists)
   log('director', 'village_fixture_missing', { path: villageFile })
@@ -582,6 +582,7 @@ function actor(name, index) {
       recent: state.recent.slice(-4),
       nativeView: Boolean(mirror),
       role: state.role,
+      personal: state.personal ?? null,
       model: { provider: planner.name, model: planner.describe.model },
       brain: {
         jev: brain.jev.slice(-8),
@@ -594,7 +595,7 @@ function actor(name, index) {
       soul: {
         origin: identity.origin,
         dispositions: identity.dispositions,
-        motive: identity.current_goal,
+        motive: state.personal?.want ?? identity.current_goal,
         catchphrase: identity.catchphrase,
       },
       memories: {

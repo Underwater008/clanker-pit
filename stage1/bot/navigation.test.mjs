@@ -48,6 +48,7 @@ function fixture({ inventory = [], shelter = null, blocks = [], village = null }
     registry: minecraftData('1.21.1'),
     loadPlugin() {},
     clearControlStates() {},
+    setControlState() {},
     stopDigging() {},
     digTime: () => 7500,
     blockAt(position) {
@@ -536,7 +537,8 @@ test('village fallback protects starter wood and prioritizes the actual tool pre
 test('builders can start a finite earth wall while continuing to seek home timber', () => {
   const village = { flag: new Vec3(0, 63, 0), lotIndex: 0, summary: () => ({ wall: { complete: false } }) }
   const tree = { position: new Vec3(12, 64, 0), name: 'oak_log', boundingBox: 'block' }
-  const b = fixture({ village, blocks: [tree] })
+  const earth = { position: new Vec3(13, 63, 0), name: 'dirt', boundingBox: 'block' }
+  const b = fixture({ village, blocks: [tree, earth] })
   b.state.role = 'builder'
   const options = b.skills.candidates(b.skills.observation())
   assert.ok(options.gather_wall_earth)
@@ -547,7 +549,7 @@ test('builders can start a finite earth wall while continuing to seek home timbe
   assert.ok(withEarth.skills.candidates(withEarth.skills.observation()).build_wall)
   assert.ok(withEarth.skills.candidates(withEarth.skills.observation()).build_home)
   const completedWall = { ...village, summary: () => ({ wall: { complete: true } }) }
-  const noHome = fixture({ village: completedWall })
+  const noHome = fixture({ village: completedWall, blocks: [earth] })
   noHome.state.role = 'builder'
   assert.ok(noHome.skills.candidates(noHome.skills.observation()).gather_wall_earth,
     'home building must retain an earth supply after the wall is complete')
@@ -788,4 +790,38 @@ test('a drowned behind a solid wall does not keep villagers fleeing', () => {
   assert.equal(skills.emergency(), null)
   bot.blockAt = original
   assert.equal(skills.emergency(), 'flee')
+})
+
+test('all roles can repair exterior craters', () => {
+  const target = new Vec3(10, 63, 8)
+  for (const role of ['builder', 'guard', 'smith', 'coolant', 'farmer']) {
+    const { skills, state } = fixture({
+      village: { flag: new Vec3(0, 63, 0), lotIndex: 0, summary: () => ({}) },
+      inventory: [{ name: 'dirt', count: 8 }],
+      blocks: [{ position: target, name: 'air', boundingBox: 'empty' }],
+    })
+    state.role = role
+    assert.ok(skills.candidates(skills.observation()).repair_blast_hole, role)
+  }
+})
+
+test('precious ore requires iron pickaxe and diamond upgrades count worn armor', () => {
+  const village = { flag: new Vec3(0, 63, 0), lotIndex: 0, summary: () => ({}) }
+  const blocks = [
+    { name: 'crafting_table', position: new Vec3(2, 64, 0), boundingBox: 'block' },
+    { name: 'diamond_ore', position: new Vec3(3, 64, 0), boundingBox: 'block' },
+    { name: 'deepslate_gold_ore', position: new Vec3(4, 64, 0), boundingBox: 'block' },
+  ]
+  for (const material of ['wooden', 'golden', 'stone', 'iron', 'diamond']) {
+    const { bot, skills } = fixture({ village, blocks, inventory: [
+      { name: `${material}_pickaxe`, count: 1 }, { name: 'diamond', count: 8 }, { name: 'stick', count: 2 },
+    ] })
+    bot.inventory.slots = Array(46).fill(null)
+    bot.inventory.slots[6] = { name: 'diamond_chestplate', count: 1 }
+    const options = skills.candidates(skills.observation())
+    assert.equal(Boolean(options.mine_diamond_ore), ['iron', 'diamond'].includes(material))
+    assert.equal(Boolean(options.mine_gold_ore), ['iron', 'diamond'].includes(material))
+    assert.equal(options.craft_diamond_chestplate, undefined)
+    assert.ok(options.craft_diamond_leggings)
+  }
 })

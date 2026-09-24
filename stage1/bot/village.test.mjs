@@ -546,3 +546,35 @@ test('failed durable mutations cannot report a feed, villager boot or role updat
   assert.deepEqual(village.raw.population, ['Cinder', 'Ember'])
   rmSync(dir, { recursive: true })
 })
+
+test('flat repair layer grows across an exterior crater without filling its depth', () => {
+  const filled = new Set()
+  const blockAt = (p) => {
+    const crater = p.x >= flag.x + 8 && p.x <= flag.x + 11 && p.z >= flag.z + 8 && p.z <= flag.z + 11
+    const air = p.y > flag.y || (crater && p.y > flag.y - 8 && !filled.has(key(p)))
+    return { name: air ? 'air' : 'dirt', boundingBox: air ? 'empty' : 'block' }
+  }
+  for (let turn = 0; turn < 16; turn++) {
+    const target = blastHoleTargets(flag, blockAt).find((p) => p.x >= flag.x + 8 && p.z >= flag.z + 8)
+    assert.ok(target, `reachable edge at turn ${turn}`)
+    assert.equal(target.y, flag.y)
+    filled.add(key(target))
+  }
+  assert.equal(filled.size, 16)
+  assert.equal(blockAt(flag.offset(9, -3, 9)).name, 'air')
+  assert.equal(blastHoleTargets(flag, blockAt).length, 0)
+})
+
+test('repair preserves water, crops, construction, unknown chunks and finite boundaries', () => {
+  const targets = [flag.offset(10, 0, 2), flag.offset(10, 0, 3), flag.offset(10, 0, 4),
+    flag.offset(10, 0, 5), flag.offset(20, 0, 0)]
+  const blockAt = (p) => {
+    if (p.equals(targets[0].offset(0, -1, 0))) return { name: 'water', boundingBox: 'empty' }
+    if (p.equals(targets[1].offset(0, 1, 0))) return { name: 'wheat', boundingBox: 'empty' }
+    if (p.equals(targets[2].offset(0, 1, 0))) return { name: 'oak_planks', boundingBox: 'block' }
+    if (p.equals(targets[3].offset(0, -1, 0))) return null
+    const air = p.y > flag.y || targets.some((t) => t.equals(p))
+    return { name: air ? 'air' : 'dirt', boundingBox: air ? 'empty' : 'block' }
+  }
+  assert.deepEqual(blastHoleTargets(flag, blockAt), [])
+})
