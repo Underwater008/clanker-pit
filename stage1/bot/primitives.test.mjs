@@ -42,3 +42,10 @@ test('executor serializes operations and stops interrupted digging',async()=>{
  await assert.rejects(executor.execute({op:'inspect'}),/unavailable/)
  executor.abort();await assert.rejects(pending,/Stopped/)
 })
+
+
+test('occluded dig targets are rejected before any mining packet',async()=>{
+ const {bot,executor,calls}=fixture();bot.canSeeBlock=()=>false
+ await assert.rejects(executor.execute({op:'dig',target:[1,64,0],expect:'stone'}),/occluded/)
+ assert.equal(calls(),0)
+})

@@ -69,3 +69,22 @@ test('tactical provider errors never become silently scripted work',async()=>{
  c.next();await new Promise(setImmediate);assert.equal(c.next(),null)
  assert.ok(events.some(([e])=>e==='primitive_selector_error'));c.close();release(program([move(1)]));await c.pending
 })
+
+
+test('native input is bounded and cannot add attack/use/flight controls',()=>{
+ assert.equal(validateAction({op:'control',keys:['forward','jump'],ticks:10,yaw:0}).op,'control')
+ for(const input of [{op:'control',keys:['attack'],ticks:10},{op:'control',keys:['forward'],ticks:999},{op:'control',keys:['jump'],ticks:10,yaw:Infinity}])assert.throws(()=>validateAction(input),/bounded movement/)
+})
+
+
+test('physics bobbing preserves a tactical reply but crossing a cell invalidates it',async()=>{
+ for(const [delta,accepted] of [[.02,true],[1,false]]){
+  let releaseFast,releasePlan,y=64.1
+  const c=setup(()=>new Promise(r=>{releasePlan=r}),{tactical:true,
+   primitives:{observe:()=>({...observation(),position:[.5,y,.5]}),affordances:()=>[move(1),move(2)]},
+   jevChoose:()=>new Promise(r=>{releaseFast=r})})
+  c.next();y+=delta;releaseFast({choice:'action_0'});await new Promise(setImmediate)
+  assert.equal(Boolean(c.next()),accepted)
+  c.close();releasePlan(program([move(1)]));await c.pending
+ }
+})
