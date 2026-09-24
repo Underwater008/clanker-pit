@@ -44,7 +44,7 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
         [-1,0,1].map(y=>{const p=origin.offset(x,y,z),b=bot.blockAt(p);return {position:xyz(p),name:b?.name??'unloaded',editable:editable(b)}})])),
       blocks:[...groups.values()], feasibleDigTargets:feasibleDigTargets.slice(0,16), entities: Object.values(bot.entities ?? {}).filter(e=>e!==bot.entity && e.position.distanceTo(bot.entity.position)<=radius)
         .map(e=>({id:e.id,name:e.name,position:xyz(e.position)})),
-      controls: {forward:'toward yaw',jump:'jump on ground or swim up in water',yawRadians:{south:0,west:Math.PI/2,east:-Math.PI/2,north:Math.PI}},
+      controls: {forward:'toward yaw',jump:'jump on ground or swim up in water',yawRadians:{north:0,west:Math.PI/2,east:-Math.PI/2,south:Math.PI}},
       limits: { radius, maxReach:4.5, automaticDigging:false, automaticPlacement:false, inspection:'loaded local blocks, not pixels; editable is permission; feasibleDigTargets includes targets currently visible, reachable, and safe to mine' } }
   }
   function inspect(p) {
@@ -60,7 +60,11 @@ export function createPrimitives({ bot, state, walk, movements, protectedBlock =
     if(b.position.x===feet.x && b.position.z===feet.z && b.position.y<feet.y) throw Error('Do not remove your support')
     for(const [x,y,z] of [[1,0,0],[-1,0,0],[0,1,0],[0,0,1],[0,0,-1]]) {
       const n=bot.blockAt(b.position.offset(x,y,z))
-      if(!n || dangerous.has(n.name)) throw Error('Unsafe or unobserved neighbor of dig target')
+      // Water next to a clanker already swimming cannot newly flood that
+      // clanker. Allow it to clear a visible natural obstruction and choose an
+      // exit; a dry clanker still preserves the water barrier.
+      if(!n || (dangerous.has(n.name) && !(n.name==='water' && bot.entity.isInWater)))
+        throw Error('Unsafe or unobserved neighbor of dig target')
     }
     if(!bot.canDigBlock(b)) throw Error('Dig target is out of reach; move or equip first')
     if(bot.canSeeBlock && !bot.canSeeBlock(b))throw Error('Dig target is occluded; move to see it first')
