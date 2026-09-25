@@ -197,6 +197,9 @@ video[hidden] { display: none; }
 #singleStage:focus { outline: none; }
 .overlay .code { font-size: 12px; letter-spacing: 0.25em; color: var(--ember); }
 .overlay .msg { font-size: 12px; color: var(--ash); letter-spacing: 0.08em; line-height: 1.7; }
+.overlay.offline { background: radial-gradient(circle at 50% 42%, #251710 0, #0b0b0d 62%); }
+.overlay.offline .code { color: var(--bone); font: 800 clamp(32px, 5vw, 64px)/.95 'Barlow Condensed', var(--sans); letter-spacing: .04em; }
+.overlay.offline .msg { max-width: 38ch; font-size: 13px; letter-spacing: .02em; }
 .overlay button {
   margin-top: 4px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em;
   color: var(--bone); background: transparent; border: 1px solid var(--ember-dim);
