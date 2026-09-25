@@ -83,11 +83,11 @@
   }
 
   function attach(video, overlayEls, hudEl, feed) {
-    var failures = 0, MAX = 6, disposed = false, watchProgress = false;
+    var failures = 0, MAX = 6, disposed = false, watchProgress = false, down = false;
     var lastTime = -1, lastProgress = Date.now();
     var fastCanvas = feed === 'guest' ? $('guestFastCanvas') : null;
     var fastContext = fastCanvas && window.createImageBitmap ? fastCanvas.getContext('2d') : null;
-    var inst = { hls: null, peer: null, sessionUrl: null, rtcFallback: null, retryTimer: null,
+    var inst = { hls: null, peer: null, sessionUrl: null, rtcFallback: null, retryTimer: null, offlineTimer: null,
       fastSocket: null, fastActive: false, fastDecoding: false, fastLast: 0,
       fastRetryAt: 0, fastOpenedAt: 0 };
     function setLive(on) {
@@ -99,6 +99,7 @@
     }
     function overlay(show, code, msg, retry) {
       overlayEls.root.classList.toggle('hidden', !show);
+      overlayEls.root.classList.toggle('offline', Boolean(show && code === 'BE BACK SOON'));
       if (!show) return;
       overlayEls.code.textContent = code;
       overlayEls.msg.textContent = msg;
@@ -107,6 +108,8 @@
     function stopPlayer() {
       if (inst.retryTimer) clearTimeout(inst.retryTimer);
       inst.retryTimer = null;
+      if (inst.offlineTimer) clearTimeout(inst.offlineTimer);
+      inst.offlineTimer = null;
       if (inst.fastSocket) {
         var socket = inst.fastSocket;
         inst.fastSocket = null;
@@ -133,8 +136,23 @@
       if (inst.peer && inst.rtcDeadline) clearTimeout(inst.rtcDeadline);
       lastProgress = Date.now();
       failures = 0;
+      down = false;
+      if (inst.retryTimer) clearTimeout(inst.retryTimer);
+      inst.retryTimer = null;
+      if (inst.offlineTimer) clearTimeout(inst.offlineTimer);
+      inst.offlineTimer = null;
       overlay(false);
       setLive(true);
+    }
+    function showOffline() {
+      watchProgress = false;
+      down = true;
+      setLive(false);
+      overlay(true, 'BE BACK SOON', 'The stream is offline right now. We’ll reconnect when it returns.', true);
+      if (inst.retryTimer) clearTimeout(inst.retryTimer);
+      inst.retryTimer = null;
+      if (inst.offlineTimer) clearTimeout(inst.offlineTimer);
+      inst.offlineTimer = setTimeout(start, 15000);
     }
     function startHls() {
       if (disposed || inst.hls) return;
@@ -161,15 +179,13 @@
           failures++;
           setLive(false);
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR && failures <= MAX) {
-            overlay(true, 'SIGNAL LOST', 'Reacquiring… (' + failures + ')', true);
+            if (!down) overlay(true, 'RECONNECTING', 'Reacquiring the stream…', true);
             inst.retryTimer = setTimeout(function () { if (inst.hls) inst.hls.startLoad(); }, 1500);
           } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && failures <= MAX) {
-            overlay(true, 'BUFFERING', 'Recovering video playback…', true);
+            if (!down) overlay(true, 'BUFFERING', 'Recovering video playback…', true);
             inst.hls.recoverMediaError();
           } else {
-            watchProgress = false;
-            overlay(true, 'OFF AIR', feed === 'server'
-              ? 'The Server orbit camera is offline.' : 'This camera is unreachable.', true);
+            showOffline();
           }
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -202,6 +218,10 @@
             fastContext.drawImage(bitmap, 0, 0, fastCanvas.width, fastCanvas.height);
             inst.fastLast = Date.now();
             lastProgress = inst.fastLast;
+            watchProgress = true;
+            down = false;
+            if (inst.offlineTimer) clearTimeout(inst.offlineTimer);
+            inst.offlineTimer = null;
             if (!inst.fastActive) {
               inst.fastActive = true;
               fastCanvas.hidden = false;
@@ -284,17 +304,14 @@
       lastTime = -1;
       lastProgress = Date.now();
       inst.fastRetryAt = 0;
-      overlay(true, 'SIGNAL', 'Tuning the feed…', false);
+      if (!down) overlay(true, 'CONNECTING', 'Tuning the feed…', false);
       setLive(false);
       if (feed === 'guest' && TRY_GUEST_WEBRTC) startWebRtc();
       else startHls();
     }
     function videoError() {
-      if (inst.fastActive) return;
-      watchProgress = false;
-      setLive(false);
-      overlay(true, 'OFF AIR', feed === 'server'
-        ? 'The Server orbit camera is offline.' : 'This camera is unreachable.', true);
+      if (disposed || inst.fastActive || !watchProgress) return;
+      showOffline();
     }
     function retry(event) { event.stopPropagation(); start(); }
     video.addEventListener('playing', playing);
@@ -312,12 +329,16 @@
       if (video.currentTime > lastTime && video.readyState >= 2) {
         lastTime = video.currentTime;
         lastProgress = Date.now();
+        down = false;
+        if (inst.offlineTimer) clearTimeout(inst.offlineTimer);
+        inst.offlineTimer = null;
         overlay(false); setLive(true);
       } else if (inst.peer && Date.now() - lastProgress > 6000) {
         inst.rtcFallback();
       } else if (Date.now() - lastProgress > 12000) {
         setLive(false);
-        overlay(true, 'BUFFERING', 'Video has stopped advancing. Reconnect the camera.', true);
+        if (Date.now() - lastProgress > 20000) showOffline();
+        else if (!down) overlay(true, 'BUFFERING', 'Video has stopped advancing. Reconnecting…', true);
       }
     }, 2000);
     inst.destroy = function () {
